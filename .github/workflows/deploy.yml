@@ -1,0 +1,49 @@
+name: Deploy para Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Monta o pacote standalone (public + assets estáticos)
+        run: |
+          cp -r public .next/standalone/public
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/static
+
+      - name: Configura chave SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
+
+      - name: Confia no servidor (known_hosts)
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.HOSTINGER_SSH_PORT }} ${{ secrets.HOSTINGER_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Envia arquivos via rsync
+        run: |
+          rsync -az \
+            -e "ssh -p ${{ secrets.HOSTINGER_SSH_PORT }}" \
+            --exclude 'tmp' \
+            .next/standalone/ \
+            ${{ secrets.HOSTINGER_SSH_USER }}@${{ secrets.HOSTINGER_SSH_HOST }}:domains/jcsistema.online/hbuilds/current/nodejs/
+
+      - name: Reinicia a aplicação (Passenger)
+        run: |
+          ssh -p ${{ secrets.HOSTINGER_SSH_PORT }} ${{ secrets.HOSTINGER_SSH_USER }}@${{ secrets.HOSTINGER_SSH_HOST }} \
+            "mkdir -p domains/jcsistema.online/hbuilds/current/nodejs/tmp && touch domains/jcsistema.online/hbuilds/current/nodejs/tmp/restart.txt"
