@@ -11,6 +11,7 @@ on:
         options:
           - dry-run
           - confirmar
+          - recalcular
 
 jobs:
   importar:
@@ -36,3 +37,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node importar-equipamentos.mjs --confirmar
+
+      - name: Recalcular planos de manutenção da frota
+        if: ${{ github.event.inputs.modo == 'recalcular' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node importar-equipamentos.mjs --recalcular

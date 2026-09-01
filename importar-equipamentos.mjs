@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import esbuild from "esbuild";
 import pg from "pg";
@@ -19,10 +18,17 @@ import { buildImportPlan } from "./scripts/import-equipamentos/plan.mjs";
 // Uso:
 //   node importar-equipamentos.mjs                -> dry-run (nada é gravado)
 //   node importar-equipamentos.mjs --confirmar     -> aplica a importação real
+//   node importar-equipamentos.mjs --recalcular    -> só recalcula os planos
+//                                                      de manutenção de toda a
+//                                                      frota (retomar depois de
+//                                                      um cadastro que já
+//                                                      terminou, mas cujo
+//                                                      cálculo de plano falhou)
 //   node importar-equipamentos.mjs --arquivo=caminho/para/arquivo.tsv
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
+const RECALCULAR = process.argv.includes("--recalcular");
 const arquivoArg = process.argv.find((arg) => arg.startsWith("--arquivo="));
 const ARQUIVO = arquivoArg
   ? arquivoArg.slice("--arquivo=".length)
@@ -105,10 +111,21 @@ async function loadExisting(pool) {
 // duplicar a lógica de cálculo de plano de manutenção aqui no importador.
 async function loadRecalculationEngine() {
   const entry = new URL("./scripts/import-equipamentos/recalc-entry.ts", import.meta.url).pathname;
-  const outDir = mkdtempSync(path.join(tmpdir(), "import-equipamentos-"));
+  const projectRoot = path.dirname(new URL(import.meta.url).pathname);
+  // O bundle precisa ficar DENTRO do projeto (não em /tmp): com
+  // packages:"external", o Node resolve "pg" etc. subindo diretórios em
+  // busca de node_modules a partir de onde o arquivo importado está — fora
+  // do projeto essa busca falha com "Cannot find package 'pg'".
+  const outDir = mkdtempSync(path.join(projectRoot, ".import-equipamentos-tmp-"));
   const outfile = path.join(outDir, `recalc-entry-${randomUUID()}.mjs`);
-  await esbuild.build({ entryPoints: [entry], bundle: true, platform: "node", format: "esm", outfile });
-  return import(outfile);
+  // packages:"external" faz o esbuild só resolver os arquivos locais do
+  // projeto (db/, lib/) e deixar os pacotes do node_modules (pg, drizzle-orm,
+  // dotenv...) para o Node resolver em tempo de execução — sem isso, o `pg`
+  // quebra com "Dynamic require of events is not supported" quando embutido
+  // num bundle ESM.
+  await esbuild.build({ entryPoints: [entry], bundle: true, platform: "node", format: "esm", packages: "external", outfile });
+  const engine = await import(outfile);
+  return { ...engine, cleanup: () => rmSync(outDir, { recursive: true, force: true }) };
 }
 
 function printSection(title) {
@@ -167,7 +184,29 @@ function printDecisions(decisions) {
   }
 }
 
+async function recalcularTodaFrota() {
+  const pool = new pg.Pool({ connectionString: url, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 20000 });
+  try {
+    linha();
+    console.log("Recalculando planos de manutenção de toda a frota (equipamento com plano já em dia não é alterado)...");
+    const { getD1, recalculateMaintenanceCycles, cleanup } = await loadRecalculationEngine();
+    try {
+      const d1 = await getD1();
+      const result = await recalculateMaintenanceCycles(d1, { force: true, notify: false });
+      linha();
+      console.log(`Concluído: ${result.equipment} equipamento(s) com troca de óleo habilitada, ${result.plans} plano(s) ativo(s) calculado(s).`);
+      linha();
+    } finally {
+      cleanup();
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
 async function main() {
+  if (RECALCULAR) return recalcularTodaFrota();
+
   const { rows } = parseFleetSource(ARQUIVO);
   const internalDuplicates = findInternalDuplicates(rows);
   const substringConflicts = findSubstringSerialConflicts(rows);
@@ -278,11 +317,31 @@ async function main() {
     if (toRecalculate.length) {
       linha();
       console.log(`Calculando planos de manutenção para ${toRecalculate.length} equipamento(s)...`);
-      const { getD1, recalculateMaintenanceCycles } = await loadRecalculationEngine();
-      const d1 = await getD1();
-      for (const item of toRecalculate) {
-        await recalculateMaintenanceCycles(d1, { equipmentId: item.id, force: true, notify: false });
-        console.log(`  ${item.prefix}: plano calculado.`);
+      let cleanup;
+      try {
+        const engine = await loadRecalculationEngine();
+        cleanup = engine.cleanup;
+        const d1 = await engine.getD1();
+        for (const item of toRecalculate) {
+          await engine.recalculateMaintenanceCycles(d1, { equipmentId: item.id, force: true, notify: false });
+          console.log(`  ${item.prefix}: plano calculado.`);
+        }
+      } catch (error) {
+        // Os equipamentos JÁ FORAM GRAVADOS (commit concluído acima); um erro
+        // aqui não desfaz o cadastro, só significa que o plano de manutenção
+        // precisa ser recalculado numa nova execução (idempotente e segura
+        // de rodar de novo — equipamento já cadastrado não é duplicado).
+        linha();
+        console.error("AVISO: os equipamentos foram gravados, mas o cálculo do plano de manutenção falhou:");
+        console.error(`  ${error.message}`);
+        console.error("Rode: node importar-equipamentos.mjs --recalcular  (só calcula os planos pendentes, não recadastra nada).");
+        linha();
+        console.log("IMPORTAÇÃO CONCLUÍDA COM PENDÊNCIA (cadastro ok, plano pendente).");
+        console.log(`  Equipamentos novos gravados: ${insertedIds.map((item) => item.prefix).join(", ")}`);
+        linha();
+        return;
+      } finally {
+        cleanup?.();
       }
     }
 

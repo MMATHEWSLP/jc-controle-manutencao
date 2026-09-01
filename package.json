@@ -18,7 +18,8 @@
     "test:import-equipamentos": "node --test tests/import-equipamentos.test.mjs",
     "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos",
     "import:equipamentos": "node importar-equipamentos.mjs",
-    "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar"
+    "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
+    "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
