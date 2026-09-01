@@ -45,7 +45,7 @@ function getPool():Pool {
 // Converte marcadores de posição no estilo SQLite/D1 ("?") para o estilo do
 // Postgres ("$1", "$2", ...), sem mexer em "?" que apareçam dentro de textos
 // entre aspas simples.
-function toPgQuery(query:string):string {
+export function toPgQuery(query:string):string {
   let result="";
   let paramIndex=0;
   let insideString=false;
@@ -122,12 +122,19 @@ function normalizeInsertBooleans(query:string):string {
 // Pequenos ajustes de sintaxe que existem no SQLite/D1 e não existem no
 // Postgres. Cada rota que usa uma dessas construções já foi corrigida no
 // código-fonte; esta função fica apenas como rede de segurança.
-function normalizeSqliteisms(query:string):string {
+// Exportada só para ser testada isoladamente (tests/db-sql-translation.test.mjs)
+// sem precisar de conexão real com o Postgres.
+export function normalizeSqliteisms(query:string):string {
   const semGroupConcat=query.replace(/\bGROUP_CONCAT\s*\(\s*DISTINCT\s+/gi,"STRING_AGG(DISTINCT ");
   // instr(texto,busca) do SQLite equivale a strpos(texto,busca) no Postgres: mesma
   // ordem de argumentos, mesmo retorno (posição a partir de 1, zero se não achar).
   const semInstr=semGroupConcat.replace(/\binstr\s*\(/gi,"strpos(");
-  return normalizeInsertBooleans(normalizeBooleans(semInstr));
+  // "coluna IS ?" é válido no SQLite (compara com NULL-safety, aceitando um
+  // parâmetro qualquer do lado direito) mas não existe no Postgres — lá "IS"
+  // só aceita NULL/TRUE/FALSE/UNKNOWN literais. O equivalente correto e
+  // NULL-safe é "IS NOT DISTINCT FROM ?".
+  const semIsParametrizado=semInstr.replace(/\bIS\s+\?/gi,"IS NOT DISTINCT FROM ?");
+  return normalizeInsertBooleans(normalizeBooleans(semIsParametrizado));
 }
 
 class PgPreparedStatement implements D1PreparedStatementLike {

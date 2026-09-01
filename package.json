@@ -16,7 +16,8 @@
     "test:front-scope": "esbuild tests/front-scope.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-front-scope.mjs && node --test /tmp/manutencao-preventiva-front-scope.mjs",
     "test:history-rules": "esbuild tests/maintenance-history-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-history-rules.mjs && node --test /tmp/manutencao-preventiva-history-rules.mjs",
     "test:import-equipamentos": "node --test tests/import-equipamentos.test.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos",
+    "test:db-sql": "esbuild tests/db-sql-translation.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-db-sql-translation.mjs && node --test tests/.tmp-db-sql-translation.mjs",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql",
     "import:equipamentos": "node importar-equipamentos.mjs",
     "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
     "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular"

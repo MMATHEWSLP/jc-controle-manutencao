@@ -44,7 +44,7 @@ export async function POST(request:Request){
     await d1.batch([
       d1.prepare(`INSERT INTO equipment_transfers (id,equipment_id,previous_service_front_id,new_service_front_id,transferred_at,transferred_by,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
         .bind(transferId,equipmentId,currentFrontId,newServiceFrontId,now,auth.user!.id,note,now,now),
-      d1.prepare(`UPDATE equipment SET service_front_id=?,updated_at=? WHERE id=? AND service_front_id IS ?`).bind(newServiceFrontId,now,equipmentId,currentFrontId),
+      d1.prepare(`UPDATE equipment SET service_front_id=?,updated_at=? WHERE id=? AND service_front_id IS NOT DISTINCT FROM ?`).bind(newServiceFrontId,now,equipmentId,currentFrontId),
       d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
         .bind(auth.user!.id,"EQUIPMENT",String(equipmentId),"EQUIPMENT_TRANSFERRED",JSON.stringify({serviceFrontId:currentFrontId,front:currentFront}),JSON.stringify({serviceFrontId:newServiceFrontId,front:String(front.name),note}),now),
     ]);

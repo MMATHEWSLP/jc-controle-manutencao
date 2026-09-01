@@ -45,3 +45,7 @@ next-env.d.ts
 # bundle temporário gerado pelo importador de equipamentos (autolimpo, mas
 # fica como rede de segurança caso uma execução seja interrompida)
 /.import-equipamentos-tmp-*/
+
+# bundle temporário de teste (precisa ficar dentro do projeto pra o Node
+# achar node_modules ao resolver pacotes externos como "pg")
+/tests/.tmp-*.mjs

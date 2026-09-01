@@ -106,7 +106,7 @@ export async function PUT(request:Request){
     if(linkedEquipment)await requireEquipmentAccess(d1,auth.user!,Number(linkedEquipment.id),"OIL");
     if(linkedEquipment&&!compatible(String(linkedEquipment.control_type),unit))return Response.json({error:"A unidade selecionada não é compatível com o equipamento."},{status:400});
     const service=String(maintenanceType.description??maintenanceType.name);const readingRaw=String(reading);
-    const duplicate=await d1.prepare(`SELECT id FROM imported_maintenance_history WHERE id<>? AND prefix=? AND service=? AND reading_raw=? AND performed_at IS ?`)
+    const duplicate=await d1.prepare(`SELECT id FROM imported_maintenance_history WHERE id<>? AND prefix=? AND service=? AND reading_raw=? AND performed_at IS NOT DISTINCT FROM ?`)
       .bind(id,prefix,service,readingRaw,date).first<Row>();
     if(duplicate)return Response.json({error:"Já existe um registro importado com esses mesmos dados."},{status:409});
     await d1.batch([
