@@ -1,0 +1,27 @@
+name: Diagnosticar Status da Frota
+
+on:
+  workflow_dispatch:
+    inputs:
+      prefixo:
+        description: "Prefixo do equipamento a diagnosticar (ex: HL-01-ORD0J56)"
+        required: true
+        default: "HL-01-ORD0J56"
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Rodar diagnostico (dry-run, nada e gravado)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node diagnosticar-fleet-status.mjs "${{ github.event.inputs.prefixo }}"
