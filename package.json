@@ -1,0 +1,46 @@
+{
+  "name": "manutencao-preventiva",
+  "version": "0.2.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "node .next/standalone/server.js",
+    "lint": "eslint .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "test:reconciliation": "esbuild tests/maintenance-reconciliation.integration.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-reconciliation.mjs && node --test /tmp/manutencao-preventiva-reconciliation.mjs",
+    "test:front-scope": "esbuild tests/front-scope.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-front-scope.mjs && node --test /tmp/manutencao-preventiva-front-scope.mjs",
+    "test:history-rules": "esbuild tests/maintenance-history-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-history-rules.mjs && node --test /tmp/manutencao-preventiva-history-rules.mjs",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "fflate": "0.7.4",
+    "next": "16.2.6",
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/pg": "^8.11.10",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "drizzle-kit": "0.31.10",
+    "dotenv": "^16.4.7",
+    "esbuild": "^0.24.0",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "type": "module",
+  "displayName": "Controle de Manutenção Preventiva"
+}
