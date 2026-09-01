@@ -1,0 +1,38 @@
+name: Importar equipamentos
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "dry-run (simulação, não grava nada) ou confirmar (grava de verdade)"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - confirmar
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Rodar importação (dry-run)
+        if: ${{ github.event.inputs.modo == 'dry-run' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node importar-equipamentos.mjs
+
+      - name: Rodar importação (confirmar)
+        if: ${{ github.event.inputs.modo == 'confirmar' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node importar-equipamentos.mjs --confirmar

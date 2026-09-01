@@ -15,7 +15,10 @@
     "test:reconciliation": "esbuild tests/maintenance-reconciliation.integration.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-reconciliation.mjs && node --test /tmp/manutencao-preventiva-reconciliation.mjs",
     "test:front-scope": "esbuild tests/front-scope.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-front-scope.mjs && node --test /tmp/manutencao-preventiva-front-scope.mjs",
     "test:history-rules": "esbuild tests/maintenance-history-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-history-rules.mjs && node --test /tmp/manutencao-preventiva-history-rules.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope"
+    "test:import-equipamentos": "node --test tests/import-equipamentos.test.mjs",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos",
+    "import:equipamentos": "node importar-equipamentos.mjs",
+    "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
