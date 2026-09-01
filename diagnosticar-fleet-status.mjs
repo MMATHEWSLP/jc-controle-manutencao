@@ -43,7 +43,13 @@ async function fleetCurrentStatus(client, equipmentId) {
   return rows[0] ?? null;
 }
 
-async function tentarAtualizacao(client, equipmentId, frontId, label) {
+async function algumUsuarioId(client) {
+  const { rows } = await client.query(`SELECT id FROM users ORDER BY id LIMIT 1`);
+  if (!rows[0]) throw new Error("Nenhum usuário cadastrado para usar no diagnóstico.");
+  return Number(rows[0].id);
+}
+
+async function tentarAtualizacao(client, equipmentId, frontId, userId, label) {
   linha();
   console.log(`TENTATIVA (dry-run, sera desfeita): ${label} (equipment_id=${equipmentId})`);
   await client.query("SAVEPOINT tentativa");
@@ -51,15 +57,39 @@ async function tentarAtualizacao(client, equipmentId, frontId, label) {
     const eventId = "00000000-0000-4000-8000-000000000000";
     const occurrenceId = `OC-DIAGNOSTICO-${Date.now()}`;
     const now = new Date().toISOString();
+    const reason = "";
+    const problemDescription = "";
+    const location = "";
+    const servicePerformed = "";
+    const partsUsed = "";
+    const notes = "DIAGNOSTICO - NAO E DADO REAL";
+    const serviceDescription = "AGUARDANDO PEÇA PARA CONTINUAR SERVIÇO (DIAGNOSTICO)";
     await client.query(
       `INSERT INTO fleet_occurrences (id,equipment_id,service_front_id,started_at,reason,problem_description,location,notes,created_by,created_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9,$9)`,
-      [occurrenceId, equipmentId, frontId, now, null, null, null, "DIAGNOSTICO - NAO E DADO REAL", now],
+      [occurrenceId, equipmentId, frontId, now, reason || null, problemDescription || null, location || null, notes || null, now],
+    );
+    // Réplica EXATA da query real de app/api/fleet-status/route.ts (a mesma
+    // que roda logo em seguida sobre a ocorrência recem-criada).
+    const endedAt = null; // status não é READY nem OPERATING
+    const returnedAt = null;
+    await client.query(
+      `UPDATE fleet_occurrences SET
+        reason=CASE WHEN $1<>'' THEN $2 ELSE reason END,
+        problem_description=CASE WHEN $3<>'' THEN $4 ELSE problem_description END,
+        location=CASE WHEN $5<>'' THEN $6 ELSE location END,
+        service_performed=CASE WHEN $7<>'' THEN $8 ELSE service_performed END,
+        parts_used=CASE WHEN $9<>'' THEN $10 ELSE parts_used END,
+        notes=CASE WHEN $11<>'' THEN $12 ELSE notes END,
+        ended_at=COALESCE(ended_at,$13),returned_to_operation_at=COALESCE(returned_to_operation_at,$14),
+        closed_by=CASE WHEN $15 IS NOT NULL THEN $16 ELSE closed_by END,updated_at=$17 WHERE id=$18`,
+      [reason, reason, problemDescription, problemDescription, location, location, servicePerformed, servicePerformed,
+        partsUsed, partsUsed, notes, notes, endedAt, returnedAt, endedAt, userId, now, occurrenceId],
     );
     await client.query(
       `INSERT INTO fleet_status_events (id,occurrence_id,equipment_id,service_front_id,previous_status,new_status,occurred_at,reason,problem_description,service_description,service_performed,location,notes,created_by,created_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,$14,$14)`,
-      [eventId, occurrenceId, equipmentId, frontId, "OPERATING", "WAITING_PART", now, null, null, "DIAGNOSTICO", null, null, "DIAGNOSTICO - NAO E DADO REAL", now],
+      [eventId, occurrenceId, equipmentId, frontId, "OPERATING", "WAITING_PART", now, reason || null, problemDescription || null, serviceDescription || null, servicePerformed || null, location || null, notes || null, now],
     );
     await client.query(
       `INSERT INTO fleet_current_status (equipment_id,status,since_at,active_occurrence_id,latest_event_id,updated_by,created_at,updated_at)
@@ -115,8 +145,9 @@ try {
     console.log("EQUIPAMENTO ANTIGO DE COMPARAÇÃO (já tem fleet_current_status):");
     console.log(antigo ?? "(nenhum equipamento com fleet_current_status no banco)");
 
-    if (alvo) await tentarAtualizacao(client, alvo.id, alvo.service_front_id, `${prefixoAlvo} (importado)`);
-    if (antigo) await tentarAtualizacao(client, antigo.id, antigo.service_front_id, `${antigo.prefix} (antigo, já funcionava)`);
+    const userId = await algumUsuarioId(client);
+    if (alvo) await tentarAtualizacao(client, alvo.id, alvo.service_front_id, userId, `${prefixoAlvo} (importado)`);
+    if (antigo) await tentarAtualizacao(client, antigo.id, antigo.service_front_id, userId, `${antigo.prefix} (antigo, já funcionava)`);
 
     await client.query("ROLLBACK");
     linha();
