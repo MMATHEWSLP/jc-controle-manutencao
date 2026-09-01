@@ -82,7 +82,7 @@ async function tentarAtualizacao(client, equipmentId, frontId, userId, label) {
         parts_used=CASE WHEN $9<>'' THEN $10 ELSE parts_used END,
         notes=CASE WHEN $11<>'' THEN $12 ELSE notes END,
         ended_at=COALESCE(ended_at,$13),returned_to_operation_at=COALESCE(returned_to_operation_at,$14),
-        closed_by=CASE WHEN $15 IS NOT NULL THEN $16 ELSE closed_by END,updated_at=$17 WHERE id=$18`,
+        closed_by=CASE WHEN $15::text IS NOT NULL THEN $16 ELSE closed_by END,updated_at=$17 WHERE id=$18`,
       [reason, reason, problemDescription, problemDescription, location, location, servicePerformed, servicePerformed,
         partsUsed, partsUsed, notes, notes, endedAt, returnedAt, endedAt, userId, now, occurrenceId],
     );

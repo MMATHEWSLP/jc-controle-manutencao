@@ -279,7 +279,7 @@ export async function POST(request: Request) {
         parts_used=CASE WHEN ?<>'' THEN ? ELSE parts_used END,
         notes=CASE WHEN ?<>'' THEN ? ELSE notes END,
         ended_at=COALESCE(ended_at,?),returned_to_operation_at=COALESCE(returned_to_operation_at,?),
-        closed_by=CASE WHEN ? IS NOT NULL THEN ? ELSE closed_by END,updated_at=? WHERE id=?`)
+        closed_by=CASE WHEN ?::text IS NOT NULL THEN ? ELSE closed_by END,updated_at=? WHERE id=?`)
         .bind(reason, reason, problemDescription, problemDescription, location, location, servicePerformed, servicePerformed,
           partsUsed, partsUsed, notes, notes, endedAt, returnedAt, endedAt, auth.user!.id, now, occurrenceId));
     }
