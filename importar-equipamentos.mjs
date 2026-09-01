@@ -154,6 +154,17 @@ function printDecisions(decisions) {
 
   printSection(`JÁ EXISTENTES — IGNORADOS (${existentes.length})`);
   console.log("  " + existentes.map((decision) => decision.row.prefixRaw).join(", "));
+
+  // Alertas de qualidade de dado da planilha valem para QUALQUER linha —
+  // inclusive equipamento já cadastrado, que não aparece na seção "NOVOS".
+  const comAlerta = decisions.filter((decision) => decision.row.alerts.length > 0);
+  if (comAlerta.length) {
+    printSection(`ALERTAS DE QUALIDADE DE DADO NA PLANILHA (${comAlerta.length}) — conferir manualmente`);
+    for (const decision of comAlerta) {
+      console.log(`  ${decision.row.prefixRaw.padEnd(16)} [${decision.action}] ${decision.row.description}`);
+      for (const alert of decision.row.alerts) console.log(`      - ${alert}`);
+    }
+  }
 }
 
 async function main() {
