@@ -49,6 +49,18 @@ export const PERMISSION_GROUPS = [
     ["fleet.update","Atualizar status, ocorrências e pedidos"],
     ["fleet.report","Exportar relatório diário da frota"],
   ]},
+  { label:"Solicitação de Materiais", items:[
+    ["materials.view","Visualizar solicitações de materiais"],
+    ["materials.request","Criar solicitação de materiais"],
+    ["materials.ship","Separar e enviar materiais solicitados"],
+    ["materials.manage","Visualizar todas as solicitações (todas as frentes/solicitantes)"],
+  ]},
+  { label:"Tarefas", items:[
+    ["tasks.view","Visualizar tarefas"],
+    ["tasks.create","Criar tarefas e subtarefas"],
+    ["tasks.edit","Editar, concluir ou excluir tarefas"],
+    ["tasks.manage","Visualizar e gerenciar tarefas de todos os usuários"],
+  ]},
   { label:"Usuários", items:[
     ["users.view","Visualizar usuários"],
     ["users.create","Criar usuários"],
@@ -64,10 +76,10 @@ export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFAD
 
 export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
-  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report"],
-  OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
+  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","tasks.manage"],
+  OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.request","tasks.view","tasks.create","tasks.edit"],
   OPERADOR:[],
-  ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
+  ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.ship","tasks.view","tasks.create","tasks.edit"],
 };
 
 export type SessionUser = {

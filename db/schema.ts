@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, index, integer, pgTable, serial, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, pgTable, serial, text, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // Gera texto no mesmo formato de `new Date().toISOString()` (usado pelo app em JS),
 // para que colunas de data continuem sendo strings ISO-8601 mesmo vindas de um DEFAULT do banco.
@@ -541,3 +541,50 @@ export const auditLogs = pgTable("audit_logs", {
   newValue: text("new_value"),
   occurredAt: text("occurred_at").notNull().default(isoNow),
 }, (table) => [index("audit_entity_idx").on(table.entityType, table.entityId)]);
+
+export const materialRequests = pgTable("material_requests", {
+  id: serial("id").primaryKey(),
+  requesterId: integer("requester_id").notNull().references(() => users.id),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  requestedAt: text("requested_at").notNull().default(isoNow),
+  status: text("status", { enum:["PENDING","IN_SEPARATION","SENT","PARTIALLY_SENT","NOT_FULFILLED"] }).notNull().default("PENDING"),
+  notes: text("notes"),
+  shippedBy: integer("shipped_by").references(() => users.id),
+  shippedAt: text("shipped_at"),
+  shipmentNotes: text("shipment_notes"),
+  ...timestamps,
+}, (table) => [
+  index("material_requests_requester_idx").on(table.requesterId, table.requestedAt),
+  index("material_requests_status_idx").on(table.status, table.requestedAt),
+  index("material_requests_front_idx").on(table.serviceFrontId),
+]);
+
+export const materialRequestItems = pgTable("material_request_items", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull().references(() => materialRequests.id),
+  description: text("description").notNull(),
+  reference: text("reference"),
+  quantityRequested: doublePrecision("quantity_requested").notNull(),
+  itemStatus: text("item_status", { enum:["PENDING","SENT","NOT_AVAILABLE"] }).notNull().default("PENDING"),
+  quantitySent: doublePrecision("quantity_sent"),
+  notes: text("notes"),
+  ...timestamps,
+}, (table) => [index("material_request_items_request_idx").on(table.requestId)]);
+
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  parentTaskId: integer("parent_task_id").references((): AnyPgColumn => tasks.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  assigneeId: integer("assignee_id").references(() => users.id),
+  urgency: text("urgency", { enum:["LOW","MEDIUM","HIGH","URGENT"] }).notNull().default("MEDIUM"),
+  dueDate: text("due_date").notNull(),
+  status: text("status", { enum:["TODO","IN_PROGRESS","DONE"] }).notNull().default("TODO"),
+  createdBy: integer("created_by").references(() => users.id),
+  completedAt: text("completed_at"),
+  ...timestamps,
+}, (table) => [
+  index("tasks_parent_idx").on(table.parentTaskId),
+  index("tasks_assignee_idx").on(table.assigneeId, table.status),
+  index("tasks_due_date_idx").on(table.dueDate),
+]);

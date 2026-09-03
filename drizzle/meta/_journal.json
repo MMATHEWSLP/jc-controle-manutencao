@@ -8,6 +8,13 @@
       "when": 1788193276276,
       "tag": "0000_dear_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788464630528,
+      "tag": "0001_rich_moonstone",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,21 @@
+.task-tree{padding:4px 2px}
+.task-row{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #edf0f2;transition:background .15s ease}
+.task-row:last-child{border-bottom:0}
+.task-row.overdue{background:#fff6f6}
+.task-row.due-soon{background:#fffaf0}
+.task-row.context-only{opacity:.62}
+.task-toggle{width:18px;height:18px;margin-top:1px;border:0;background:none;color:#7390a4;font-size:11px;flex:0 0 auto;cursor:pointer}
+.task-toggle-spacer{width:18px;flex:0 0 auto}
+.task-check{margin-top:4px;width:14px;height:14px;flex:0 0 auto;accent-color:#177d5f}
+.task-main{flex:1;min-width:0}
+.task-title-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.task-title-line strong{font-size:11px;color:#1b354a}
+.task-title-line strong.task-done{color:#93a2ac;text-decoration:line-through}
+.task-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:5px;color:#7c8994;font-size:9px}
+.warning-text{color:#b17a08;font-weight:700}
+html[data-theme="dark"] .task-row{border-color:#293f4c}
+html[data-theme="dark"] .task-row.overdue{background:#2a1418}
+html[data-theme="dark"] .task-row.due-soon{background:#2a2210}
+html[data-theme="dark"] .task-title-line strong{color:#e1edf3}
+html[data-theme="dark"] .task-meta{color:#93a4ae}
+@media(max-width:700px){.task-meta{gap:9px}.task-row{padding:10px 8px}}

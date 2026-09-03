@@ -215,5 +215,100 @@ export function createMaintenancePdf(input:MaintenancePdfInput){
   return buildPdf([content]);
 }
 
+export type MaterialRequestPdfItem={description:string;quantityRequested:number;reference:string|null;itemStatus:"PENDING"|"SENT"|"NOT_AVAILABLE";quantitySent:number|null};
+export type MaterialRequestPdfInput={
+  requestNumber:string;requester:string;serviceFront:string;requestedAt:string;statusLabel:string;notes:string;
+  items:MaterialRequestPdfItem[];generatedAt:string;
+};
+export type MaterialShipmentPdfInput=MaterialRequestPdfInput&{shippedBy:string;shippedAt:string;shipmentNotes:string};
+
+const materialQuantityFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
+const materialItemStatusLabels:Record<MaterialRequestPdfItem["itemStatus"],string>={PENDING:"PENDENTE",SENT:"ENVIADO",NOT_AVAILABLE:"NÃO DISPONÍVEL"};
+const materialItemStatusColor:Record<MaterialRequestPdfItem["itemStatus"],string>={PENDING:"0.42 0.51 0.58",SENT:"0.08 0.42 0.31",NOT_AVAILABLE:"0.72 0.10 0.16"};
+
+function materialRequestPdfPages(input:MaterialRequestPdfInput,mode:"REQUEST"|"SHIPMENT",shipment?:{shippedBy:string;shippedAt:string;shipmentNotes:string}){
+  const rowsPerPage=10;
+  const pageCount=Math.max(1,Math.ceil(input.items.length/rowsPerPage));
+  return Array.from({length:pageCount},(_,pageIndex)=>{
+    const items=input.items.slice(pageIndex*rowsPerPage,(pageIndex+1)*rowsPerPage);
+    let content="";
+    content+="1 1 1 rg 0 752 595 90 re f\n";content+="0.16 0.48 0.66 rg 0 746 595 6 re f\n";content+=logo(36,772,84);
+    content+=text(132,810,15,mode==="REQUEST"?"SOLICITAÇÃO DE MATERIAIS":"COMPROVANTE DE ENVIO DE MATERIAIS",true,"0.08 0.25 0.36");
+    content+=text(132,790,8,"FRENTE DE SERVIÇO · CONTROLE INTERNO",false,"0.08 0.49 0.35");
+    content+=text(132,774,9,`PEDIDO ${input.requestNumber}`,true,"0.16 0.48 0.66");
+    content+=text(430,810,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(430,793,8,truncate(input.generatedAt,27),false,"0.08 0.25 0.36");
+    content+=text(430,776,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+
+    content+="0.955 0.972 0.98 rg 36 700 523 40 re f\n";
+    content+=text(46,730,7,"SOLICITANTE",true,"0.34 0.47 0.56");content+=text(46,714,9,truncate(input.requester,42),true);
+    content+=text(310,730,7,"FRENTE DE SERVIÇO / OBRA / SETOR",true,"0.34 0.47 0.56");content+=text(310,714,9,truncate(input.serviceFront,34),true);
+    content+="0.955 0.972 0.98 rg 36 654 523 40 re f\n";
+    content+=text(46,684,7,"DATA DA SOLICITAÇÃO",true,"0.34 0.47 0.56");content+=text(46,668,9,truncate(input.requestedAt,30),true);
+    content+=text(310,684,7,"STATUS",true,"0.34 0.47 0.56");content+=text(310,668,9,truncate(input.statusLabel,30),true,"0.08 0.42 0.31");
+    let bandBottom=654;
+    if(mode==="SHIPMENT"&&shipment){
+      content+="0.955 0.972 0.98 rg 36 608 523 40 re f\n";
+      content+=text(46,638,7,"ENVIADO POR",true,"0.34 0.47 0.56");content+=text(46,622,9,truncate(shipment.shippedBy,42),true);
+      content+=text(310,638,7,"DATA DO ENVIO",true,"0.34 0.47 0.56");content+=text(310,622,9,truncate(shipment.shippedAt,30),true);
+      bandBottom=608;
+    }
+
+    const tableHeaderTop=bandBottom-6;const tableHeaderBottom=tableHeaderTop-24;
+    content+=`0.11 0.35 0.49 rg 36 ${tableHeaderBottom} 523 24 re f\n`;
+    if(mode==="REQUEST"){
+      content+=text(44,tableHeaderBottom+9,7,"DESCRIÇÃO",true,"1 1 1");
+      content+=text(400,tableHeaderBottom+9,7,"QUANTIDADE",true,"1 1 1");
+      content+=text(470,tableHeaderBottom+9,7,"REFERÊNCIA",true,"1 1 1");
+    }else{
+      content+=text(40,tableHeaderBottom+9,6.5,"DESCRIÇÃO",true,"1 1 1");
+      content+=text(255,tableHeaderBottom+9,6.5,"QTD. SOLIC.",true,"1 1 1");
+      content+=text(315,tableHeaderBottom+9,6.5,"REFERÊNCIA",true,"1 1 1");
+      content+=text(400,tableHeaderBottom+9,6.5,"STATUS",true,"1 1 1");
+      content+=text(470,tableHeaderBottom+9,6.5,"QTD. ENVIADA",true,"1 1 1");
+    }
+
+    const firstRowTop=tableHeaderBottom-25;
+    if(items.length===0)content+=text(190,firstRowTop-20,11,"Nenhum item nesta página.",true,"0.33 0.47 0.55");
+    items.forEach((item,index)=>{
+      const top=firstRowTop-(index*30);
+      if(index%2===0)content+=`0.968 0.978 0.984 rg 36 ${top-16} 523 30 re f\n`;
+      if(mode==="REQUEST"){
+        content+=text(44,top,8,truncate(item.description,46),true);
+        content+=text(400,top,8,materialQuantityFormat.format(item.quantityRequested),false);
+        content+=text(470,top,8,truncate(item.reference??"—",18),false);
+      }else{
+        content+=text(40,top,7.5,truncate(item.description,34),true);
+        content+=text(255,top,7.5,materialQuantityFormat.format(item.quantityRequested),false);
+        content+=text(315,top,7.5,truncate(item.reference??"—",14),false);
+        content+=text(400,top,7,materialItemStatusLabels[item.itemStatus],true,materialItemStatusColor[item.itemStatus]);
+        content+=text(470,top,7.5,item.quantitySent===null?"—":materialQuantityFormat.format(item.quantitySent),true);
+      }
+      content+=`0.88 0.91 0.93 RG 0.35 w 36 ${top-16} m 559 ${top-16} l S\n`;
+    });
+
+    if(pageIndex===pageCount-1){
+      const lastRowBottom=firstRowTop-(Math.max(items.length,1)-1)*30-16;
+      let noteY=lastRowBottom-24;
+      content+=text(42,noteY,9,"OBSERVAÇÕES",true,"0.05 0.35 0.52");noteY-=15;
+      for(const line of wrap(input.notes||"Sem observações.",90)){content+=text(42,noteY,8,line,false,"0.30 0.39 0.46");noteY-=13;}
+      if(mode==="SHIPMENT"&&shipment){
+        noteY-=8;content+=text(42,noteY,9,"OBSERVAÇÕES DO ENVIO",true,"0.05 0.35 0.52");noteY-=15;
+        for(const line of wrap(shipment.shipmentNotes||"Sem observações.",90)){content+=text(42,noteY,8,line,false,"0.30 0.39 0.46");noteY-=13;}
+      }
+    }
+
+    content+="0.86 0.90 0.92 RG 0.6 w 36 40 m 559 40 l S\n";
+    content+=text(42,26,7.5,"Documento gerado pelo sistema de controle de manutenção. Nenhum dado foi alterado na emissão.",false,"0.42 0.51 0.58");
+    return content;
+  });
+}
+
+export function createMaterialRequestPdf(input:MaterialRequestPdfInput){
+  return buildPdf(materialRequestPdfPages(input,"REQUEST"));
+}
+export function createMaterialShipmentPdf(input:MaterialShipmentPdfInput){
+  return buildPdf(materialRequestPdfPages(input,"SHIPMENT",{shippedBy:input.shippedBy,shippedAt:input.shippedAt,shipmentNotes:input.shipmentNotes}));
+}
+
 export function formatPdfDate(value:string){if(!value)return "Sem data";const date=new Date(value);return Number.isNaN(date.getTime())?value:ptFormatter.format(date);}
 import { PDF_LOGO_HEIGHT,PDF_LOGO_JPEG_BASE64,PDF_LOGO_WIDTH } from "./pdf-logo";
