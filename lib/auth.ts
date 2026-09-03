@@ -1,6 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, authBootstrap, serviceFronts, userPermissions, userSessions, users } from "../db/schema";
+import type { HierarchyLevel } from "./task-authorization";
 
 export const SESSION_COOKIE = "maintenance_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
@@ -56,10 +57,9 @@ export const PERMISSION_GROUPS = [
     ["materials.manage","Visualizar todas as solicitações (todas as frentes/solicitantes)"],
   ]},
   { label:"Tarefas", items:[
-    ["tasks.view","Visualizar tarefas"],
+    ["tasks.view","Acessar o módulo Tarefas (a visibilidade de cada tarefa é definida pela hierarquia)"],
     ["tasks.create","Criar tarefas e subtarefas"],
-    ["tasks.edit","Editar, concluir ou excluir tarefas"],
-    ["tasks.manage","Visualizar e gerenciar tarefas de todos os usuários"],
+    ["tasks.edit","Editar, reatribuir, concluir ou excluir tarefas (quando autorizado pela hierarquia)"],
   ]},
   { label:"Usuários", items:[
     ["users.view","Visualizar usuários"],
@@ -76,7 +76,7 @@ export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFAD
 
 export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
-  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","tasks.manage"],
+  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.request","tasks.view","tasks.create","tasks.edit"],
   OPERADOR:[],
   ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.ship","tasks.view","tasks.create","tasks.edit"],
@@ -88,6 +88,7 @@ export type SessionUser = {
   username:string;
   email:string;
   profile:Profile;
+  hierarchyLevel:HierarchyLevel;
   status:"ACTIVE"|"INACTIVE";
   theme:"LIGHT"|"DARK";
   isPrimaryAdmin:boolean;
@@ -211,13 +212,13 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
   if(!token)return null;
   const db=await getDb();
   const rows=await db.select({
-    id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,status:users.status,
+    id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,hierarchyLevel:users.hierarchyLevel,status:users.status,
     theme:users.theme,isPrimaryAdmin:users.isPrimaryAdmin,lastAccessAt:users.lastAccessAt,createdAt:users.createdAt,
     serviceFrontId:users.serviceFrontId,serviceFrontName:serviceFronts.name,
   }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(and(eq(userSessions.tokenHash,await tokenHash(token)),gt(userSessions.expiresAt,new Date().toISOString()))).limit(1);
   const row=rows[0];
   if(!row||row.status!=="ACTIVE"||!row.username)return null;
-  return {...row,username:row.username,permissions:await effectivePermissions(row.id,row.profile)};
+  return {...row,username:row.username,hierarchyLevel:row.hierarchyLevel as HierarchyLevel,permissions:await effectivePermissions(row.id,row.profile)};
 }
 
 export async function authorize(request:Request,permission?:Permission) {
@@ -254,13 +255,13 @@ export async function ensurePrimaryAdmin() {
     adminId=existing.id;
     await db.update(users).set({
       name:"Mathews",username:INITIAL_ADMIN_USERNAME,passwordHash:hash,passwordSalt:salt,
-      role:"ADMIN",status:"ACTIVE",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
+      role:"ADMIN",hierarchyLevel:"ADMIN",status:"ACTIVE",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
     }).where(eq(users.id,adminId));
     await db.delete(userSessions).where(eq(userSessions.userId,adminId));
   }else{
     const inserted=await db.insert(users).values({
       email:INITIAL_ADMIN_EMAIL,name:"Mathews",username:INITIAL_ADMIN_USERNAME,
-      passwordHash:hash,passwordSalt:salt,role:"ADMIN",status:"ACTIVE",
+      passwordHash:hash,passwordSalt:salt,role:"ADMIN",hierarchyLevel:"ADMIN",status:"ACTIVE",
       theme:"LIGHT",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
     }).returning({id:users.id});
     adminId=inserted[0].id;

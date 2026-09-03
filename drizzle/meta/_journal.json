@@ -15,6 +15,13 @@
       "when": 1788464630528,
       "tag": "0001_rich_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788473723524,
+      "tag": "0002_old_violations",
+      "breakpoints": true
     }
   ]
 }

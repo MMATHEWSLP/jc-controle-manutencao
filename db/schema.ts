@@ -26,6 +26,10 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   passwordSalt: text("password_salt"),
   role: text("role", { enum:["ADMIN","GESTOR","OFICINA","OPERADOR","ALMOXARIFADO"] }).notNull(),
+  // Nível hierárquico organizacional, usado exclusivamente pelas regras de visibilidade/autorização
+  // do módulo Tarefas (quem é superior de quem). É independente do "role" acima, que continua
+  // controlando as permissões de tela/ação em todo o restante do sistema.
+  hierarchyLevel: text("hierarchy_level", { enum:["ADMIN","GESTOR","SUB1","SUB2","SUB3","USUARIO"] }).notNull().default("USUARIO"),
   status: text("status", { enum:["ACTIVE","INACTIVE"] }).notNull().default("ACTIVE"),
   theme: text("theme", { enum:["LIGHT","DARK"] }).notNull().default("LIGHT"),
   isPrimaryAdmin: boolean("is_primary_admin").notNull().default(false),
@@ -576,15 +580,25 @@ export const tasks = pgTable("tasks", {
   parentTaskId: integer("parent_task_id").references((): AnyPgColumn => tasks.id),
   title: text("title").notNull(),
   description: text("description"),
+  // Obrigatório na aplicação (validado nas rotas de API); mantido opcional aqui no banco
+  // apenas para não quebrar com eventuais registros legados sem responsável definido.
   assigneeId: integer("assignee_id").references(() => users.id),
   urgency: text("urgency", { enum:["LOW","MEDIUM","HIGH","URGENT"] }).notNull().default("MEDIUM"),
   dueDate: text("due_date").notNull(),
-  status: text("status", { enum:["TODO","IN_PROGRESS","DONE"] }).notNull().default("TODO"),
+  status: text("status", { enum:["TODO","IN_PROGRESS","DONE","NOT_DONE"] }).notNull().default("TODO"),
   createdBy: integer("created_by").references(() => users.id),
   completedAt: text("completed_at"),
+  completedBy: integer("completed_by").references(() => users.id),
+  completionNote: text("completion_note"),
+  notDoneAt: text("not_done_at"),
+  notDoneBy: integer("not_done_by").references(() => users.id),
+  notDoneReason: text("not_done_reason"),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
   index("tasks_parent_idx").on(table.parentTaskId),
   index("tasks_assignee_idx").on(table.assigneeId, table.status),
   index("tasks_due_date_idx").on(table.dueDate),
+  index("tasks_deleted_idx").on(table.deletedAt),
 ]);

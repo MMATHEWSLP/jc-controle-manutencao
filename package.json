@@ -18,7 +18,8 @@
     "test:import-equipamentos": "node --test tests/import-equipamentos.test.mjs",
     "test:db-sql": "esbuild tests/db-sql-translation.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-db-sql-translation.mjs && node --test tests/.tmp-db-sql-translation.mjs",
     "test:pg-parameter-safety": "node --test tests/pg-parameter-type-safety.test.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety",
+    "test:task-authorization": "esbuild tests/task-authorization.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-task-authorization.mjs && node --test tests/.tmp-task-authorization.mjs",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization",
     "import:equipamentos": "node importar-equipamentos.mjs",
     "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
     "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular"
