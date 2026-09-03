@@ -20,3 +20,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run db:migrate
+
+      - name: Verificar registros que precisam de regularização (somente leitura)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node verificar-regularizacao-tarefas.mjs
