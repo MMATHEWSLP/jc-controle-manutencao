@@ -10,11 +10,22 @@ import {
 import { notifyUser } from "../../../lib/task-notifications";
 
 export type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "NOT_DONE" | "CANCELLED";
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "AWAITING_COMPLETION_APPROVAL" | "AWAITING_NOT_DONE_AUTHORIZATION" | "DONE" | "NOT_DONE" | "CANCELLED";
 
 export const URGENCY_LABELS: Record<Urgency, string> = { LOW: "Baixa", MEDIUM: "Média", HIGH: "Alta", URGENT: "Urgente" };
-export const STATUS_LABELS: Record<TaskStatus, string> = { TODO: "Pendente", IN_PROGRESS: "Em andamento", DONE: "Concluída", NOT_DONE: "Não realizada", CANCELLED: "Cancelada" };
-export const OPEN_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS"];
+export const STATUS_LABELS: Record<TaskStatus, string> = {
+  TODO: "Pendente", IN_PROGRESS: "Em andamento",
+  AWAITING_COMPLETION_APPROVAL: "Aguardando aprovação da conclusão",
+  AWAITING_NOT_DONE_AUTHORIZATION: "Aguardando autorização para não realizar",
+  DONE: "Concluída", NOT_DONE: "Não realizada", CANCELLED: "Cancelada",
+};
+// Tarefas ativas (seção 17): tudo que ainda não recebeu status terminal, incluindo as duas
+// esperas de aprovação — elas nunca podem desaparecer da lista ativa enquanto aguardam decisão.
+export const OPEN_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "AWAITING_COMPLETION_APPROVAL", "AWAITING_NOT_DONE_AUTHORIZATION"];
+export const AWAITING_STATUSES: TaskStatus[] = ["AWAITING_COMPLETION_APPROVAL", "AWAITING_NOT_DONE_AUTHORIZATION"];
+// Estados "normais" de execução, em que o responsável ainda pode solicitar conclusão ou não
+// realização (nenhum pedido em aberto ainda).
+export const ACTIONABLE_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS"];
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -45,11 +56,16 @@ export async function loadTaskRows(id?: number, includeDeleted = false) {
     id: tasks.id, parentTaskId: tasks.parentTaskId, title: tasks.title, description: tasks.description,
     assigneeId: tasks.assigneeId, assigneeName: assignee.name, assigneeTaskRoleId: assignee.taskRoleId,
     urgency: tasks.urgency, dueDate: tasks.dueDate, status: tasks.status,
-    createdBy: tasks.createdBy, createdByName: creator.name, createdByTaskRoleId: creator.taskRoleId,
+    createdBy: tasks.createdBy, createdByName: creator.name, createdByTaskRoleId: creator.taskRoleId, createdByStatus: creator.status,
     creatorRoleSnapshotId: tasks.creatorRoleSnapshotId, assigneeRoleSnapshotId: tasks.assigneeRoleSnapshotId,
     viewedAt: tasks.viewedAt, viewedBy: tasks.viewedBy,
+    statusBeforeApprovalRequest: tasks.statusBeforeApprovalRequest,
+    requestedCompletionBy: tasks.requestedCompletionBy, requestedCompletionAt: tasks.requestedCompletionAt,
     completedAt: tasks.completedAt, completedBy: tasks.completedBy, completionNote: tasks.completionNote,
+    completionApprovedBy: tasks.completionApprovedBy, completionApprovedAt: tasks.completionApprovedAt, completionRejectionReason: tasks.completionRejectionReason,
+    requestedNonExecutionBy: tasks.requestedNonExecutionBy, requestedNonExecutionAt: tasks.requestedNonExecutionAt,
     notDoneAt: tasks.notDoneAt, notDoneBy: tasks.notDoneBy, notDoneReason: tasks.notDoneReason,
+    nonExecutionApprovedBy: tasks.nonExecutionApprovedBy, nonExecutionApprovedAt: tasks.nonExecutionApprovedAt, nonExecutionRejectionReason: tasks.nonExecutionRejectionReason,
     cancelledAt: tasks.cancelledAt, cancelledBy: tasks.cancelledBy, cancelReason: tasks.cancelReason,
     deletedAt: tasks.deletedAt, deletedBy: tasks.deletedBy, createdAt: tasks.createdAt, updatedAt: tasks.updatedAt,
   }).from(tasks)
@@ -69,14 +85,15 @@ export function toTaskAuthRow(row: TaskRow): TaskAuthRow {
 type TaskNode = TaskRow & {
   children: TaskNode[]; urgencyLabel: string; statusLabel: string; overdue: boolean; dueSoon: boolean;
   progressPercent: number | null; totalDescendants: number; completedDescendants: number;
-  canEdit: boolean; canReassign: boolean; canDelete: boolean; canComplete: boolean; canMarkNotDone: boolean;
+  canEdit: boolean; canReassign: boolean; canDelete: boolean;
+  canRequestCompletion: boolean; canRequestNotDone: boolean; canDecide: boolean;
   canStart: boolean; canCancel: boolean; canRestore: boolean;
   viewerIsCreator: boolean; viewerIsAssignee: boolean;
 };
 
 function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, graph: TaskRoleGraph, viewer: TaskViewer, everAssigneeIds: Set<number>, hasEditPermission: boolean): TaskNode {
   const auth = toTaskAuthRow(row);
-  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, auth, row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id)), hasEditPermission);
+  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, auth, row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id), row.createdByStatus), hasEditPermission);
   const children = (childrenByParent.get(row.id) ?? []).map((child) => serializeNode(child, childrenByParent, graph, viewer, everAssigneeIds, hasEditPermission));
   const totalDescendants = children.reduce((sum, child) => sum + child.totalDescendants + 1, 0);
   const completedDescendants = children.reduce((sum, child) => sum + child.completedDescendants + (child.status === "DONE" ? 1 : 0), 0);
@@ -88,8 +105,10 @@ function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, g
     progressPercent: totalDescendants === 0 ? null : Math.round((completedDescendants / totalDescendants) * 100),
     totalDescendants, completedDescendants,
     canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
-    canComplete: permissions.canComplete, canMarkNotDone: permissions.canMarkNotDone,
-    canStart: permissions.canComplete && row.status === "TODO",
+    canRequestCompletion: permissions.canRequestCompletion && (ACTIONABLE_STATUSES as string[]).includes(row.status),
+    canRequestNotDone: permissions.canRequestNotDone && (ACTIONABLE_STATUSES as string[]).includes(row.status),
+    canDecide: permissions.canDecide && (AWAITING_STATUSES as string[]).includes(row.status),
+    canStart: permissions.canRequestCompletion && row.status === "TODO",
     canCancel: permissions.canDelete && (OPEN_STATUSES as string[]).includes(row.status),
     canRestore: false,
     viewerIsCreator: row.createdBy === viewer.id, viewerIsAssignee: row.assigneeId === viewer.id,
@@ -106,7 +125,7 @@ export async function GET(request: Request) {
     // ou tem conexão de visualização/gerenciamento configurada no Gestor de Cargos de Tarefas
     // para o cargo do criador ou do responsável desta tarefa. Nenhuma outra tarefa é exposta,
     // nem mesmo como "contexto" de uma subtarefa visível.
-    const visible = rows.filter((row) => computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id)).canView);
+    const visible = rows.filter((row) => computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id), row.createdByStatus).canView);
     const visibleIds = new Set(visible.map((row) => row.id));
     const childrenByParent = new Map<number, TaskRow[]>();
     for (const row of visible) { if (row.parentTaskId !== null) { const list = childrenByParent.get(row.parentTaskId) ?? []; list.push(row); childrenByParent.set(row.parentTaskId, list); } }

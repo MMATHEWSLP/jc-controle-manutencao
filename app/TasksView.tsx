@@ -3,20 +3,25 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "NOT_DONE" | "CANCELLED";
+type TaskStatus = "TODO" | "IN_PROGRESS" | "AWAITING_COMPLETION_APPROVAL" | "AWAITING_NOT_DONE_AUTHORIZATION" | "DONE" | "NOT_DONE" | "CANCELLED";
 type TaskNode = {
   id:number; parentTaskId:number|null; title:string; description:string|null;
   assigneeId:number|null; assigneeName:string|null;
   urgency:Urgency; urgencyLabel:string; dueDate:string; status:TaskStatus; statusLabel:string;
   createdBy:number|null; createdByName:string|null;
   viewedAt:string|null; viewedBy:number|null;
+  requestedCompletionBy:number|null; requestedCompletionAt:string|null;
   completedAt:string|null; completedBy:number|null; completionNote:string|null;
+  completionApprovedBy:number|null; completionApprovedAt:string|null; completionRejectionReason:string|null;
+  requestedNonExecutionBy:number|null; requestedNonExecutionAt:string|null;
   notDoneAt:string|null; notDoneBy:number|null; notDoneReason:string|null;
+  nonExecutionApprovedBy:number|null; nonExecutionApprovedAt:string|null; nonExecutionRejectionReason:string|null;
   cancelledAt:string|null; cancelledBy:number|null; cancelReason:string|null;
   deletedAt:string|null; deletedBy:number|null;
   overdue:boolean; dueSoon:boolean;
   progressPercent:number|null; totalDescendants:number; completedDescendants:number;
-  canEdit:boolean; canReassign:boolean; canDelete:boolean; canComplete:boolean; canMarkNotDone:boolean;
+  canEdit:boolean; canReassign:boolean; canDelete:boolean;
+  canRequestCompletion:boolean; canRequestNotDone:boolean; canDecide:boolean;
   canStart:boolean; canCancel:boolean; canRestore:boolean;
   viewerIsCreator:boolean; viewerIsAssignee:boolean;
   children:TaskNode[];
@@ -26,13 +31,31 @@ type AuthUser = { name:string; permissions:string[]; profile:string };
 type HistoryEntry = { id:number; userId:number|null; userName:string|null; action:string; previousValue:string|null; newValue:string|null; occurredAt:string };
 type TaskDetail = TaskNode & { createdAt:string; updatedAt:string };
 type ScopeFilter = "" | "received" | "sent";
+type MainTab = "tasks" | "approvals" | "history";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 function formatDate(value:string) { if(!value)return "—"; const date=new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short"}).format(date); }
 function formatDateTime(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
 const urgencyTone:Record<Urgency,string> = { LOW:"green", MEDIUM:"yellow", HIGH:"orange", URGENT:"red" };
-const statusTone:Record<TaskStatus,string> = { TODO:"gray", IN_PROGRESS:"yellow", DONE:"green", NOT_DONE:"red", CANCELLED:"gray" };
-const HISTORY_ACTION_LABELS:Record<string,string> = { TASK_CREATED:"Tarefa criada", TASK_VIEWED:"Visualizada pelo responsável", TASK_STARTED:"Marcada como em andamento", TASK_UPDATED:"Dados atualizados", TASK_REASSIGNED:"Responsável alterado", TASK_COMPLETED:"Concluída", TASK_NOT_DONE:"Marcada como não realizada", TASK_CANCELLED:"Cancelada", TASK_DELETED:"Excluída", TASK_RESTORED:"Restaurada pelo administrador" };
+const statusTone:Record<TaskStatus,string> = {
+  TODO:"gray", IN_PROGRESS:"blue", AWAITING_COMPLETION_APPROVAL:"orange", AWAITING_NOT_DONE_AUTHORIZATION:"orange",
+  DONE:"green", NOT_DONE:"red", CANCELLED:"gray",
+};
+const STATUS_OPTIONS:Array<{value:TaskStatus|"";label:string}> = [
+  { value:"", label:"Todos" }, { value:"TODO", label:"Pendente" }, { value:"IN_PROGRESS", label:"Em andamento" },
+  { value:"AWAITING_COMPLETION_APPROVAL", label:"Aguard. aprovação da conclusão" }, { value:"AWAITING_NOT_DONE_AUTHORIZATION", label:"Aguard. autorização p/ não realizar" },
+  { value:"DONE", label:"Concluída" }, { value:"NOT_DONE", label:"Não realizada" }, { value:"CANCELLED", label:"Cancelada" },
+];
+// Ações legadas (TASK_COMPLETED/TASK_NOT_DONE) continuam mapeadas para não quebrar a leitura do
+// histórico de tarefas gravado antes do fluxo de aprovação em duas etapas.
+const HISTORY_ACTION_LABELS:Record<string,string> = {
+  TASK_CREATED:"Tarefa criada", TASK_VIEWED:"Visualizada pelo responsável", TASK_STARTED:"Marcada como em andamento",
+  TASK_UPDATED:"Dados atualizados", TASK_REASSIGNED:"Responsável alterado",
+  TASK_COMPLETION_REQUESTED:"Conclusão solicitada", TASK_COMPLETION_APPROVED:"Conclusão aprovada", TASK_COMPLETION_REJECTED:"Conclusão rejeitada",
+  TASK_NOT_DONE_REQUESTED:"Não realização solicitada", TASK_NOT_DONE_AUTHORIZED:"Não realização autorizada", TASK_NOT_DONE_DENIED:"Não realização recusada",
+  TASK_COMPLETED:"Concluída", TASK_NOT_DONE:"Marcada como não realizada",
+  TASK_CANCELLED:"Cancelada", TASK_DELETED:"Excluída", TASK_RESTORED:"Restaurada pelo administrador",
+};
 
 function flattenTree(nodes:TaskNode[]):TaskNode[] { return nodes.flatMap((node)=>[node,...flattenTree(node.children)]); }
 function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,overdueOnly:boolean,scope:ScopeFilter) {
@@ -47,7 +70,7 @@ function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,
 function nodeMatches(node:TaskNode,predicate:(node:TaskNode)=>boolean):boolean { return predicate(node) || node.children.some((child)=>nodeMatches(child,predicate)); }
 
 export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash:(message:string)=>void }) {
-  const [mainTab,setMainTab]=useState<"tasks"|"history">("tasks");
+  const [mainTab,setMainTab]=useState<MainTab>("tasks");
   const [tree,setTree]=useState<TaskNode[]>([]);
   const [assignableUsers,setAssignableUsers]=useState<AssignableUser[]>([]);
   const [canCreate,setCanCreate]=useState(false);
@@ -61,8 +84,9 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
   const [scopeFilter,setScopeFilter]=useState<ScopeFilter>("");
   const [collapsed,setCollapsed]=useState<Set<number>>(new Set());
   const [modal,setModal]=useState<{ item:TaskNode|null; presetParentId:number|null }|null>(null);
-  const [completing,setCompleting]=useState<TaskNode|null>(null);
-  const [notDoing,setNotDoing]=useState<TaskNode|null>(null);
+  const [requestingCompletion,setRequestingCompletion]=useState<TaskNode|null>(null);
+  const [requestingNotDone,setRequestingNotDone]=useState<TaskNode|null>(null);
+  const [deciding,setDeciding]=useState<{ node:TaskNode; kind:"COMPLETION"|"NOT_DONE" }|null>(null);
   const [cancelling,setCancelling]=useState<TaskNode|null>(null);
   const [viewingId,setViewingId]=useState<number|null>(null);
 
@@ -73,6 +97,11 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
   const predicate=useCallback((node:TaskNode)=>matchesFilters(node,query,urgencyFilter,statusFilter,overdueOnly,scopeFilter),[query,urgencyFilter,statusFilter,overdueOnly,scopeFilter]);
   const visibleRoots=useMemo(()=>tree.filter((root)=>nodeMatches(root,predicate)),[tree,predicate]);
   const overdueCount=useMemo(()=>flatTasks.filter((node)=>node.overdue).length,[flatTasks]);
+  const hasActiveFilters=Boolean(query||urgencyFilter||statusFilter||overdueOnly||scopeFilter);
+  const clearFilters=useCallback(()=>{ setQuery(""); setUrgencyFilter(""); setStatusFilter(""); setOverdueOnly(false); setScopeFilter(""); },[]);
+  // "Aguardando minha aprovação" (seção 15): só tarefas que o próprio usuário criou e que aguardam
+  // a decisão DELE — nunca soma pedidos de terceiros que ele apenas visualiza por conexão.
+  const pendingApprovals=useMemo(()=>flatTasks.filter((node)=>node.viewerIsCreator && node.canDecide && (node.status==="AWAITING_COMPLETION_APPROVAL"||node.status==="AWAITING_NOT_DONE_AUTHORIZATION")),[flatTasks]);
 
   function toggleCollapse(id:number) { setCollapsed((current)=>{ const next=new Set(current); if(next.has(id))next.delete(id); else next.add(id); return next; }); }
   async function removeTask(node:TaskNode) {
@@ -85,33 +114,52 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
 
   if(loading && tree.length===0) return <div className="page-loading"><span/><p>Carregando tarefas...</p></div>;
   return <>
-    <div className="page-heading module-heading"><div><p className="eyebrow">GESTÃO DE EQUIPE</p><h1>Tarefas</h1><span>Visibilidade por Cargo de Tarefas: cada um só vê tarefas em que é responsável, criador, já foi responsável, ou tem conexão de visualização/gerenciamento configurada no Gestor de Cargos de Tarefas.{overdueCount>0?` ${overdueCount} tarefa(s) atrasada(s) visível(is) para você.`:""}</span></div><div className="heading-actions"><NotificationBell openTask={(taskId)=>setViewingId(taskId)}/>{canCreate && mainTab==="tasks" && <button className="primary" onClick={()=>setModal({ item:null, presetParentId:null })}>＋ Nova tarefa</button>}</div></div>
+    <div className="page-heading module-heading"><div><p className="eyebrow">GESTÃO DE EQUIPE</p><h1>Tarefas</h1><span>Visibilidade por Cargo de Tarefas.{overdueCount>0?` ${overdueCount} tarefa(s) atrasada(s) visível(is) para você.`:""} <details className="inline-help"><summary>Como funciona</summary>Cada pessoa só vê tarefas em que é responsável, criador, já foi responsável, ou tem conexão de visualização/gerenciamento configurada no Gestor de Cargos de Tarefas.</details></span></div><div className="heading-actions"><NotificationBell openTask={(taskId)=>setViewingId(taskId)}/>{canCreate && mainTab==="tasks" && <button className="primary" onClick={()=>setModal({ item:null, presetParentId:null })}>＋ Nova tarefa</button>}</div></div>
     {!viewerHasTaskRole && <div className="operation-error"><span>!</span><div><strong>Seu Cargo de Tarefas não está configurado</strong><p>Você não poderá criar nem receber novas tarefas até que o administrador regularize seu cadastro em Usuários.</p></div></div>}
     {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
-    <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação de Tarefas"><button className={mainTab==="tasks"?"active":""} onClick={()=>setMainTab("tasks")}>Tarefas</button><button className={mainTab==="history"?"active":""} onClick={()=>setMainTab("history")}>Histórico</button></div>
-    {mainTab==="history" ? <TaskHistoryPanel/> : <>
+    <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação de Tarefas">
+      <button className={mainTab==="tasks"?"active":""} onClick={()=>setMainTab("tasks")}>Tarefas</button>
+      {pendingApprovals.length>0 && <button className={mainTab==="approvals"?"active":""} onClick={()=>setMainTab("approvals")}>Aguardando minha aprovação<span className="nav-badge">{pendingApprovals.length}</span></button>}
+      <button className={mainTab==="history"?"active":""} onClick={()=>setMainTab("history")}>Histórico</button>
+    </div>
+    {mainTab==="history" ? <TaskHistoryPanel/> : mainTab==="approvals" ? <>
+      <article className="panel module-panel">
+        <div className="task-card-grid">
+          {pendingApprovals.map((node)=><TaskCard key={node.id} node={node} depth={0} collapsed={collapsed} toggleCollapse={toggleCollapse}
+            openEdit={(n)=>setModal({ item:n, presetParentId:null })} openCreateChild={(n)=>setModal({ item:null, presetParentId:n.id })}
+            openRequestCompletion={setRequestingCompletion} openRequestNotDone={setRequestingNotDone}
+            openDecide={(n,kind)=>setDeciding({ node:n, kind })}
+            openCancel={setCancelling} start={startTask} openDetails={(n)=>setViewingId(n.id)} remove={removeTask} canCreate={canCreate} emphasizeDecision/>)}
+        </div>
+        {pendingApprovals.length===0 && <div className="empty-state">Nenhuma aprovação pendente.</div>}
+      </article>
+    </> : <>
     <TaskSummaryPanel authUser={authUser} users={assignableUsers}/>
     <article className="panel module-panel">
-      <div className="equipment-management-filters">
-        <label className="page-search"><span>⌕</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Pesquisar tarefa ou responsável..."/></label>
+      <div className="module-filters-grid">
+        <label className="page-search span-wide"><span>⌕</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Pesquisar por título ou responsável..."/></label>
         <label>Escopo<select value={scopeFilter} onChange={(event)=>setScopeFilter(event.target.value as ScopeFilter)}><option value="">Todas visíveis</option><option value="received">Recebidas por mim</option><option value="sent">Enviadas por mim</option></select></label>
         <label>Urgência<select value={urgencyFilter} onChange={(event)=>setUrgencyFilter(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
-        <label>Status<select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}><option value="">Todos</option><option value="TODO">Pendente</option><option value="IN_PROGRESS">Em andamento</option><option value="DONE">Concluída</option><option value="NOT_DONE">Não realizada</option><option value="CANCELLED">Cancelada</option></select></label>
-        <label className="fleet-check"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/> Somente atrasadas</label>
+        <label>Status<select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}>{STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label className="compact-switch"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/><span>Somente atrasadas</span></label>
+        {hasActiveFilters && <button type="button" className="secondary clear-filters" onClick={clearFilters}>Limpar filtros</button>}
       </div>
-      <div className="task-tree">
-        {visibleRoots.map((root)=><TaskRow key={root.id} node={root} depth={0} collapsed={collapsed} toggleCollapse={toggleCollapse}
+      <div className="task-card-grid">
+        {visibleRoots.map((root)=><TaskCard key={root.id} node={root} depth={0} collapsed={collapsed} toggleCollapse={toggleCollapse}
           openEdit={(node)=>setModal({ item:node, presetParentId:null })} openCreateChild={(node)=>setModal({ item:null, presetParentId:node.id })}
-          openComplete={setCompleting} openNotDone={setNotDoing} openCancel={setCancelling} start={startTask} openDetails={(node)=>setViewingId(node.id)} remove={removeTask} canCreate={canCreate}/>)}
-        {visibleRoots.length===0 && <div className="empty-state">Nenhuma tarefa encontrada.</div>}
+          openRequestCompletion={setRequestingCompletion} openRequestNotDone={setRequestingNotDone}
+          openDecide={(node,kind)=>setDeciding({ node, kind })}
+          openCancel={setCancelling} start={startTask} openDetails={(node)=>setViewingId(node.id)} remove={removeTask} canCreate={canCreate}/>)}
       </div>
+      {visibleRoots.length===0 && <div className="empty-state">Nenhuma tarefa encontrada.{hasActiveFilters && <button type="button" className="secondary" onClick={clearFilters}>Limpar filtros</button>}</div>}
     </article>
     {modal && <TaskModal item={modal.item} presetParentId={modal.presetParentId} assignableUsers={assignableUsers} flatTasks={flatTasks} close={()=>setModal(null)} saved={async(message)=>{ setModal(null); await load(); flash(message); }}/>}
     </>}
-    {completing && <CompleteModal node={completing} close={()=>setCompleting(null)} saved={async(message)=>{ setCompleting(null); await load(); flash(message); }}/>}
+    {requestingCompletion && <RequestCompletionModal node={requestingCompletion} close={()=>setRequestingCompletion(null)} saved={async(message)=>{ setRequestingCompletion(null); await load(); flash(message); }}/>}
     {cancelling && <CancelTaskModal node={cancelling} close={()=>setCancelling(null)} saved={async(message)=>{ setCancelling(null); await load(); flash(message); }}/>}
-    {notDoing && <NotDoneModal node={notDoing} close={()=>setNotDoing(null)} saved={async(message)=>{ setNotDoing(null); await load(); flash(message); }}/>}
-    {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)} onChanged={load}/>}
+    {requestingNotDone && <RequestNotDoneModal node={requestingNotDone} close={()=>setRequestingNotDone(null)} saved={async(message)=>{ setRequestingNotDone(null); await load(); flash(message); }}/>}
+    {deciding && <DecisionModal node={deciding.node} kind={deciding.kind} close={()=>setDeciding(null)} saved={async(message)=>{ setDeciding(null); await load(); flash(message); }}/>}
+    {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)} onChanged={load} openRequestCompletion={setRequestingCompletion} openRequestNotDone={setRequestingNotDone} openDecide={(node,kind)=>setDeciding({ node, kind })}/>}
   </>;
 }
 
@@ -125,13 +173,13 @@ type HistoryEntryRow = {
   completionNote:string|null; notDoneReason:string|null; cancelReason:string|null;
   createdAt:string; updatedAt:string;
 };
-const HISTORY_STATUS_TONE:Record<string,string> = { TODO:"gray", IN_PROGRESS:"yellow", DONE:"green", NOT_DONE:"red", CANCELLED:"gray", REASSIGNED:"orange" };
+const HISTORY_STATUS_TONE:Record<string,string> = { ...statusTone, REASSIGNED:"orange" };
 
 type TaskNotification = { id:number; taskId:number; type:string; message:string; createdAt:string; readAt:string|null };
 
-// Sino de notificações (seção 18) — recebimento, reatribuição, conclusão, não realização e
-// cancelamento. Prazo próximo/vencido não gera notificação persistida (calculado ao vivo no
-// Painel resumido abaixo); aqui só os eventos que o backend efetivamente grava.
+// Sino de notificações (seção 18) — recebimento, reatribuição, pedidos/decisões de conclusão e
+// não realização, cancelamento. Prazo próximo/vencido não gera notificação persistida (calculado
+// ao vivo no Painel resumido abaixo); aqui só os eventos que o backend efetivamente grava.
 function NotificationBell({ openTask }:{ openTask:(taskId:number)=>void }) {
   const [notifications,setNotifications]=useState<TaskNotification[]>([]);
   const [unreadCount,setUnreadCount]=useState(0);
@@ -157,7 +205,7 @@ function NotificationBell({ openTask }:{ openTask:(taskId:number)=>void }) {
   </div>;
 }
 
-type SummaryData = { receivedPending:number; receivedInProgress:number; receivedOverdue:number; sentAwaitingResponse:number; completedInPeriod:number; notDoneInPeriod:number };
+type SummaryData = { receivedPending:number; receivedInProgress:number; receivedOverdue:number; sentAwaitingResponse:number; sentAwaitingMyApproval:number; completedInPeriod:number; notDoneInPeriod:number };
 
 // Painel resumido (seção 19) — sempre restrito ao que o próprio usuário pode ver; o filtro por
 // usuário/cargo só existe (e só tem efeito) para o cargo raiz, e reaproveita a mesma lista de
@@ -190,6 +238,7 @@ function TaskSummaryPanel({ authUser, users }:{ authUser:AuthUser; users:Assigna
       <div><strong>{summary.receivedInProgress}</strong><span>Em andamento</span></div>
       <div className={summary.receivedOverdue>0?"danger-text":""}><strong>{summary.receivedOverdue}</strong><span>Recebidas vencidas</span></div>
       <div><strong>{summary.sentAwaitingResponse}</strong><span>Enviadas aguardando resposta</span></div>
+      <div className={summary.sentAwaitingMyApproval>0?"warning-text":""}><strong>{summary.sentAwaitingMyApproval}</strong><span>Aguardando minha aprovação</span></div>
       <div><strong>{summary.completedInPeriod}</strong><span>Concluídas no mês</span></div>
       <div><strong>{summary.notDoneInPeriod}</strong><span>Não realizadas no mês</span></div>
     </div>
@@ -225,67 +274,93 @@ function TaskHistoryPanel() {
     finally{ setLoading(false); }
   },[scope,q,status,urgency,roleId,from,to,overdueOnly]);
   useEffect(()=>{ load(); },[load]);
+  const hasActiveFilters=Boolean(q||status||urgency||roleId||from||to||overdueOnly);
+  const clearFilters=useCallback(()=>{ setQ(""); setStatus(""); setUrgency(""); setRoleId(""); setFrom(""); setTo(""); setOverdueOnly(false); },[]);
 
   return <article className="panel module-panel">
     <div className="main-tabs secondary-module-nav" aria-label="Recebidas ou Enviadas"><button className={scope==="received"?"active":""} onClick={()=>setScope("received")}>Histórico de Recebidas</button><button className={scope==="sent"?"active":""} onClick={()=>setScope("sent")}>Histórico de Enviadas</button></div>
-    <div className="equipment-management-filters">
-      <label className="page-search"><span>⌕</span><input value={q} onChange={(event)=>setQ(event.target.value)} placeholder="Pesquisar por título..."/></label>
-      <label>Status<select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="">Todos</option><option value="TODO">Pendente</option><option value="IN_PROGRESS">Em andamento</option><option value="DONE">Concluída</option><option value="NOT_DONE">Não realizada</option><option value="CANCELLED">Cancelada</option></select></label>
+    <div className="module-filters-grid">
+      <label className="page-search span-wide"><span>⌕</span><input value={q} onChange={(event)=>setQ(event.target.value)} placeholder="Pesquisar por título..."/></label>
+      <label>Status<select value={status} onChange={(event)=>setStatus(event.target.value)}>{STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <label>Urgência<select value={urgency} onChange={(event)=>setUrgency(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
       <label>Cargo de Tarefas<select value={roleId} onChange={(event)=>setRoleId(event.target.value)}><option value="">Todos</option>{taskRoles.map((role)=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
-      <label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label>
-      <label>Até<input type="date" value={to} onChange={(event)=>setTo(event.target.value)}/></label>
-      <label className="fleet-check"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/> Somente atrasadas</label>
+      <div className="date-range"><label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label><label>Até<input type="date" value={to} onChange={(event)=>setTo(event.target.value)}/></label></div>
+      <label className="compact-switch"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/><span>Somente atrasadas</span></label>
+      {hasActiveFilters && <button type="button" className="secondary clear-filters" onClick={clearFilters}>Limpar filtros</button>}
     </div>
     {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
-    {loading ? <div className="page-loading"><span/><p>Carregando histórico...</p></div> : <div className="table-scroll"><table><thead><tr><th>Tarefa</th><th>{scope==="received"?"Criador":"Responsável"}</th><th>Cargo</th><th>Prazo</th><th>Urgência</th><th>Status</th><th>Criada em</th><th></th></tr></thead><tbody>
-      {entries.map((entry)=><tr key={entry.id} className={entry.deletedAt?"task-history-deleted":""}>
-        <td><strong className="table-strong">{entry.title}</strong>{entry.deletedAt && <small className="danger-text"> · excluída</small>}</td>
-        <td>{scope==="received"?(entry.createdByName??"—"):(entry.assigneeName??"—")}</td>
-        <td>{(scope==="received"?entry.creatorRoleName:entry.assigneeRoleName)??"—"}</td>
-        <td>{formatDate(entry.dueDate)}</td>
-        <td><span className={`status-pill ${urgencyTone[entry.urgency]}`}>{entry.urgencyLabel}</span></td>
-        <td><span className={`status-pill ${HISTORY_STATUS_TONE[entry.status]??"gray"}`}>{entry.statusLabel}</span>{entry.reassignedAt && <small> em {formatDateTime(entry.reassignedAt)}</small>}</td>
-        <td>{formatDateTime(entry.createdAt)}</td>
-        <td><button onClick={()=>setViewingId(entry.id)}>Ver linha do tempo</button></td>
-      </tr>)}
-    </tbody></table>{entries.length===0 && <div className="empty-state">Nenhum registro encontrado para os filtros atuais.</div>}</div>}
+    {loading ? <div className="page-loading"><span/><p>Carregando histórico...</p></div> : <div className="task-card-grid">
+      {entries.map((entry)=><article key={entry.id} className={`task-card history-card ${entry.deletedAt?"deleted":""}`}>
+        <header className="task-card-head">
+          <h3>{entry.title}</h3>
+          <div className="task-card-badges"><span className={`status-pill ${urgencyTone[entry.urgency]}`}>{entry.urgencyLabel}</span><span className={`status-pill ${HISTORY_STATUS_TONE[entry.status]??"gray"}`}>{entry.statusLabel}</span></div>
+        </header>
+        <div className="task-card-body">
+          <dl>
+            <div><dt>{scope==="received"?"Criador":"Responsável"}</dt><dd>{scope==="received"?(entry.createdByName??"—"):(entry.assigneeName??"—")}</dd></div>
+            <div><dt>Cargo</dt><dd>{(scope==="received"?entry.creatorRoleName:entry.assigneeRoleName)??"—"}</dd></div>
+            <div><dt>Prazo</dt><dd>{formatDate(entry.dueDate)}</dd></div>
+            <div><dt>Criada em</dt><dd>{formatDateTime(entry.createdAt)}{entry.reassignedAt && <> · reatribuída em {formatDateTime(entry.reassignedAt)}</>}</dd></div>
+          </dl>
+          {entry.deletedAt && <p className="danger-text">Excluída em {formatDateTime(entry.deletedAt)}</p>}
+        </div>
+        <footer className="task-card-footer"><button onClick={()=>setViewingId(entry.id)}>Ver linha do tempo</button></footer>
+      </article>)}
+    </div>}
+    {!loading && entries.length===0 && <div className="empty-state">Nenhum registro encontrado para os filtros atuais.{hasActiveFilters && <button type="button" className="secondary" onClick={clearFilters}>Limpar filtros</button>}</div>}
     {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)} onChanged={load}/>}
   </article>;
 }
 
-function TaskRow({ node, depth, collapsed, toggleCollapse, openEdit, openCreateChild, openComplete, openNotDone, openCancel, start, openDetails, remove, canCreate }:{
+function TaskCard({ node, depth, collapsed, toggleCollapse, openEdit, openCreateChild, openRequestCompletion, openRequestNotDone, openDecide, openCancel, start, openDetails, remove, canCreate, emphasizeDecision }:{
   node:TaskNode; depth:number; collapsed:Set<number>; toggleCollapse:(id:number)=>void;
-  openEdit:(node:TaskNode)=>void; openCreateChild:(node:TaskNode)=>void; openComplete:(node:TaskNode)=>void; openNotDone:(node:TaskNode)=>void;
+  openEdit:(node:TaskNode)=>void; openCreateChild:(node:TaskNode)=>void;
+  openRequestCompletion:(node:TaskNode)=>void; openRequestNotDone:(node:TaskNode)=>void;
+  openDecide:(node:TaskNode,kind:"COMPLETION"|"NOT_DONE")=>void;
   openCancel:(node:TaskNode)=>void; start:(node:TaskNode)=>void;
-  openDetails:(node:TaskNode)=>void; remove:(node:TaskNode)=>void; canCreate:boolean;
+  openDetails:(node:TaskNode)=>void; remove:(node:TaskNode)=>void; canCreate:boolean; emphasizeDecision?:boolean;
 }) {
   const isCollapsed=collapsed.has(node.id);
-  const rowClass=`task-row ${node.overdue?"overdue":node.dueSoon?"due-soon":""}`.trim();
-  return <>
-    <div className={rowClass} style={{ paddingLeft:`${depth*22}px` }}>
-      {node.children.length>0 ? <button type="button" className="task-toggle" onClick={()=>toggleCollapse(node.id)} aria-label={isCollapsed?"Expandir":"Recolher"}>{isCollapsed?"▸":"▾"}</button> : <span className="task-toggle-spacer"/>}
-      <div className="task-main">
-        <div className="task-title-line"><button type="button" className="task-title-link" onClick={()=>openDetails(node)}><strong className={node.status==="DONE"?"task-done":""}>{node.title}</strong></button><span className={`status-pill ${urgencyTone[node.urgency]}`}>{node.urgencyLabel}</span><span className={`status-pill ${statusTone[node.status]}`}>{node.statusLabel}</span></div>
-        <div className="task-meta">
-          <span>Responsável: {node.assigneeName??"—"}</span>
-          <span>Criado por: {node.createdByName??"—"}</span>
-          <span className={node.overdue?"danger-text":node.dueSoon?"warning-text":""}>Prazo: {formatDate(node.dueDate)}{node.overdue?" · Atrasada":node.dueSoon?" · Vence em breve":""}</span>
-          {node.progressPercent!==null && <span>{node.progressPercent}% concluído ({node.completedDescendants}/{node.totalDescendants})</span>}
-        </div>
+  const accent=node.overdue?"overdue":node.status==="AWAITING_COMPLETION_APPROVAL"||node.status==="AWAITING_NOT_DONE_AUTHORIZATION"?"awaiting":node.status==="IN_PROGRESS"?"in-progress":node.status==="DONE"?"done":"neutral";
+  const decideKind = node.status==="AWAITING_COMPLETION_APPROVAL" ? "COMPLETION" : node.status==="AWAITING_NOT_DONE_AUTHORIZATION" ? "NOT_DONE" : null;
+  return <article className={`task-card accent-${accent} ${depth>0?"task-card-nested":""}`}>
+    <header className="task-card-head">
+      <span className="task-card-id">#{node.id}</span>
+      <h3><button type="button" className="task-title-link" onClick={()=>openDetails(node)}>{node.title}</button></h3>
+      <div className="task-card-badges">
+        <span className={`status-pill ${urgencyTone[node.urgency]}`}>{node.urgencyLabel}</span>
+        <span className={`status-pill ${statusTone[node.status]}`}>{node.statusLabel}</span>
+        {node.overdue && <span className="status-pill red">Atrasada</span>}
       </div>
-      <div className="equipment-row-actions">
-        {node.canStart && <button onClick={()=>start(node)}>▸ Iniciar</button>}
-        {node.canComplete && <button className="primary" onClick={()=>openComplete(node)}>Concluir</button>}
-        {node.canMarkNotDone && <button onClick={()=>openNotDone(node)}>Não realizar</button>}
-        {canCreate && node.canEdit && <button onClick={()=>openCreateChild(node)}>+ Subtarefa</button>}
-        {node.canEdit && <button onClick={()=>openEdit(node)}>Editar</button>}
-        {node.canCancel && <button onClick={()=>openCancel(node)}>Cancelar</button>}
-        {node.canDelete && <button className="danger-action" onClick={()=>remove(node)}>Excluir</button>}
-      </div>
+    </header>
+    <div className="task-card-body">
+      {node.description && <p className="task-card-description">{node.description}</p>}
+      <dl>
+        <div><dt>Responsável</dt><dd>{node.assigneeName??"—"}</dd></div>
+        <div><dt>Criado por</dt><dd>{node.createdByName??"—"}</dd></div>
+        <div><dt>Prazo</dt><dd className={node.overdue?"danger-text":node.dueSoon?"warning-text":""}>{formatDate(node.dueDate)}</dd></div>
+        {node.progressPercent!==null && <div><dt>Progresso</dt><dd>{node.progressPercent}% ({node.completedDescendants}/{node.totalDescendants} subtarefas)</dd></div>}
+      </dl>
+      {node.status==="AWAITING_COMPLETION_APPROVAL" && <p className="task-card-pending-note">Pedido de conclusão de {node.requestedCompletionAt?formatDateTime(node.requestedCompletionAt):"—"}{node.completionNote?`: "${node.completionNote}"`:""}</p>}
+      {node.status==="AWAITING_NOT_DONE_AUTHORIZATION" && <p className="task-card-pending-note">Pedido de não realização de {node.requestedNonExecutionAt?formatDateTime(node.requestedNonExecutionAt):"—"}{node.notDoneReason?`: "${node.notDoneReason}"`:""}</p>}
     </div>
-    {!isCollapsed && node.children.map((child)=><TaskRow key={child.id} node={child} depth={depth+1} collapsed={collapsed} toggleCollapse={toggleCollapse} openEdit={openEdit} openCreateChild={openCreateChild} openComplete={openComplete} openNotDone={openNotDone} openCancel={openCancel} start={start} openDetails={openDetails} remove={remove} canCreate={canCreate}/>)}
-  </>;
+    <footer className="task-card-footer">
+      {node.canStart && <button onClick={()=>start(node)}>▸ Iniciar</button>}
+      {node.canRequestCompletion && <button className="primary" onClick={()=>openRequestCompletion(node)}>Concluir</button>}
+      {node.canRequestNotDone && <button onClick={()=>openRequestNotDone(node)}>Não realizar</button>}
+      {node.canDecide && decideKind && <button className={emphasizeDecision?"primary":""} onClick={()=>openDecide(node,decideKind)}>Decidir</button>}
+      {canCreate && node.canEdit && <button onClick={()=>openCreateChild(node)}>+ Subtarefa</button>}
+      {node.canEdit && <button onClick={()=>openEdit(node)}>Editar</button>}
+      {node.canCancel && <button onClick={()=>openCancel(node)}>Cancelar</button>}
+      {node.canDelete && <button className="danger-action" onClick={()=>remove(node)}>Excluir</button>}
+    </footer>
+    {node.children.length>0 && <div className="task-card-subtasks">
+      <button type="button" className="task-card-subtasks-toggle" onClick={()=>toggleCollapse(node.id)}>{isCollapsed?"▸":"▾"} {node.children.length} subtarefa{node.children.length>1?"s":""}</button>
+      {!isCollapsed && <div className="task-card-grid nested">
+        {node.children.map((child)=><TaskCard key={child.id} node={child} depth={depth+1} collapsed={collapsed} toggleCollapse={toggleCollapse} openEdit={openEdit} openCreateChild={openCreateChild} openRequestCompletion={openRequestCompletion} openRequestNotDone={openRequestNotDone} openDecide={openDecide} openCancel={openCancel} start={start} openDetails={openDetails} remove={remove} canCreate={canCreate}/>)}
+      </div>}
+    </div>}
+  </article>;
 }
 
 function TaskModal({ item, presetParentId, assignableUsers, flatTasks, close, saved }:{
@@ -333,7 +408,9 @@ function TaskModal({ item, presetParentId, assignableUsers, flatTasks, close, sa
   </div>;
 }
 
-function CompleteModal({ node, close, saved }:{ node:TaskNode; close:()=>void; saved:(message:string)=>Promise<void> }) {
+// Solicitar conclusão (seção 13): o responsável envia observação + evidência de que terminou, mas
+// a tarefa só vira DONE quando o criador aprovar — nunca aqui.
+function RequestCompletionModal({ node, close, saved }:{ node:TaskNode; close:()=>void; saved:(message:string)=>Promise<void> }) {
   const [note,setNote]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
@@ -341,23 +418,24 @@ function CompleteModal({ node, close, saved }:{ node:TaskNode; close:()=>void; s
     event.preventDefault();
     if(!note.trim()) { setError("A observação da conclusão é obrigatória."); return; }
     setBusy(true); setError("");
-    try { const result=await api<{message:string}>(`/api/tasks/${node.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"COMPLETE", completionNote:note }) }); await saved(result.message); }
-    catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível concluir a tarefa."); }
+    try { const result=await api<{message:string}>(`/api/tasks/${node.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"REQUEST_COMPLETION", completionNote:note }) }); await saved(result.message); }
+    catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível solicitar a conclusão."); }
     finally { setBusy(false); }
   }
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
     <section className="modal">
-      <header><div><p className="eyebrow">CONCLUIR TAREFA</p><h2>{node.title}</h2><span>Confirme a conclusão e descreva o que foi feito.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">SOLICITAR CONCLUSÃO</p><h2>{node.title}</h2><span>Descreva o que foi feito. A tarefa só será concluída após a aprovação de quem a criou.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Observação da conclusão *<textarea required value={note} onChange={(event)=>setNote(event.target.value)} placeholder="Descreva como a tarefa foi concluída."/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
-        <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy?"Confirmando...":"Confirmar conclusão"}</button></div>
+        <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy?"Enviando...":"Enviar para aprovação"}</button></div>
       </form>
     </section>
   </div>;
 }
 
-function NotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>void; saved:(message:string)=>Promise<void> }) {
+// Solicitar não realização (seção 14): mesma lógica — vira pedido, não decisão final.
+function RequestNotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>void; saved:(message:string)=>Promise<void> }) {
   const [reason,setReason]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
@@ -365,17 +443,60 @@ function NotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>void; sa
     event.preventDefault();
     if(!reason.trim()) { setError("A justificativa é obrigatória."); return; }
     setBusy(true); setError("");
-    try { const result=await api<{message:string}>(`/api/tasks/${node.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"NOT_DONE", notDoneReason:reason }) }); await saved(result.message); }
-    catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível registrar a não realização."); }
+    try { const result=await api<{message:string}>(`/api/tasks/${node.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"REQUEST_NOT_DONE", notDoneReason:reason }) }); await saved(result.message); }
+    catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível registrar o pedido de não realização."); }
     finally { setBusy(false); }
   }
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
     <section className="modal">
-      <header><div><p className="eyebrow">NÃO REALIZAR TAREFA</p><h2>{node.title}</h2><span>Confirme e justifique por que a tarefa não será realizada.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">SOLICITAR NÃO REALIZAÇÃO</p><h2>{node.title}</h2><span>Justifique por que a tarefa não será realizada. A decisão final é de quem a criou.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Justificativa *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explique o motivo."/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
-        <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy?"Confirmando...":"Confirmar"}</button></div>
+        <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy?"Enviando...":"Enviar para autorização"}</button></div>
+      </form>
+    </section>
+  </div>;
+}
+
+// Decisão do criador (seções 13/14/16): aprovar/rejeitar conclusão, ou autorizar/recusar não
+// realização — nunca as duas coisas ao mesmo tempo (o `kind` vem do status atual da tarefa).
+function DecisionModal({ node, kind, close, saved }:{ node:TaskNode; kind:"COMPLETION"|"NOT_DONE"; close:()=>void; saved:(message:string)=>Promise<void> }) {
+  const [decision,setDecision]=useState<"APPROVE"|"REJECT"|null>(null);
+  const [reason,setReason]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const isCompletion=kind==="COMPLETION";
+  const approveAction=isCompletion?"APPROVE_COMPLETION":"AUTHORIZE_NOT_DONE";
+  const rejectAction=isCompletion?"REJECT_COMPLETION":"DENY_NOT_DONE";
+  const rejectField=isCompletion?"completionRejectionReason":"nonExecutionRejectionReason";
+
+  async function submit(event:FormEvent) {
+    event.preventDefault();
+    if(decision==="REJECT" && !reason.trim()) { setError(isCompletion?"Informe o motivo da rejeição.":"Informe o motivo da recusa."); return; }
+    setBusy(true); setError("");
+    try {
+      const body:Record<string,unknown> = decision==="APPROVE" ? { action:approveAction } : { action:rejectAction, [rejectField]:reason };
+      const result=await api<{message:string}>(`/api/tasks/${node.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
+      await saved(result.message);
+    } catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível registrar a decisão."); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
+    <section className="modal">
+      <header><div><p className="eyebrow">{isCompletion?"DECIDIR CONCLUSÃO":"DECIDIR NÃO REALIZAÇÃO"}</p><h2>{node.title}</h2><span>Responsável: {node.assigneeName??"—"}</span></div><button onClick={close}>×</button></header>
+      <div className="modal-form">
+        <div className="full"><span>{isCompletion?"Observação enviada":"Justificativa enviada"}</span><p>{(isCompletion?node.completionNote:node.notDoneReason) || "—"}</p></div>
+      </div>
+      <form className="modal-form" onSubmit={submit}>
+        <div className="full decision-choice">
+          <button type="button" className={decision==="APPROVE"?"primary":"secondary"} onClick={()=>setDecision("APPROVE")}>{isCompletion?"✓ Aprovar conclusão":"✓ Autorizar não realização"}</button>
+          <button type="button" className={decision==="REJECT"?"danger-action":"secondary"} onClick={()=>setDecision("REJECT")}>{isCompletion?"✕ Rejeitar":"✕ Não autorizar"}</button>
+        </div>
+        {decision==="REJECT" && <label className="full">{isCompletion?"Motivo da rejeição *":"Motivo da recusa *"}<textarea required value={reason} onChange={(event)=>setReason(event.target.value)}/></label>}
+        {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
+        <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy || !decision}>{busy?"Confirmando...":"Confirmar decisão"}</button></div>
       </form>
     </section>
   </div>;
@@ -405,7 +526,10 @@ function CancelTaskModal({ node, close, saved }:{ node:TaskNode; close:()=>void;
   </div>;
 }
 
-function TaskDetailModal({ id, close, onChanged }:{ id:number; close:()=>void; onChanged?:()=>void }) {
+function TaskDetailModal({ id, close, onChanged, openRequestCompletion, openRequestNotDone, openDecide }:{
+  id:number; close:()=>void; onChanged?:()=>void;
+  openRequestCompletion?:(node:TaskNode)=>void; openRequestNotDone?:(node:TaskNode)=>void; openDecide?:(node:TaskNode,kind:"COMPLETION"|"NOT_DONE")=>void;
+}) {
   const [detail,setDetail]=useState<TaskDetail|null>(null);
   const [history,setHistory]=useState<HistoryEntry[]>([]);
   const [loading,setLoading]=useState(true);
@@ -419,6 +543,7 @@ function TaskDetailModal({ id, close, onChanged }:{ id:number; close:()=>void; o
     catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível restaurar a tarefa."); }
     finally{ setRestoring(false); }
   }
+  const decideKind = detail && (detail.status==="AWAITING_COMPLETION_APPROVAL" ? "COMPLETION" : detail.status==="AWAITING_NOT_DONE_AUTHORIZATION" ? "NOT_DONE" : null);
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
     <section className="modal task-detail-modal">
       <header><div><p className="eyebrow">DETALHES DA TAREFA</p><h2>{detail?.title ?? "Carregando..."}</h2><span>Histórico completo de alterações desta tarefa.</span></div><button onClick={close}>×</button></header>
@@ -433,9 +558,18 @@ function TaskDetailModal({ id, close, onChanged }:{ id:number; close:()=>void; o
           <div><span>Prazo</span><strong>{formatDate(detail.dueDate)}</strong></div>
           <div><span>Status</span><strong>{detail.statusLabel}</strong></div>
           {detail.viewedAt && <div><span>Visualizada pelo responsável em</span><strong>{formatDateTime(detail.viewedAt)}</strong></div>}
-          {detail.completionNote && <div className="full"><span>Observação da conclusão ({formatDateTime(detail.completedAt)})</span><p>{detail.completionNote}</p></div>}
-          {detail.notDoneReason && <div className="full"><span>Justificativa de não realização ({formatDateTime(detail.notDoneAt)})</span><p>{detail.notDoneReason}</p></div>}
+          {detail.completionNote && <div className="full"><span>Observação da conclusão ({formatDateTime(detail.requestedCompletionAt ?? detail.completedAt)})</span><p>{detail.completionNote}</p></div>}
+          {detail.completionApprovedAt && <div className="full"><span>Conclusão aprovada em {formatDateTime(detail.completionApprovedAt)}</span></div>}
+          {detail.completionRejectionReason && <div className="full"><span>Motivo da rejeição da conclusão</span><p>{detail.completionRejectionReason}</p></div>}
+          {detail.notDoneReason && <div className="full"><span>Justificativa de não realização ({formatDateTime(detail.requestedNonExecutionAt ?? detail.notDoneAt)})</span><p>{detail.notDoneReason}</p></div>}
+          {detail.nonExecutionApprovedAt && <div className="full"><span>Não realização autorizada em {formatDateTime(detail.nonExecutionApprovedAt)}</span></div>}
+          {detail.nonExecutionRejectionReason && <div className="full"><span>Motivo da recusa da não realização</span><p>{detail.nonExecutionRejectionReason}</p></div>}
           {detail.cancelReason && <div className="full"><span>Motivo do cancelamento ({formatDateTime(detail.cancelledAt)})</span><p>{detail.cancelReason}</p></div>}
+          {(detail.canRequestCompletion || detail.canRequestNotDone || (detail.canDecide && decideKind)) && <div className="full modal-footer" style={{ padding:0 }}>
+            {detail.canRequestCompletion && openRequestCompletion && <button className="primary" onClick={()=>{ close(); openRequestCompletion(detail); }}>Solicitar conclusão</button>}
+            {detail.canRequestNotDone && openRequestNotDone && <button onClick={()=>{ close(); openRequestNotDone(detail); }}>Solicitar não realização</button>}
+            {detail.canDecide && decideKind && openDecide && <button className="primary" onClick={()=>{ close(); openDecide(detail,decideKind); }}>Decidir</button>}
+          </div>}
           <div className="full">
             <p className="eyebrow">HISTÓRICO</p>
             <div className="table-scroll"><table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th></tr></thead><tbody>

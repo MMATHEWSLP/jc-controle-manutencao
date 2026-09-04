@@ -11,7 +11,9 @@ import { taskNotifications } from "../db/schema";
 
 export type NotificationType =
   | "TASK_RECEIVED" | "TASK_REASSIGNED_TO_YOU"
-  | "TASK_COMPLETED" | "TASK_NOT_DONE" | "TASK_CANCELLED";
+  | "TASK_COMPLETION_REQUESTED" | "TASK_COMPLETION_APPROVED" | "TASK_COMPLETION_REJECTED"
+  | "TASK_NOT_DONE_REQUESTED" | "TASK_NOT_DONE_AUTHORIZED" | "TASK_NOT_DONE_DENIED"
+  | "TASK_CANCELLED";
 
 export async function notifyUser(userId: number, taskId: number, type: NotificationType, message: string) {
   const db = await getDb();

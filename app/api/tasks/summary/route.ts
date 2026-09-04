@@ -37,6 +37,9 @@ export async function GET(request: Request) {
       receivedInProgress: received.filter((row) => row.status === "IN_PROGRESS").length,
       receivedOverdue: received.filter((row) => isOverdue(row.dueDate, row.status)).length,
       sentAwaitingResponse: sent.filter((row) => row.status === "TODO" || row.status === "IN_PROGRESS").length,
+      // Pendências de decisão do próprio usuário (seção 15/19) — só conta tarefas que ELE criou e
+      // que aguardam a decisão dele (nunca soma pedidos de terceiros que ele só visualiza).
+      sentAwaitingMyApproval: sent.filter((row) => row.status === "AWAITING_COMPLETION_APPROVAL" || row.status === "AWAITING_NOT_DONE_AUTHORIZATION").length,
       completedInPeriod: received.filter((row) => row.status === "DONE" && inPeriod(row)).length,
       notDoneInPeriod: received.filter((row) => row.status === "NOT_DONE" && inPeriod(row)).length,
     };

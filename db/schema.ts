@@ -598,11 +598,21 @@ export const materialRequests = pgTable("material_requests", {
   requesterId: integer("requester_id").notNull().references(() => users.id),
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   requestedAt: text("requested_at").notNull().default(isoNow),
-  status: text("status", { enum:["PENDING","IN_SEPARATION","SENT","PARTIALLY_SENT","NOT_FULFILLED"] }).notNull().default("PENDING"),
+  // PENDING/IN_SEPARATION são os estados ativos "em espera"; SENT/PARTIALLY_SENT/NOT_FULFILLED/
+  // CANCELLED são terminais (só aparecem no Histórico — seção 10 da especificação). PARTIALLY_SENT
+  // fica ativo (segue exigindo ação sobre os itens não atendidos) até virar SENT/NOT_FULFILLED.
+  status: text("status", { enum:["PENDING","IN_SEPARATION","SENT","PARTIALLY_SENT","NOT_FULFILLED","CANCELLED"] }).notNull().default("PENDING"),
   notes: text("notes"),
   shippedBy: integer("shipped_by").references(() => users.id),
   shippedAt: text("shipped_at"),
   shipmentNotes: text("shipment_notes"),
+  cancelledAt: text("cancelled_at"),
+  cancelledBy: integer("cancelled_by").references(() => users.id),
+  cancelReason: text("cancel_reason"),
+  // Reabertura (seção 10): volta uma solicitação terminal para PENDING. Preserva os campos de
+  // envio/cancelamento anteriores como histórico — só o status muda, o evento fica no audit log.
+  reopenedAt: text("reopened_at"),
+  reopenedBy: integer("reopened_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
   index("material_requests_requester_idx").on(table.requesterId, table.requestedAt),
@@ -638,19 +648,41 @@ export const tasks = pgTable("tasks", {
   assigneeRoleSnapshotId: integer("assignee_role_snapshot_id").references(() => taskRoles.id),
   urgency: text("urgency", { enum:["LOW","MEDIUM","HIGH","URGENT"] }).notNull().default("MEDIUM"),
   dueDate: text("due_date").notNull(),
-  status: text("status", { enum:["TODO","IN_PROGRESS","DONE","NOT_DONE","CANCELLED"] }).notNull().default("TODO"),
+  // AWAITING_COMPLETION_APPROVAL/AWAITING_NON_EXECUTION_APPROVAL: estados intermediários do fluxo
+  // de aprovação (seções 12-17 da especificação). O responsável nunca leva a tarefa direto a
+  // DONE/NOT_DONE — só o criador (ou o cargo raiz, quando o criador não pode decidir) faz essa
+  // transição final, via APPROVE_COMPLETION/REJECT_COMPLETION/AUTHORIZE_NOT_DONE/DENY_NOT_DONE.
+  status: text("status", { enum:["TODO","IN_PROGRESS","AWAITING_COMPLETION_APPROVAL","AWAITING_NOT_DONE_AUTHORIZATION","DONE","NOT_DONE","CANCELLED"] }).notNull().default("TODO"),
   createdBy: integer("created_by").references(() => users.id),
   // "Visualizada" não é um status próprio (evitaria voltar a refletir status real depois que o
   // responsável avança para Em andamento/Concluída/etc.) — é um carimbo à parte, e a tela deriva
   // o rótulo "Visualizada" quando status ainda é TODO mas viewedAt já foi preenchido.
   viewedAt: text("viewed_at"),
   viewedBy: integer("viewed_by").references(() => users.id),
+  // Guarda o status anterior ao pedido de aprovação (TODO ou IN_PROGRESS) para poder devolver a
+  // tarefa exatamente a esse estado se o criador rejeitar/não autorizar (seções 13/14).
+  statusBeforeApprovalRequest: text("status_before_approval_request", { enum:["TODO","IN_PROGRESS"] }),
+  // Pedido de conclusão (seção 13): preenchidos quando o responsável solicita a conclusão.
+  // completionNote guarda a "Observação da conclusão" enviada nesse momento (reaproveitado — já
+  // existia com esse mesmo sentido antes da aprovação em duas etapas).
+  requestedCompletionBy: integer("requested_completion_by").references(() => users.id),
+  requestedCompletionAt: text("requested_completion_at"),
   completedAt: text("completed_at"),
   completedBy: integer("completed_by").references(() => users.id),
   completionNote: text("completion_note"),
+  completionApprovedBy: integer("completion_approved_by").references(() => users.id),
+  completionApprovedAt: text("completion_approved_at"),
+  completionRejectionReason: text("completion_rejection_reason"),
+  // Pedido de não realização (seção 14): mesmo desenho do bloco de conclusão acima.
+  // notDoneReason guarda a justificativa enviada pelo responsável no pedido (reaproveitado).
+  requestedNonExecutionBy: integer("requested_non_execution_by").references(() => users.id),
+  requestedNonExecutionAt: text("requested_non_execution_at"),
   notDoneAt: text("not_done_at"),
   notDoneBy: integer("not_done_by").references(() => users.id),
   notDoneReason: text("not_done_reason"),
+  nonExecutionApprovedBy: integer("non_execution_approved_by").references(() => users.id),
+  nonExecutionApprovedAt: text("non_execution_approved_at"),
+  nonExecutionRejectionReason: text("non_execution_rejection_reason"),
   cancelledAt: text("cancelled_at"),
   cancelledBy: integer("cancelled_by").references(() => users.id),
   cancelReason: text("cancel_reason"),

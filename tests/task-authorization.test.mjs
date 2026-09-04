@@ -132,7 +132,7 @@ test("cenário 16.2: quem já foi responsável (everAssignee=true) continua vend
 test("terceiro sem conexão e sem papel na tarefa não vê nada (nenhuma permissão)", () => {
   const { graph, id } = buildGraph(["ADMIN", "GESTOR", "SUB1"]);
   const outsider = computeTaskPermissions(graph, viewer(999, id("SUB1")), task({ createdBy: 100, assigneeId: 200 }), id("GESTOR"), id("SUB1"), false);
-  assert.deepEqual(outsider, { canView: false, canEdit: false, canReassign: false, canDelete: false, canComplete: false, canMarkNotDone: false });
+  assert.deepEqual(outsider, { canView: false, canEdit: false, canReassign: false, canDelete: false, canRequestCompletion: false, canRequestNotDone: false, canDecide: false });
 });
 
 test("cargo raiz vê e gerencia qualquer tarefa, mesmo sem nenhuma conexão configurada", () => {
@@ -143,13 +143,49 @@ test("cargo raiz vê e gerencia qualquer tarefa, mesmo sem nenhuma conexão conf
   assert.equal(permissions.canDelete, true);
 });
 
-test("cargo raiz só conclui/não-realiza se ele mesmo for o responsável — não pode agir em nome de outra pessoa", () => {
+test("cargo raiz só solicita conclusão/não-realização se ele mesmo for o responsável — não pode agir em nome de outra pessoa", () => {
   const { graph, id } = buildGraph(["ADMIN", "USUARIO"], [], "ADMIN");
   const notAssignee = computeTaskPermissions(graph, viewer(1, id("ADMIN")), task({ createdBy: 100, assigneeId: 200 }), id("USUARIO"), id("USUARIO"), false);
-  assert.equal(notAssignee.canComplete, false);
-  assert.equal(notAssignee.canMarkNotDone, false);
+  assert.equal(notAssignee.canRequestCompletion, false);
+  assert.equal(notAssignee.canRequestNotDone, false);
+  assert.equal(notAssignee.canDecide, true); // cargo raiz sempre pode decidir, mesmo não sendo o responsável
   const isAssignee = computeTaskPermissions(graph, viewer(1, id("ADMIN")), task({ createdBy: 100, assigneeId: 1 }), id("USUARIO"), id("ADMIN"), false);
-  assert.equal(isAssignee.canComplete, true);
+  assert.equal(isAssignee.canRequestCompletion, true);
+});
+
+// --- Decisão de aprovação (seção 16) ------------------------------------------------------
+test("por padrão, quem decide (aprova/rejeita conclusão, autoriza/recusa não realização) é o criador da tarefa", () => {
+  const { graph, id } = buildGraph(["ADMIN", "USUARIO"], [], "ADMIN");
+  const t = task({ createdBy: 100, assigneeId: 200 });
+  const creator = computeTaskPermissions(graph, viewer(100, id("USUARIO")), t, id("USUARIO"), id("USUARIO"), false, "ACTIVE");
+  assert.equal(creator.canDecide, true);
+  const assignee = computeTaskPermissions(graph, viewer(200, id("USUARIO")), t, id("USUARIO"), id("USUARIO"), false, "ACTIVE");
+  assert.equal(assignee.canDecide, false); // o responsável nunca decide o próprio pedido
+});
+
+test("o criador não pode decidir quando está inativo — só o cargo raiz decide nesse caso", () => {
+  const { graph, id } = buildGraph(["ADMIN", "USUARIO"], [], "ADMIN");
+  const t = task({ createdBy: 100, assigneeId: 200 });
+  const inactiveCreator = computeTaskPermissions(graph, viewer(100, id("USUARIO")), t, id("USUARIO"), id("USUARIO"), false, "INACTIVE");
+  assert.equal(inactiveCreator.canDecide, false);
+  const root = computeTaskPermissions(graph, viewer(1, id("ADMIN")), t, id("USUARIO"), id("USUARIO"), false, "INACTIVE");
+  assert.equal(root.canDecide, true);
+});
+
+test("o criador não pode decidir quando o usuário criador não existe mais (createdBy nulo) — só o cargo raiz decide", () => {
+  const { graph, id } = buildGraph(["ADMIN", "USUARIO"], [], "ADMIN");
+  const t = task({ createdBy: null, assigneeId: 200 });
+  const root = computeTaskPermissions(graph, viewer(1, id("ADMIN")), t, null, id("USUARIO"), false, null);
+  assert.equal(root.canDecide, true);
+});
+
+test("criador e responsável são a mesma pessoa: exige decisão do cargo raiz, o próprio não decide mesmo sendo o criador", () => {
+  const { graph, id } = buildGraph(["ADMIN", "USUARIO"], [], "ADMIN");
+  const t = task({ createdBy: 100, assigneeId: 100 });
+  const selfAssignedCreator = computeTaskPermissions(graph, viewer(100, id("USUARIO")), t, id("USUARIO"), id("USUARIO"), false, "ACTIVE");
+  assert.equal(selfAssignedCreator.canDecide, false);
+  const root = computeTaskPermissions(graph, viewer(1, id("ADMIN")), t, id("USUARIO"), id("USUARIO"), false, "ACTIVE");
+  assert.equal(root.canDecide, true);
 });
 
 test("visualizador autorizado (conexão de visualizar recebidas) só lê — nunca edita, reatribui ou exclui", () => {
@@ -175,8 +211,8 @@ test("gerenciador autorizado (conexão de gerenciar) edita, reatribui e exclui, 
   assert.equal(permissions.canEdit, true);
   assert.equal(permissions.canReassign, true);
   assert.equal(permissions.canDelete, true);
-  assert.equal(permissions.canComplete, false);
-  assert.equal(permissions.canMarkNotDone, false);
+  assert.equal(permissions.canRequestCompletion, false);
+  assert.equal(permissions.canRequestNotDone, false);
 });
 
 test("tarefa sem responsável válido (registro legado sem regularização): visível ao criador e ao cargo raiz (que precisa localizar e regularizar — seção 4), não a um terceiro comum", () => {
@@ -202,8 +238,8 @@ test("responsável comum (não criador, sem conexão de gerenciar) só conclui/n
   assert.equal(permissions.canEdit, false);
   assert.equal(permissions.canReassign, false);
   assert.equal(permissions.canDelete, false);
-  assert.equal(permissions.canComplete, true);
-  assert.equal(permissions.canMarkNotDone, true);
+  assert.equal(permissions.canRequestCompletion, true);
+  assert.equal(permissions.canRequestNotDone, true);
 });
 
 test("criador edita, reatribui e exclui, mas não conclui/não-realiza (a menos que também seja o responsável)", () => {
@@ -212,8 +248,8 @@ test("criador edita, reatribui e exclui, mas não conclui/não-realiza (a menos 
   assert.equal(permissions.canEdit, true);
   assert.equal(permissions.canReassign, true);
   assert.equal(permissions.canDelete, true);
-  assert.equal(permissions.canComplete, false);
-  assert.equal(permissions.canMarkNotDone, false);
+  assert.equal(permissions.canRequestCompletion, false);
+  assert.equal(permissions.canRequestNotDone, false);
 });
 
 test("criador e responsável são a mesma pessoa — permissões acumuladas (união), nada é retirado", () => {
@@ -224,32 +260,33 @@ test("criador e responsável são a mesma pessoa — permissões acumuladas (uni
   assert.equal(permissions.canEdit, true);
   assert.equal(permissions.canReassign, true);
   assert.equal(permissions.canDelete, true);
-  assert.equal(permissions.canComplete, true);
-  assert.equal(permissions.canMarkNotDone, true);
+  assert.equal(permissions.canRequestCompletion, true);
+  assert.equal(permissions.canRequestNotDone, true);
 });
 
 test("gerenciador que também é o responsável acumula a permissão de concluir/não realizar", () => {
   const { graph, id } = buildGraph(["A", "B"], [{ from: "A", to: "B", manage: true }]);
   const t = task({ createdBy: 100, assigneeId: 999 });
   const permissions = computeTaskPermissions(graph, viewer(999, id("B")), t, id("A"), id("B"), false);
-  assert.equal(permissions.canComplete, true);
-  assert.equal(permissions.canMarkNotDone, true);
+  assert.equal(permissions.canRequestCompletion, true);
+  assert.equal(permissions.canRequestNotDone, true);
 });
 
 // --- Gate de módulo (tasks.edit) ---------------------------------------------------------
 test("applyModuleGate zera as ações mutáveis quando falta a permissão de módulo tasks.edit, mas preserva canView", () => {
-  const full = { canView: true, canEdit: true, canReassign: true, canDelete: true, canComplete: true, canMarkNotDone: true };
+  const full = { canView: true, canEdit: true, canReassign: true, canDelete: true, canRequestCompletion: true, canRequestNotDone: true, canDecide: true };
   const gated = applyModuleGate(full, false);
   assert.equal(gated.canView, true);
   assert.equal(gated.canEdit, false);
   assert.equal(gated.canReassign, false);
   assert.equal(gated.canDelete, false);
-  assert.equal(gated.canComplete, false);
-  assert.equal(gated.canMarkNotDone, false);
+  assert.equal(gated.canRequestCompletion, false);
+  assert.equal(gated.canRequestNotDone, false);
+  assert.equal(gated.canDecide, false);
 });
 
 test("applyModuleGate não altera nada quando a permissão de módulo está presente", () => {
-  const full = { canView: true, canEdit: true, canReassign: true, canDelete: true, canComplete: true, canMarkNotDone: true };
+  const full = { canView: true, canEdit: true, canReassign: true, canDelete: true, canRequestCompletion: true, canRequestNotDone: true, canDecide: true };
   assert.deepEqual(applyModuleGate(full, true), full);
 });
 

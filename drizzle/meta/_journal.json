@@ -36,6 +36,13 @@
       "when": 1788530604259,
       "tag": "0004_acoustic_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788545196068,
+      "tag": "0005_shocking_annihilus",
+      "breakpoints": true
     }
   ]
 }

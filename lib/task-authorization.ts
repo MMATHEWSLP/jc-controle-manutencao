@@ -104,14 +104,26 @@ export function isTaskAssignee(viewer: TaskViewer, task: TaskAuthRow) {
   return task.assigneeId !== null && task.assigneeId === viewer.id;
 }
 
-export type TaskPermissions = { canView: boolean; canEdit: boolean; canReassign: boolean; canDelete: boolean; canComplete: boolean; canMarkNotDone: boolean };
+export type TaskPermissions = {
+  canView: boolean; canEdit: boolean; canReassign: boolean; canDelete: boolean;
+  canRequestCompletion: boolean; canRequestNotDone: boolean; canDecide: boolean;
+};
 
-// Todas as ações mutáveis (editar, reatribuir, excluir, concluir, marcar como não realizada)
-// exigem, além da regra de cargo, que o usuário tenha a permissão de módulo "tasks.edit" —
-// a mesma condição que a rota de API já verifica antes de aceitar qualquer PUT/DELETE.
+// Todas as ações mutáveis (editar, reatribuir, excluir, solicitar conclusão/não realização,
+// decidir sobre um pedido) exigem, além da regra de cargo, que o usuário tenha a permissão de
+// módulo "tasks.edit" — a mesma condição que a rota de API já verifica antes de aceitar qualquer
+// PUT/DELETE.
 export function applyModuleGate(permissions: TaskPermissions, hasEditPermission: boolean): TaskPermissions {
   if (hasEditPermission) return permissions;
-  return { ...permissions, canEdit: false, canReassign: false, canDelete: false, canComplete: false, canMarkNotDone: false };
+  return { ...permissions, canEdit: false, canReassign: false, canDelete: false, canRequestCompletion: false, canRequestNotDone: false, canDecide: false };
+}
+
+// Quem decide um pedido de conclusão/não realização (seção 16): o criador, por padrão — exceto
+// quando ele não pode decidir (está inativo, não existe mais, ou é a mesma pessoa que o
+// responsável), caso em que só o cargo raiz decide. O cargo raiz sempre pode decidir, mesmo
+// quando o criador também poderia (dupla cobertura proposital, nunca a única via).
+function creatorCanDecide(task: TaskAuthRow, creatorStatus: "ACTIVE" | "INACTIVE" | null) {
+  return task.createdBy !== null && creatorStatus === "ACTIVE" && task.createdBy !== task.assigneeId;
 }
 
 // creatorRoleId/assigneeRoleId aqui são o cargo ATUAL de cada pessoa (não o snapshot gravado na
@@ -119,6 +131,8 @@ export function applyModuleGate(permissions: TaskPermissions, hasEditPermission:
 // vigente agora, para que uma mudança de cargo produza efeito imediato sem reescrever tarefas.
 // `everAssignee` cobre a regra "quem já foi responsável pode consultar sua participação
 // histórica" (seção 16.2) — calculado a partir do histórico de auditoria pelo chamador.
+// `creatorStatus` é o status ATUAL do criador (null se o usuário não existe mais), usado só para
+// resolver quem decide um pedido de aprovação (ver `creatorCanDecide` acima).
 export function computeTaskPermissions(
   graph: TaskRoleGraph,
   viewer: TaskViewer,
@@ -126,6 +140,7 @@ export function computeTaskPermissions(
   creatorRoleId: number | null,
   assigneeRoleId: number | null,
   everAssignee: boolean,
+  creatorStatus: "ACTIVE" | "INACTIVE" | null = null,
 ): TaskPermissions {
   const creator = isTaskCreator(viewer, task);
   const assignee = isTaskAssignee(viewer, task);
@@ -140,11 +155,14 @@ export function computeTaskPermissions(
     canEdit: managerRole,
     canReassign: managerRole,
     canDelete: managerRole,
-    // Concluir/Não realizar é sempre uma ação do responsável ATUAL — nem o criador, nem um
-    // gerenciador autorizado, nem o cargo raiz podem executá-la em nome de outra pessoa; só
+    // Solicitar conclusão/não realização é sempre uma ação do responsável ATUAL — nem o criador,
+    // nem um gerenciador autorizado, nem o cargo raiz podem executá-la em nome de outra pessoa; só
     // acumulam a permissão quando também são, eles próprios, o responsável (seção 17/18).
-    canComplete: assignee,
-    canMarkNotDone: assignee,
+    canRequestCompletion: assignee,
+    canRequestNotDone: assignee,
+    // Decidir (aprovar/rejeitar conclusão, autorizar/recusar não realização) — nunca o
+    // responsável, mesmo que também seja gerenciador; ver `creatorCanDecide`.
+    canDecide: root || (creator && creatorCanDecide(task, creatorStatus)),
   };
 }
 

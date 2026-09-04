@@ -1,31 +1,115 @@
-.task-tree{padding:4px 2px}
-.task-row{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #edf0f2;transition:background .15s ease}
-.task-row:last-child{border-bottom:0}
-.task-row.overdue{background:#fff6f6}
-.task-row.due-soon{background:#fffaf0}
-.task-toggle{width:18px;height:18px;margin-top:1px;border:0;background:none;color:#7390a4;font-size:11px;flex:0 0 auto;cursor:pointer}
-.task-toggle-spacer{width:18px;flex:0 0 auto}
-.task-main{flex:1;min-width:0}
-.task-title-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.task-title-line strong{font-size:11px;color:#1b354a}
-.task-title-line strong.task-done{color:#93a2ac;text-decoration:line-through}
-.task-title-link{border:0;background:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit}
-.task-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:5px;color:#7c8994;font-size:9px}
 .warning-text{color:#b17a08;font-weight:700}
-.task-history-deleted{opacity:.68}
-.task-history-deleted td{background:#fff8f8}
-html[data-theme="dark"] .task-history-deleted td{background:#2a1418}
+html[data-theme="dark"] .warning-text{color:#e7bd6a}
+
+/* ---------------------------------------------------------------------------
+   Filtros — grade responsiva compartilhada por Tarefas e Materiais (seções 2 e
+   6 da especificação). Corrige a causa estrutural (grade rígida de N colunas
+   fixas em .equipment-management-filters, que sobra/falta espaço e empurra
+   "Até" para a própria linha) usando auto-fit: cada campo ocupa uma célula de
+   largura mínima e a grade decide sozinha quantas colunas cabem por linha.
+--------------------------------------------------------------------------- */
+.module-filters-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;align-items:end;padding:14px 16px;border-bottom:1px solid #edf0f2;background:#f8fbfc}
+.module-filters-grid>label{display:flex;flex-direction:column;gap:4px;font-size:9px;font-weight:700;color:#4f6070;min-width:0}
+.module-filters-grid>label>select,.module-filters-grid>label>input:not([type="checkbox"]){min-height:37px;padding:0 10px;border:1px solid #d9e3e8;border-radius:7px;background:#fff;color:#233c50;font-size:10px;font-weight:400}
+.module-filters-grid .page-search{grid-column:span 2;min-width:220px;width:100%;max-width:none}
+.module-filters-grid .page-search.span-wide{grid-column:span 3}
+.module-filters-grid .page-search input{min-height:37px}
+/* "Somente atrasadas" — controle compacto (checkbox + rótulo), nunca um bloco
+   isolado do tamanho de um campo inteiro (seção 6). */
+.compact-switch{display:flex!important;flex-direction:row!important;align-items:center;gap:7px;min-height:37px;padding:0 10px;border:1px solid #d9e3e8;border-radius:7px;background:#fff;justify-self:start;white-space:nowrap}
+.compact-switch input[type="checkbox"]{width:16px;height:16px;margin:0;accent-color:#177d5f;flex:0 0 auto}
+.compact-switch span{font-size:9px;font-weight:700;color:#4f6070}
+.clear-filters{align-self:end;min-height:37px;white-space:nowrap}
+/* De/Até lado a lado, mesma altura, nunca isolados em outra linha (seção 6). */
+.date-range{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.date-range label{display:flex;flex-direction:column;gap:4px;font-size:9px;font-weight:700;color:#4f6070}
+.date-range input{min-height:37px;padding:0 10px;border:1px solid #d9e3e8;border-radius:7px;background:#fff;color:#233c50;font-size:10px}
+@media(max-width:560px){.module-filters-grid{grid-template-columns:1fr}.module-filters-grid .page-search,.module-filters-grid .page-search.span-wide{grid-column:auto}.date-range{grid-template-columns:1fr 1fr}}
+
+/* Ajuda expansível (seção 4) — resume o texto de permissões no cabeçalho e
+   deixa o detalhe em um <details> nativo, sem JS extra. */
+.inline-help{display:inline-block;margin-top:2px}
+.inline-help summary{cursor:pointer;color:#2475a4;font-weight:700;list-style:none}
+.inline-help summary::-webkit-details-marker{display:none}
+.inline-help summary::before{content:"ⓘ ";}
+.inline-help[open] summary{margin-bottom:3px}
+
+/* ---------------------------------------------------------------------------
+   Cards — Tarefas e Materiais (seções 7, 8, 9, 18). Três colunas em telas
+   grandes, duas em médias, uma no celular; altura equilibrada via flex.
+--------------------------------------------------------------------------- */
+.task-card-grid,.material-card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:14px 16px}
+.task-card-grid.nested{grid-template-columns:repeat(2,1fr);padding:0;margin-top:8px}
+@media(max-width:1100px){.task-card-grid,.material-card-grid{grid-template-columns:repeat(2,1fr)}.task-card-grid.nested{grid-template-columns:1fr}}
+@media(max-width:700px){.task-card-grid,.material-card-grid{grid-template-columns:1fr;padding:10px}}
+
+.task-card,.material-card{display:flex;flex-direction:column;min-width:0;border:1px solid #dfe6ea;border-radius:10px;background:#fff;overflow:hidden;border-left-width:4px}
+.task-card.accent-overdue,.material-card.accent-red{border-left-color:#d94a4d}
+.task-card.accent-awaiting,.material-card.accent-orange{border-left-color:#e08a1f}
+.task-card.accent-in-progress,.material-card.accent-yellow{border-left-color:#2475a4}
+.task-card.accent-done,.material-card.accent-green{border-left-color:#188360}
+.task-card.accent-neutral,.material-card.accent-gray{border-left-color:#c3ccd2}
+.task-card-nested{background:#fbfcfd}
+
+.task-card-head{display:flex;align-items:flex-start;flex-wrap:wrap;gap:6px 8px;padding:12px 14px 0}
+.task-card-id{font-size:8px;font-weight:800;letter-spacing:.06em;color:#8995a0}
+.task-card-head h3{margin:0;font-size:12px;line-height:1.35;flex:1 1 140px;min-width:0}
+.task-title-link{border:0;background:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit;color:#1b354a;font-weight:700}
+.task-title-link:hover{text-decoration:underline}
+.task-card-badges{display:flex;flex-wrap:wrap;gap:5px;width:100%}
+
+.task-card-body{padding:9px 14px 4px;flex:1}
+.task-card-description{margin:0 0 8px;color:#5b6f7f;font-size:10px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.task-card-body dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:7px 10px}
+.task-card-body dl div{min-width:0}
+.task-card-body dt{margin:0;color:#8995a0;font-size:7px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.task-card-body dd{margin:2px 0 0;color:#233c50;font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-card-pending-note{margin:9px 0 0;padding:8px 10px;border-radius:7px;background:#fff6e8;color:#8a5a05;font-size:9px;line-height:1.5}
+.material-card-route{margin:0 0 8px;font-size:10px;color:#5b6f7f}
+
+.task-card-footer{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px 12px;margin-top:auto}
+.task-card-footer button{padding:7px 10px;border:1px solid #d9e3e8;border-radius:6px;background:#fff;color:#3f6175;font-size:8px;font-weight:800}
+.task-card-footer .primary{border-color:#176c51}
+.task-card-footer .danger-action{border-color:#e3aeb1;color:#a13f43}
+.task-card-footer .transfer-action{border-color:#9dcfbd;background:#ecf8f3;color:#147052}
+
+.task-card-subtasks{border-top:1px solid #edf0f2;padding:8px 14px 12px}
+.task-card-subtasks-toggle{border:0;background:none;padding:0;color:#2475a4;font-size:9px;font-weight:700;cursor:pointer}
+
+.history-card.deleted{opacity:.7}
+.history-card.deleted .task-card-head{background:#fff8f8}
+
+html[data-theme="dark"] .module-filters-grid{background:#0f1b25;border-color:#293f4c}
+html[data-theme="dark"] .module-filters-grid>label{color:#93a4ae}
+html[data-theme="dark"] .module-filters-grid>label>select,html[data-theme="dark"] .module-filters-grid>label>input:not([type="checkbox"]),html[data-theme="dark"] .compact-switch,html[data-theme="dark"] .date-range input{background:#101d28;border-color:#304352;color:#dbe7ee}
+html[data-theme="dark"] .compact-switch span,html[data-theme="dark"] .date-range label{color:#93a4ae}
+html[data-theme="dark"] .inline-help summary{color:#5db3e0}
+html[data-theme="dark"] .task-card,html[data-theme="dark"] .material-card{background:#101f2a;border-color:#293f4c}
+html[data-theme="dark"] .task-card-nested{background:#0d1922}
+html[data-theme="dark"] .task-card-id{color:#7d92a0}
+html[data-theme="dark"] .task-title-link{color:#e1edf3}
+html[data-theme="dark"] .task-card-description,html[data-theme="dark"] .material-card-route{color:#93a4ae}
+html[data-theme="dark"] .task-card-body dt{color:#7d92a0}
+html[data-theme="dark"] .task-card-body dd{color:#dbe7ee}
+html[data-theme="dark"] .task-card-pending-note{background:#2a2210;color:#e7bd6a}
+html[data-theme="dark"] .task-card-footer button{background:#101d28;border-color:#304352;color:#c3d2db}
+html[data-theme="dark"] .task-card-footer .transfer-action{background:#0f2a22;border-color:#2f6350;color:#7fd6ae}
+html[data-theme="dark"] .task-card-subtasks{border-color:#263745}
+html[data-theme="dark"] .history-card.deleted .task-card-head{background:#2a1418}
+
+/* ---------------------------------------------------------------------------
+   Decisão do criador (DecisionModal) — dois botões grandes lado a lado, para
+   deixar Aprovar/Rejeitar (ou Autorizar/Recusar) inconfundíveis.
+--------------------------------------------------------------------------- */
+.decision-choice{display:flex;gap:10px}
+.decision-choice button{flex:1;padding:12px;border-radius:8px;font-size:10px;font-weight:800}
+@media(max-width:520px){.decision-choice{flex-direction:column}}
+
 .task-detail-modal{width:min(720px,96vw)}
 .task-detail-modal .modal-form>div:not(.full){display:flex;flex-direction:column;gap:4px}
 .task-detail-modal .modal-form>div:not(.full)>span{color:#4f6070;font-size:8px;font-weight:700;text-transform:uppercase}
 .task-detail-modal .modal-form>div:not(.full)>strong{font-size:11px;color:#1b354a}
-html[data-theme="dark"] .task-row{border-color:#293f4c}
-html[data-theme="dark"] .task-row.overdue{background:#2a1418}
-html[data-theme="dark"] .task-row.due-soon{background:#2a2210}
-html[data-theme="dark"] .task-title-line strong{color:#e1edf3}
-html[data-theme="dark"] .task-meta{color:#93a4ae}
 html[data-theme="dark"] .task-detail-modal .modal-form>div:not(.full)>strong{color:#e1edf3}
-@media(max-width:700px){.task-meta{gap:9px}.task-row{padding:10px 8px}}
 
 .task-notification-bell{position:relative}
 .task-notification-toggle{position:relative;width:38px;height:38px;border:1px solid #d9e3e8;border-radius:8px;background:#fff;font-size:16px;line-height:1;cursor:pointer}
@@ -48,11 +132,12 @@ html[data-theme="dark"] .task-detail-modal .modal-form>div:not(.full)>strong{col
 .task-summary-head h2{margin:0;font-size:13px;color:#1b354a}
 .task-summary-filters{display:flex;gap:8px;flex-wrap:wrap}
 .task-summary-filters select{min-height:34px;padding:0 8px;border:1px solid #d9e3e8;border-radius:7px;background:#f9fbfc;color:#385365;font-size:10px}
-.task-summary-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:12px}
+.task-summary-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-top:12px}
 .task-summary-grid>div{display:flex;flex-direction:column;gap:4px;padding:11px 12px;border:1px solid #dde7eb;border-radius:9px;background:#fbfcfd}
 .task-summary-grid strong{font-size:20px;color:#193b50;line-height:1}
 .task-summary-grid span{color:#7c8994;font-size:9px}
 .task-summary-grid>div.danger-text strong{color:#b92331}
+.task-summary-grid>div.warning-text strong{color:#8a5a05}
 
 html[data-theme="dark"] .task-notification-toggle{background:#101d28;border-color:#304352;color:#dbe7ee}
 html[data-theme="dark"] .task-notification-dropdown{background:#101f2b;border-color:#293f4c}
@@ -66,6 +151,8 @@ html[data-theme="dark"] .task-summary-head h2{color:#e1edf3}
 html[data-theme="dark"] .task-summary-filters select{background:#0e1c26;border-color:#293f4c;color:#dbe7ee}
 html[data-theme="dark"] .task-summary-grid>div{background:#0e1c26;border-color:#293f4c}
 html[data-theme="dark"] .task-summary-grid strong{color:#e1edf3}
+html[data-theme="dark"] .task-summary-grid>div.warning-text strong{color:#e7bd6a}
+@media(max-width:900px){.task-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.task-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.task-notification-dropdown{position:fixed;right:8px;left:8px;width:auto}}
 
 .hierarchy-panel{padding:16px;display:flex;flex-direction:column;gap:16px}

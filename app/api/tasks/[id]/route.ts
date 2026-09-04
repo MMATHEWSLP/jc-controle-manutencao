@@ -7,7 +7,7 @@ import {
   type TaskPermissions, type TaskRoleGraph, type TaskViewer,
 } from "../../../../lib/task-authorization";
 import { notifyUser } from "../../../../lib/task-notifications";
-import { OPEN_STATUSES, URGENCY_LABELS, displayStatusLabel, loadTaskRows, toTaskAuthRow, type TaskRow, type Urgency } from "../route";
+import { ACTIONABLE_STATUSES, AWAITING_STATUSES, OPEN_STATUSES, STATUS_LABELS, URGENCY_LABELS, displayStatusLabel, loadTaskRows, toTaskAuthRow, type TaskRow, type TaskStatus, type Urgency } from "../route";
 
 type Context = { params: Promise<{ id: string }> };
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -18,7 +18,7 @@ async function findVisibleTask(id: number, graph: TaskRoleGraph, viewer: TaskVie
   const row = (await loadTaskRows(id))[0];
   if (!row) return null;
   const everAssignee = await wasEverAssignee(id, viewer.id);
-  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssignee), hasEditPermission);
+  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssignee, row.createdByStatus), hasEditPermission);
   if (!permissions.canView) return null;
   const isLegitParticipant = row.createdBy === viewer.id || row.assigneeId === viewer.id || everAssignee;
   if (row.deletedAt && !isLegitParticipant && !isRootRole(graph, viewer.taskRoleId)) return null;
@@ -45,14 +45,20 @@ function serializeDetail(row: TaskRow, permissions: TaskPermissions, root: boole
     dueDate: row.dueDate, status: row.status, statusLabel: displayStatusLabel(row.status, row.viewedAt),
     createdBy: row.createdBy, createdByName: row.createdByName,
     viewedAt: row.viewedAt, viewedBy: row.viewedBy,
+    requestedCompletionBy: row.requestedCompletionBy, requestedCompletionAt: row.requestedCompletionAt,
     completedAt: row.completedAt, completedBy: row.completedBy, completionNote: row.completionNote,
+    completionApprovedBy: row.completionApprovedBy, completionApprovedAt: row.completionApprovedAt, completionRejectionReason: row.completionRejectionReason,
+    requestedNonExecutionBy: row.requestedNonExecutionBy, requestedNonExecutionAt: row.requestedNonExecutionAt,
     notDoneAt: row.notDoneAt, notDoneBy: row.notDoneBy, notDoneReason: row.notDoneReason,
+    nonExecutionApprovedBy: row.nonExecutionApprovedBy, nonExecutionApprovedAt: row.nonExecutionApprovedAt, nonExecutionRejectionReason: row.nonExecutionRejectionReason,
     cancelledAt: row.cancelledAt, cancelledBy: row.cancelledBy, cancelReason: row.cancelReason,
     deletedAt: row.deletedAt, deletedBy: row.deletedBy,
     createdAt: row.createdAt, updatedAt: row.updatedAt,
     canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
-    canComplete: permissions.canComplete, canMarkNotDone: permissions.canMarkNotDone,
-    canStart: permissions.canComplete && row.status === "TODO",
+    canRequestCompletion: permissions.canRequestCompletion && (ACTIONABLE_STATUSES as string[]).includes(row.status),
+    canRequestNotDone: permissions.canRequestNotDone && (ACTIONABLE_STATUSES as string[]).includes(row.status),
+    canDecide: permissions.canDecide && (AWAITING_STATUSES as string[]).includes(row.status),
+    canStart: permissions.canRequestCompletion && row.status === "TODO",
     canCancel: permissions.canDelete && (OPEN_STATUSES as string[]).includes(row.status),
     canRestore: root && row.deletedAt !== null,
   };
@@ -117,31 +123,92 @@ export async function PUT(request: Request, { params }: Context) {
     if (existing.deletedAt) return Response.json({ error: "Esta tarefa foi excluída. Peça ao administrador/cargo raiz para restaurá-la antes de qualquer alteração." }, { status: 409 });
 
     if (action === "START") {
-      if (!permissions.canComplete) return Response.json({ error: "Somente o responsável pela tarefa pode iniciar a execução." }, { status: 403 });
+      if (!permissions.canRequestCompletion) return Response.json({ error: "Somente o responsável pela tarefa pode iniciar a execução." }, { status: 403 });
       if (existing.status !== "TODO") return Response.json({ error: "Esta tarefa não está mais pendente." }, { status: 400 });
       await db.update(tasks).set({ status: "IN_PROGRESS", updatedAt: now }).where(eq(tasks.id, id));
       await logTaskAudit(auth.user!.id, id, "TASK_STARTED", { status: existing.status }, { status: "IN_PROGRESS" });
       return Response.json({ message: `Tarefa "${existing.title}" marcada como em andamento.` });
     }
 
-    if (action === "COMPLETE") {
-      if (!permissions.canComplete) return Response.json({ error: "Somente o responsável pela tarefa pode concluí-la." }, { status: 403 });
+    // Fluxo de aprovação (seções 12-17): o responsável nunca conclui/não-realiza diretamente —
+    // ele SOLICITA (REQUEST_*), e só o criador (ou o cargo raiz, quando o criador não pode
+    // decidir — ver `creatorCanDecide`) aprova/rejeita ou autoriza/recusa (APPROVE/REJECT/
+    // AUTHORIZE/DENY). Enquanto aguarda, a tarefa permanece na lista ativa (seção 17).
+
+    if (action === "REQUEST_COMPLETION") {
+      if (!permissions.canRequestCompletion) return Response.json({ error: "Somente o responsável pela tarefa pode solicitar a conclusão." }, { status: 403 });
+      if (!(ACTIONABLE_STATUSES as string[]).includes(existing.status)) return Response.json({ error: "Esta tarefa não está em um estado que permita solicitar conclusão." }, { status: 400 });
       const completionNote = clean(body.completionNote);
       if (!completionNote) return Response.json({ error: "Informe a observação da conclusão." }, { status: 400 });
-      await db.update(tasks).set({ status: "DONE", completedAt: now, completedBy: auth.user!.id, completionNote, updatedAt: now }).where(eq(tasks.id, id));
-      await logTaskAudit(auth.user!.id, id, "TASK_COMPLETED", { status: existing.status }, { status: "DONE", completionNote });
-      if (existing.createdBy && existing.createdBy !== auth.user!.id) await notifyUser(existing.createdBy, id, "TASK_COMPLETED", `${auth.user!.name} concluiu a tarefa "${existing.title}".`);
-      return Response.json({ message: `Tarefa "${existing.title}" concluída.` });
+      await db.update(tasks).set({
+        status: "AWAITING_COMPLETION_APPROVAL", statusBeforeApprovalRequest: existing.status as "TODO" | "IN_PROGRESS",
+        requestedCompletionBy: auth.user!.id, requestedCompletionAt: now, completionNote, completionRejectionReason: null, updatedAt: now,
+      }).where(eq(tasks.id, id));
+      await logTaskAudit(auth.user!.id, id, "TASK_COMPLETION_REQUESTED", { status: existing.status }, { status: "AWAITING_COMPLETION_APPROVAL", completionNote });
+      if (existing.createdBy && existing.createdBy !== auth.user!.id) await notifyUser(existing.createdBy, id, "TASK_COMPLETION_REQUESTED", `${auth.user!.name} solicitou a conclusão da tarefa "${existing.title}" e aguarda sua aprovação.`);
+      return Response.json({ message: `Conclusão da tarefa "${existing.title}" enviada para aprovação.` });
     }
 
-    if (action === "NOT_DONE") {
-      if (!permissions.canMarkNotDone) return Response.json({ error: "Somente o responsável pela tarefa pode informar que não será realizada." }, { status: 403 });
+    if (action === "APPROVE_COMPLETION" || action === "REJECT_COMPLETION") {
+      if (!permissions.canDecide) return Response.json({ error: "Você não possui permissão para decidir sobre esta tarefa." }, { status: 403 });
+      // Idempotência (seção 16): se já não está mais aguardando esta decisão, devolve o estado
+      // atual sem gravar nada de novo — evita duplicar aprovação/rejeição em clique duplo.
+      if (existing.status !== "AWAITING_COMPLETION_APPROVAL") {
+        return Response.json({ message: `Esta tarefa já está com o status "${STATUS_LABELS[existing.status as TaskStatus] ?? existing.status}". Nenhuma nova decisão foi registrada.` });
+      }
+      if (action === "APPROVE_COMPLETION") {
+        await db.update(tasks).set({
+          status: "DONE", completedAt: now, completedBy: existing.requestedCompletionBy,
+          completionApprovedBy: auth.user!.id, completionApprovedAt: now, completionRejectionReason: null, updatedAt: now,
+        }).where(eq(tasks.id, id));
+        await logTaskAudit(auth.user!.id, id, "TASK_COMPLETION_APPROVED", { status: existing.status }, { status: "DONE" });
+        if (existing.requestedCompletionBy && existing.requestedCompletionBy !== auth.user!.id) await notifyUser(existing.requestedCompletionBy, id, "TASK_COMPLETION_APPROVED", `${auth.user!.name} aprovou a conclusão da tarefa "${existing.title}".`);
+        return Response.json({ message: `Conclusão da tarefa "${existing.title}" aprovada.` });
+      }
+      const completionRejectionReason = clean(body.completionRejectionReason);
+      if (!completionRejectionReason) return Response.json({ error: "Informe o motivo da rejeição." }, { status: 400 });
+      const revertedStatus = existing.statusBeforeApprovalRequest ?? "IN_PROGRESS";
+      await db.update(tasks).set({ status: revertedStatus, completionRejectionReason, updatedAt: now }).where(eq(tasks.id, id));
+      await logTaskAudit(auth.user!.id, id, "TASK_COMPLETION_REJECTED", { status: existing.status }, { status: revertedStatus, completionRejectionReason });
+      if (existing.requestedCompletionBy && existing.requestedCompletionBy !== auth.user!.id) await notifyUser(existing.requestedCompletionBy, id, "TASK_COMPLETION_REJECTED", `${auth.user!.name} rejeitou a conclusão da tarefa "${existing.title}": ${completionRejectionReason}`);
+      return Response.json({ message: `Conclusão da tarefa "${existing.title}" rejeitada. A tarefa voltou para "${STATUS_LABELS[revertedStatus as TaskStatus]}".` });
+    }
+
+    if (action === "REQUEST_NOT_DONE") {
+      if (!permissions.canRequestNotDone) return Response.json({ error: "Somente o responsável pela tarefa pode informar que não será realizada." }, { status: 403 });
+      if (!(ACTIONABLE_STATUSES as string[]).includes(existing.status)) return Response.json({ error: "Esta tarefa não está em um estado que permita solicitar não realização." }, { status: 400 });
       const notDoneReason = clean(body.notDoneReason);
       if (!notDoneReason) return Response.json({ error: "Informe a justificativa." }, { status: 400 });
-      await db.update(tasks).set({ status: "NOT_DONE", notDoneAt: now, notDoneBy: auth.user!.id, notDoneReason, updatedAt: now }).where(eq(tasks.id, id));
-      await logTaskAudit(auth.user!.id, id, "TASK_NOT_DONE", { status: existing.status }, { status: "NOT_DONE", notDoneReason });
-      if (existing.createdBy && existing.createdBy !== auth.user!.id) await notifyUser(existing.createdBy, id, "TASK_NOT_DONE", `${auth.user!.name} informou que não realizará a tarefa "${existing.title}".`);
-      return Response.json({ message: `Tarefa "${existing.title}" marcada como não realizada.` });
+      await db.update(tasks).set({
+        status: "AWAITING_NOT_DONE_AUTHORIZATION", statusBeforeApprovalRequest: existing.status as "TODO" | "IN_PROGRESS",
+        requestedNonExecutionBy: auth.user!.id, requestedNonExecutionAt: now, notDoneReason, nonExecutionRejectionReason: null, updatedAt: now,
+      }).where(eq(tasks.id, id));
+      await logTaskAudit(auth.user!.id, id, "TASK_NOT_DONE_REQUESTED", { status: existing.status }, { status: "AWAITING_NOT_DONE_AUTHORIZATION", notDoneReason });
+      if (existing.createdBy && existing.createdBy !== auth.user!.id) await notifyUser(existing.createdBy, id, "TASK_NOT_DONE_REQUESTED", `${auth.user!.name} solicitou não realizar a tarefa "${existing.title}" e aguarda sua autorização.`);
+      return Response.json({ message: `Pedido de não realização da tarefa "${existing.title}" enviado para autorização.` });
+    }
+
+    if (action === "AUTHORIZE_NOT_DONE" || action === "DENY_NOT_DONE") {
+      if (!permissions.canDecide) return Response.json({ error: "Você não possui permissão para decidir sobre esta tarefa." }, { status: 403 });
+      if (existing.status !== "AWAITING_NOT_DONE_AUTHORIZATION") {
+        return Response.json({ message: `Esta tarefa já está com o status "${STATUS_LABELS[existing.status as TaskStatus] ?? existing.status}". Nenhuma nova decisão foi registrada.` });
+      }
+      if (action === "AUTHORIZE_NOT_DONE") {
+        await db.update(tasks).set({
+          status: "NOT_DONE", notDoneAt: now, notDoneBy: existing.requestedNonExecutionBy,
+          nonExecutionApprovedBy: auth.user!.id, nonExecutionApprovedAt: now, nonExecutionRejectionReason: null, updatedAt: now,
+        }).where(eq(tasks.id, id));
+        await logTaskAudit(auth.user!.id, id, "TASK_NOT_DONE_AUTHORIZED", { status: existing.status }, { status: "NOT_DONE" });
+        if (existing.requestedNonExecutionBy && existing.requestedNonExecutionBy !== auth.user!.id) await notifyUser(existing.requestedNonExecutionBy, id, "TASK_NOT_DONE_AUTHORIZED", `${auth.user!.name} autorizou a não realização da tarefa "${existing.title}".`);
+        return Response.json({ message: `Não realização da tarefa "${existing.title}" autorizada.` });
+      }
+      const nonExecutionRejectionReason = clean(body.nonExecutionRejectionReason);
+      if (!nonExecutionRejectionReason) return Response.json({ error: "Informe o motivo da recusa." }, { status: 400 });
+      const revertedStatus = existing.statusBeforeApprovalRequest ?? "IN_PROGRESS";
+      await db.update(tasks).set({ status: revertedStatus, nonExecutionRejectionReason, updatedAt: now }).where(eq(tasks.id, id));
+      await logTaskAudit(auth.user!.id, id, "TASK_NOT_DONE_DENIED", { status: existing.status }, { status: revertedStatus, nonExecutionRejectionReason });
+      if (existing.requestedNonExecutionBy && existing.requestedNonExecutionBy !== auth.user!.id) await notifyUser(existing.requestedNonExecutionBy, id, "TASK_NOT_DONE_DENIED", `${auth.user!.name} não autorizou a não realização da tarefa "${existing.title}": ${nonExecutionRejectionReason}. A tarefa continua obrigatória.`);
+      return Response.json({ message: `Não realização da tarefa "${existing.title}" recusada. A tarefa voltou para "${STATUS_LABELS[revertedStatus as TaskStatus]}".` });
     }
 
     if (action === "CANCEL") {
@@ -162,7 +229,9 @@ export async function PUT(request: Request, { params }: Context) {
     // responsável "puro" (ele só tem as ações guiadas acima, mesmo mandando este corpo direto).
     // O status NUNCA é sobrescrito manualmente aqui (seção 13: "não substituir status sem
     // respeitar o fluxo") — toda transição de status passa por uma ação guiada própria
-    // (START/COMPLETE/NOT_DONE/CANCEL), cada uma com sua própria trilha de auditoria/notificação.
+    // (START/REQUEST_COMPLETION/APPROVE_COMPLETION/REJECT_COMPLETION/REQUEST_NOT_DONE/
+    // AUTHORIZE_NOT_DONE/DENY_NOT_DONE/CANCEL), cada uma com sua própria trilha de
+    // auditoria/notificação.
     if (!permissions.canEdit) return Response.json({ error: "Você não possui permissão para editar esta tarefa." }, { status: 403 });
     const title = clean(body.title) || existing.title;
     const description = body.description === undefined ? existing.description : (clean(body.description) || null);
@@ -181,7 +250,9 @@ export async function PUT(request: Request, { params }: Context) {
 
     const reassigning = assigneeId !== existing.assigneeId;
     if (reassigning) {
-      if (!(OPEN_STATUSES as string[]).includes(existing.status)) return Response.json({ error: "Uma tarefa já encerrada (concluída, não realizada ou cancelada) não pode ser reatribuída." }, { status: 400 });
+      // Nunca reatribuir com um pedido de aprovação em aberto — o novo responsável não foi quem
+      // pediu a conclusão/não realização registrada, e decidir/rejeitar depois ficaria confuso.
+      if (!(ACTIONABLE_STATUSES as string[]).includes(existing.status)) return Response.json({ error: "Esta tarefa não pode ser reatribuída no status atual (já encerrada ou aguardando uma decisão de aprovação)." }, { status: 400 });
       // A nova pessoa responsável precisa pertencer a um cargo para o qual quem está reatribuindo
       // tem permissão de envio OU de gerenciamento — seção 16, nota **.
       if (assignee.taskRoleId === null) return Response.json({ error: "O responsável selecionado ainda não possui Cargo de Tarefas configurado." }, { status: 400 });
