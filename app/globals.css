@@ -261,7 +261,7 @@ html[data-theme="dark"] .maintenance-equipment-search-control,html[data-theme="d
 @media(max-width:760px){.maintenance-equipment-results{max-height:300px}.maintenance-equipment-results>button{grid-template-columns:34px minmax(0,1fr)}.maintenance-equipment-results>button>b{grid-column:2;margin-top:-4px}.maintenance-equipment-results>button strong{font-size:11px}.maintenance-equipment-results>button small,.maintenance-equipment-results>button>b{font-size:10px}}
 
 /* JC Florestais identity and critical overdue state */
-.login-brand-panel .brand-mark{width:126px;height:57px;padding:0;border-radius:8px;background:#fff}
+.login-brand-panel .brand-mark{width:126px;height:57px;padding:0;border-radius:8px}
 .auth-loading .brand-mark{width:104px;height:47px}.login-mobile-brand .brand-mark{width:104px;height:47px}
 .health-line.critical em,.progress-cell em.critical{background:#e95b22}
 .sheet-alert.critical{border-left-color:#e95b22}.sheet-alert.critical>span{color:#c44916;background:#ffe8dc}
@@ -280,3 +280,93 @@ html[data-theme="dark"] .alert-settings-action{background:#102c3b;border-color:#
 html[data-theme="dark"] .fleet-front-cards article,html[data-theme="dark"] .equipment-management-filters,html[data-theme="dark"] .oil-switch,html[data-theme="dark"] .transfer-route>div,html[data-theme="dark"] .transfer-history>div:not(.empty-state){background:#101f2a;border-color:#304856}html[data-theme="dark"] .fleet-front-cards strong,html[data-theme="dark"] .oil-switch strong,html[data-theme="dark"] .transfer-route strong,html[data-theme="dark"] .transfer-history strong{color:#e0edf3}
 @media(max-width:1100px){.fleet-front-cards{grid-template-columns:repeat(2,1fr)}.equipment-management-filters{grid-template-columns:repeat(2,1fr)}.equipment-management-filters .page-search{grid-column:1/-1}.equipment-management-sheet .sheet-summary-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.fleet-front-cards,.equipment-management-filters{grid-template-columns:1fr}.equipment-management-filters .page-search{grid-column:auto}.transfer-route{grid-template-columns:1fr}.transfer-route>span{padding:0;text-align:center;transform:rotate(90deg)}.equipment-row-actions{flex-direction:column}}
+
+/* ---------------------------------------------------------------------------
+   Pente-fino do modo escuro (seções 27-36): componentes com fundo/cor claros
+   fixos que não tinham nenhuma variante html[data-theme="dark"] em lugar
+   nenhum do CSS — achados por varredura estática (classe usada em app/page.tsx
+   com "background" numa regra clara, sem contrapartida escura), não por
+   inspeção visual (sem navegador/BD disponíveis nesta sessão). Cobre Central
+   de Alertas, Dashboard (cards de resumo/atrasadas), o painel lateral de
+   detalhes do equipamento ("sheet"), a tela de login e formulários/badges
+   usados em várias telas (Manutenção, Importação, Troca de óleo, WhatsApp).
+--------------------------------------------------------------------------- */
+html[data-theme="dark"] .toast{background:#173a52;border:1px solid #2c5875}
+html[data-theme="dark"] .alert-summary article{background:#101f2a;border-color:#293f4c}
+html[data-theme="dark"] .alert-summary article.red>span{background:#3a1418;color:#ff9a9d}
+html[data-theme="dark"] .alert-summary article.orange>span{background:#3a220a;color:#f2a35c}
+html[data-theme="dark"] .alert-summary article.green>span{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .alert-summary small{color:#93a4ae}
+html[data-theme="dark"] .alerts-list{background:#0d1922}
+html[data-theme="dark"] .alert-row{background:#101f2a;border-color:#263745}
+html[data-theme="dark"] .alert-row.red .level-icon{background:#3a1418;color:#ff9a9d}
+html[data-theme="dark"] .alert-row.orange .level-icon{background:#3a220a;color:#f2a35c}
+html[data-theme="dark"] .alert-row.critical .level-icon{background:#3a1810;color:#ff9a6a}
+html[data-theme="dark"] .alert-row.yellow .level-icon{background:#3a2f0a;color:#f0c454}
+html[data-theme="dark"] .alert-row.green .level-icon{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .grouped-alerts{background:#0d1922}
+html[data-theme="dark"] .level-icon{background:#16232c}
+
+html[data-theme="dark"] .control-card,html[data-theme="dark"] .overdue-total-card{background:#101f2a;border-color:#293f4c}
+html[data-theme="dark"] .control-card-head>span{background:#16232c;color:#7ec4ee}
+html[data-theme="dark"] .control-card.km .control-card-head>span{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .control-card-head p,html[data-theme="dark"] .overdue-total-card p{color:#93a4ae}
+html[data-theme="dark"] .control-card-head strong{color:#e1edf3}
+html[data-theme="dark"] .overdue-total-card{border-color:#63363b;background:#241418}
+html[data-theme="dark"] .overdue-total-card>span{background:#3a1418;color:#ff9a9d}
+html[data-theme="dark"] .overdue-total-card strong{color:#ff9a9d}
+html[data-theme="dark"] .overdue-total-card small{color:#e08a8d}
+
+html[data-theme="dark"] .sheet-backdrop{background:rgba(2,8,13,.76)}
+html[data-theme="dark"] .sheet-close{background:#101d28;border-color:#304352;color:#c3d2db}
+html[data-theme="dark"] .sheet-alert{border-color:#293f4c}
+html[data-theme="dark"] .sheet-alert>span{background:#16232c;color:#c3d2db}
+html[data-theme="dark"] .sheet-alert>div small{color:#93a4ae}
+html[data-theme="dark"] .sheet-alert.red>span{color:#ff9a9d;background:#3a1418}
+html[data-theme="dark"] .sheet-alert.orange>span{color:#f2a35c;background:#3a220a}
+html[data-theme="dark"] .sheet-alert.yellow>span{color:#f0c454;background:#3a2f0a}
+html[data-theme="dark"] .sheet-alert.green>span{color:#5ee0ab;background:#123a2c}
+html[data-theme="dark"] .sheet-alert.critical>span{color:#ff9a6a;background:#3a1810}
+
+html[data-theme="dark"] .auth-shell{background:#0b141d}
+html[data-theme="dark"] .login-error{background:#321f24;color:#ff9a9d}
+html[data-theme="dark"] .auth-loading{background:#101f2a;border-color:#293f4c;color:#93a4ae}
+html[data-theme="dark"] .equipment-form-error{background:#321f24;border-color:#63363b;color:#ff9a9d}
+html[data-theme="dark"] .equipment-form-error span{background:#a13f43}
+
+html[data-theme="dark"] .system-online{color:#93a4ae}
+html[data-theme="dark"] .row-action{color:#93a4ae}
+html[data-theme="dark"] .health-line>i,html[data-theme="dark"] .progress-cell>i{background:#1c2b35}
+html[data-theme="dark"] .health-line>div{color:#93a4ae}
+html[data-theme="dark"] .section-icon.blue{background:#0f2a3d;color:#7ec4ee}
+html[data-theme="dark"] .section-icon.amber{background:#3a2f0a;color:#f0c454}
+html[data-theme="dark"] .os-pill{background:#16232c;color:#93a4ae}
+html[data-theme="dark"] .applicable-summary>div:last-child span{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .reading-button{background:#101f2a}
+html[data-theme="dark"] .reading-button:hover{background:#16232c}
+html[data-theme="dark"] .reading-button>b{color:#93a4ae}
+html[data-theme="dark"] .equipment-plan-title{background:#101f2a;border-color:#293f4c}
+html[data-theme="dark"] .equipment-plan-title p{color:#7ec4ee}
+html[data-theme="dark"] .equipment-plan-title h3{color:#e1edf3}
+html[data-theme="dark"] .equipment-plan-title>div>span{color:#93a4ae}
+html[data-theme="dark"] .unit-badge{background:#0f2a3d;color:#7ec4ee!important}
+html[data-theme="dark"] .unit-badge.km{background:#123a2c;color:#5ee0ab!important}
+html[data-theme="dark"] .password-field button{color:#7ec4ee}
+html[data-theme="dark"] .maintenance-equipment-search-hint.empty>span{background:#3a1418;color:#ff9a9d}
+
+html[data-theme="dark"] .history-action{background:#16232c;color:#93a4ae}
+html[data-theme="dark"] .history-action.maintenance{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .history-action.reading{background:#0f2a3d;color:#7ec4ee}
+html[data-theme="dark"] .history-action.imported{background:#1c2b35;color:#93a4ae}
+html[data-theme="dark"] .import-row-status{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .import-row-status.warning{background:#3a2f0a;color:#f0c454}
+html[data-theme="dark"] .import-row-status.warning.importable{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .import-row-status.error{background:#3a1418;color:#ff9a9d}
+
+html[data-theme="dark"] .manual-select-all{background:#101d28;border-color:#304352;color:#dbe7ee}
+html[data-theme="dark"] .manual-send-empty,html[data-theme="dark"] .manual-send-complete{color:#93a4ae}
+html[data-theme="dark"] .manual-send-empty>span,html[data-theme="dark"] .manual-send-complete>span{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .manual-send-empty strong,html[data-theme="dark"] .manual-send-complete strong{color:#e1edf3}
+html[data-theme="dark"] .urgency-example{background:#0f2a22;border-color:#2f6350}
+html[data-theme="dark"] .urgency-example strong{color:#5ee0ab}
+html[data-theme="dark"] .urgency-example span{color:#93a4ae}
