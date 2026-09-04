@@ -119,6 +119,27 @@ function normalizeInsertBooleans(query:string):string {
   });
 }
 
+// No SQLite/D1 um apelido de coluna escrito como "AS equipmentId" volta exatamente
+// com essa grafia em cada linha do resultado. No Postgres, identificador sem aspas
+// é sempre dobrado para minúsculas — a mesma consulta volta como "equipmentid", e
+// o código que lê "row.equipmentId" recebe undefined (a chave nem existe no objeto,
+// não é null). Isso já causou bug real e silencioso: em lib/maintenance-data.ts,
+// "t.name AS maintenanceName" virava undefined, e a mensagem de erro do formulário
+// de Registrar troca de óleo mostrava literalmente "Configure o intervalo de
+// undefined..." para todo equipamento — porque String(undefined) é a string
+// "undefined", e o intervalo (também lido com apelido camelCase) virava null e
+// disparava o bloqueio de "intervalo não configurado" mesmo quando o Plano de
+// Manutenção estava certinho no banco.
+// Em vez de exigir que cada consulta nova lembre de colocar aspas em cada apelido
+// camelCase, a correção fica centralizada aqui: qualquer "AS identificador" cujo
+// identificador tenha letra maiúscula ganha aspas duplas automaticamente, o que
+// faz o Postgres preservar a grafia exata — igual o SQLite/D1 sempre fez.
+const ALIAS_CAMEL_CASE=/\bAS\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
+
+function quoteCamelCaseAliases(query:string):string {
+  return query.replace(ALIAS_CAMEL_CASE,(match,alias:string)=>/[A-Z]/.test(alias)?`AS "${alias}"`:match);
+}
+
 // Pequenos ajustes de sintaxe que existem no SQLite/D1 e não existem no
 // Postgres. Cada rota que usa uma dessas construções já foi corrigida no
 // código-fonte; esta função fica apenas como rede de segurança.
@@ -134,7 +155,8 @@ export function normalizeSqliteisms(query:string):string {
   // só aceita NULL/TRUE/FALSE/UNKNOWN literais. O equivalente correto e
   // NULL-safe é "IS NOT DISTINCT FROM ?".
   const semIsParametrizado=semInstr.replace(/\bIS\s+\?/gi,"IS NOT DISTINCT FROM ?");
-  return normalizeInsertBooleans(normalizeBooleans(semIsParametrizado));
+  const semAliasMinusculo=quoteCamelCaseAliases(semIsParametrizado);
+  return normalizeInsertBooleans(normalizeBooleans(semAliasMinusculo));
 }
 
 class PgPreparedStatement implements D1PreparedStatementLike {
