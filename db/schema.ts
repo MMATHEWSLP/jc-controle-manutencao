@@ -29,7 +29,15 @@ export const users = pgTable("users", {
   // Nível hierárquico organizacional, usado exclusivamente pelas regras de visibilidade/autorização
   // do módulo Tarefas (quem é superior de quem). É independente do "role" acima, que continua
   // controlando as permissões de tela/ação em todo o restante do sistema.
+  // Campo legado (pré-Gestor de Cargos de Tarefas). Não é mais lido nem gravado pela aplicação —
+  // preservado apenas para não apagar dado histórico. A fonte de verdade do Cargo de Tarefas de
+  // cada usuário agora é `taskRoleId`, abaixo.
   hierarchyLevel: text("hierarchy_level", { enum:["ADMIN","GESTOR","SUB1","SUB2","SUB3","USUARIO"] }).notNull().default("USUARIO"),
+  // Cargo de Tarefas (módulo Tarefas): FK para task_roles, independente do `role` (perfil) acima,
+  // que continua controlando as permissões de tela/ação em todo o restante do sistema. Nullable
+  // para acomodar registros legados/legítimos ainda não regularizados pelo ADMIN (ver seção 9 da
+  // especificação) — enquanto nulo, o usuário não pode criar nem receber novas tarefas.
+  taskRoleId: integer("task_role_id").references((): AnyPgColumn => taskRoles.id),
   status: text("status", { enum:["ACTIVE","INACTIVE"] }).notNull().default("ACTIVE"),
   theme: text("theme", { enum:["LIGHT","DARK"] }).notNull().default("LIGHT"),
   isPrimaryAdmin: boolean("is_primary_admin").notNull().default(false),
@@ -42,6 +50,45 @@ export const users = pgTable("users", {
   uniqueIndex("users_username_unique").on(table.username),
   index("users_status_role_idx").on(table.status, table.role),
   index("users_service_front_idx").on(table.serviceFrontId),
+  index("users_task_role_idx").on(table.taskRoleId),
+]);
+
+// Cargos de Tarefas: papel usado exclusivamente para definir quem pode enviar, receber,
+// visualizar e gerenciar tarefas — não confundir com a função profissional do usuário (`role`
+// em `users`, ex.: OFICINA/OPERADOR) nem com o `hierarchyLevel` legado acima. Editável só pelo
+// ADMIN/cargo raiz através do Gestor de Cargos de Tarefas.
+export const taskRoles = pgTable("task_roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  visualOrder: integer("visual_order").notNull().default(0),
+  // Cargo raiz (ADMIN): acesso global a todas as tarefas e históricos, único ponto de exceção às
+  // regras de conexão. Deve existir exatamente um cargo raiz ativo; a aplicação impede excluir ou
+  // desativar esse cargo.
+  isRoot: boolean("is_root").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("task_roles_name_unique").on(table.name),
+  index("task_roles_active_idx").on(table.active, table.visualOrder),
+]);
+
+// Relações direcionadas entre Cargos de Tarefas: "de origem" pode enviar/visualizar/gerenciar
+// tarefas "de destino". Não transitivas, não conferem automaticamente a relação inversa. Uma
+// linha com sourceRoleId=targetRoleId representa "enviar entre usuários do mesmo cargo".
+export const taskRoleConnections = pgTable("task_role_connections", {
+  id: serial("id").primaryKey(),
+  sourceRoleId: integer("source_role_id").notNull().references(() => taskRoles.id),
+  targetRoleId: integer("target_role_id").notNull().references(() => taskRoles.id),
+  canSend: boolean("can_send").notNull().default(false),
+  canViewReceived: boolean("can_view_received").notNull().default(false),
+  canViewSent: boolean("can_view_sent").notNull().default(false),
+  canManage: boolean("can_manage").notNull().default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("task_role_connections_pair_unique").on(table.sourceRoleId, table.targetRoleId),
+  index("task_role_connections_target_idx").on(table.targetRoleId),
 ]);
 
 export const userPermissions = pgTable("user_permissions", {
@@ -583,6 +630,12 @@ export const tasks = pgTable("tasks", {
   // Obrigatório na aplicação (validado nas rotas de API); mantido opcional aqui no banco
   // apenas para não quebrar com eventuais registros legados sem responsável definido.
   assigneeId: integer("assignee_id").references(() => users.id),
+  // Cargo de Tarefas do criador/responsável no momento do envio — puramente informativo/histórico
+  // (exibido no detalhe e no Histórico). As decisões de autorização NUNCA usam estes snapshots:
+  // sempre consultam o cargo ATUAL de cada pessoa, para que uma mudança de cargo se reflita
+  // imediatamente nas permissões sem reescrever tarefas antigas.
+  creatorRoleSnapshotId: integer("creator_role_snapshot_id").references(() => taskRoles.id),
+  assigneeRoleSnapshotId: integer("assignee_role_snapshot_id").references(() => taskRoles.id),
   urgency: text("urgency", { enum:["LOW","MEDIUM","HIGH","URGENT"] }).notNull().default("MEDIUM"),
   dueDate: text("due_date").notNull(),
   status: text("status", { enum:["TODO","IN_PROGRESS","DONE","NOT_DONE"] }).notNull().default("TODO"),

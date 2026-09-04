@@ -1,8 +1,13 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { serviceFronts, userPermissions, userSessions, users } from "../../../db/schema";
+import { serviceFronts, taskRoles, userPermissions, userSessions, users } from "../../../db/schema";
 import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel } from "../../../lib/auth";
-import { HIERARCHY_LABELS, canChangeHierarchyLevel, isHierarchyLevel, type HierarchyLevel } from "../../../lib/task-authorization";
+import { canChangeTaskRole } from "../../../lib/task-authorization";
+
+async function loadActiveTaskRoleIds() {
+  const db = await getDb();
+  return new Set((await db.select({ id: taskRoles.id }).from(taskRoles).where(eq(taskRoles.active, true))).map((row) => row.id));
+}
 
 const editableProfiles:Profile[]=["ADMIN","GESTOR","OFICINA","OPERADOR"];
 function clean(value:unknown){return typeof value==="string"?value.trim():"";}
@@ -29,9 +34,9 @@ async function replaceOverrides(userId:number,profile:Profile,permissions:Permis
 
 async function serialize(row:typeof users.$inferSelect){
   const profile=(row.role==="ALMOXARIFADO"?"OPERADOR":row.role) as Profile;
-  const hierarchyLevel=row.hierarchyLevel as HierarchyLevel;
   const db=await getDb();const front=row.serviceFrontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,row.serviceFrontId)).limit(1))[0]:null;
-  return {id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),hierarchyLevel,hierarchyLevelLabel:HIERARCHY_LABELS[hierarchyLevel]??hierarchyLevel,status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
+  const taskRole=row.taskRoleId?(await db.select({name:taskRoles.name}).from(taskRoles).where(eq(taskRoles.id,row.taskRoleId)).limit(1))[0]:null;
+  return {id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),taskRoleId:row.taskRoleId,taskRoleName:taskRole?.name??null,status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
 }
 
 async function serviceFrontId(value:unknown,required:boolean){
@@ -62,11 +67,14 @@ export async function POST(request:Request){
     if(!editableProfiles.includes(profile))profile="OPERADOR";
     const canAssign=auth.user!.permissions.includes("users.permissions");if(!canAssign)profile="OPERADOR";
     const frontId=await serviceFrontId(body.serviceFrontId,profile!=="ADMIN");
-    const requestedHierarchyLevel=clean(body.hierarchyLevel);
-    if(auth.user!.profile==="ADMIN"&&requestedHierarchyLevel&&!isHierarchyLevel(requestedHierarchyLevel))return Response.json({error:"Selecione um nível hierárquico válido."},{status:400});
-    const hierarchyLevel:HierarchyLevel=auth.user!.profile==="ADMIN"&&isHierarchyLevel(requestedHierarchyLevel)?requestedHierarchyLevel:"USUARIO";
+    const requestedTaskRoleId=Number(body.taskRoleId);
+    let taskRoleId:number|null=null;
+    if(auth.user!.profile==="ADMIN"&&Number.isInteger(requestedTaskRoleId)&&requestedTaskRoleId>0){
+      if(!(await loadActiveTaskRoleIds()).has(requestedTaskRoleId))return Response.json({error:"Selecione um Cargo de Tarefas válido."},{status:400});
+      taskRoleId=requestedTaskRoleId;
+    }
     const salt=newSalt();const now=new Date().toISOString();const db=await getDb();
-    const saved=(await db.insert(users).values({name,username,email,passwordSalt:salt,passwordHash:await passwordHash(password,salt),role:profile,hierarchyLevel,status,theme:"LIGHT",isPrimaryAdmin:false,passwordUpdatedAt:now,serviceFrontId:frontId,updatedAt:now}).returning())[0];
+    const saved=(await db.insert(users).values({name,username,email,passwordSalt:salt,passwordHash:await passwordHash(password,salt),role:profile,taskRoleId,status,theme:"LIGHT",isPrimaryAdmin:false,passwordUpdatedAt:now,serviceFrontId:frontId,updatedAt:now}).returning())[0];
     const permissions=canAssign?validPermissions(body.permissions):PROFILE_DEFAULTS.OPERADOR;
     await replaceOverrides(saved.id,profile,permissions);
     await audit(auth.user!.id,saved.id,"USER_CREATED",undefined,{name,username,email,profile,status,serviceFrontId:frontId});
@@ -109,15 +117,22 @@ export async function PUT(request:Request){
     const nextStatus=current.isPrimaryAdmin||editingSelf||!canStatus?current.status:requestedStatus;
     const canChangeFront=!current.isPrimaryAdmin&&!editingSelf&&canPermissions;
     const nextFrontId=canChangeFront?await serviceFrontId(body.serviceFrontId,nextProfile!=="ADMIN"):current.serviceFrontId;
-    const requestedHierarchyLevel=clean(body.hierarchyLevel);
-    const allowHierarchyChange=canChangeHierarchyLevel(auth.user!,id);
-    if(allowHierarchyChange&&requestedHierarchyLevel&&!isHierarchyLevel(requestedHierarchyLevel))return Response.json({error:"Selecione um nível hierárquico válido."},{status:400});
-    const nextHierarchyLevel:HierarchyLevel=allowHierarchyChange&&isHierarchyLevel(requestedHierarchyLevel)?requestedHierarchyLevel:current.hierarchyLevel as HierarchyLevel;
-    const before={name:current.name,username:current.username,email:current.email,profile:current.role,hierarchyLevel:current.hierarchyLevel,status:current.status,serviceFrontId:current.serviceFrontId};
+    const requestedTaskRoleIdRaw=body.taskRoleId;
+    const allowTaskRoleChange=canChangeTaskRole(auth.user!,id);
+    let nextTaskRoleId=current.taskRoleId;
+    if(allowTaskRoleChange&&requestedTaskRoleIdRaw!==undefined){
+      if(requestedTaskRoleIdRaw===null||requestedTaskRoleIdRaw===""){nextTaskRoleId=null;}
+      else{
+        const requestedTaskRoleId=Number(requestedTaskRoleIdRaw);
+        if(!Number.isInteger(requestedTaskRoleId)||requestedTaskRoleId<=0||!(await loadActiveTaskRoleIds()).has(requestedTaskRoleId))return Response.json({error:"Selecione um Cargo de Tarefas válido."},{status:400});
+        nextTaskRoleId=requestedTaskRoleId;
+      }
+    }
+    const before={name:current.name,username:current.username,email:current.email,profile:current.role,taskRoleId:current.taskRoleId,status:current.status,serviceFrontId:current.serviceFrontId};
     const now=new Date().toISOString();
-    const saved=(await db.update(users).set({name,username,email,role:nextProfile,hierarchyLevel:nextHierarchyLevel,status:nextStatus,serviceFrontId:nextFrontId,updatedAt:now}).where(eq(users.id,id)).returning())[0];
-    await audit(auth.user!.id,id,"USER_EDITED",before,{name,username,email,profile:nextProfile,hierarchyLevel:nextHierarchyLevel,status:nextStatus,serviceFrontId:nextFrontId});
-    if(nextHierarchyLevel!==current.hierarchyLevel)await audit(auth.user!.id,id,"HIERARCHY_LEVEL_CHANGED",{hierarchyLevel:current.hierarchyLevel},{hierarchyLevel:nextHierarchyLevel});
+    const saved=(await db.update(users).set({name,username,email,role:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId,updatedAt:now}).where(eq(users.id,id)).returning())[0];
+    await audit(auth.user!.id,id,"USER_EDITED",before,{name,username,email,profile:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId});
+    if(nextTaskRoleId!==current.taskRoleId)await audit(auth.user!.id,id,"TASK_ROLE_CHANGED",{taskRoleId:current.taskRoleId},{taskRoleId:nextTaskRoleId});
     if(nextStatus!==current.status){await db.delete(userSessions).where(eq(userSessions.userId,id));await audit(auth.user!.id,id,nextStatus==="ACTIVE"?"USER_ACTIVATED":"USER_DEACTIVATED",{status:current.status},{status:nextStatus});}
     if(canPermissions&&!editingSelf&&!current.isPrimaryAdmin&&Array.isArray(body.permissions)){
       const previous=await effectivePermissions(id,current.role);const permissions=validPermissions(body.permissions);await replaceOverrides(id,nextProfile as Profile,permissions);await audit(auth.user!.id,id,"PERMISSIONS_CHANGED",{permissions:previous},{permissions});

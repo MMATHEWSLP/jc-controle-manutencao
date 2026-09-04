@@ -2,17 +2,25 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { tasks } from "../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { applyModuleGate, computeTaskPermissions, loadTaskHistory, loadUserAuthInfo, logTaskAudit, type HierarchyLevel, type TaskPermissions } from "../../../../lib/task-authorization";
+import {
+  applyModuleGate, canManageOf, canSendTo, computeTaskPermissions, isRootRole, loadTaskHistory, loadTaskRoleGraph, loadUserAuthInfo, logTaskAudit, wasEverAssignee,
+  type TaskPermissions, type TaskRoleGraph, type TaskViewer,
+} from "../../../../lib/task-authorization";
 import { STATUS_LABELS, URGENCY_LABELS, loadTaskRows, toTaskAuthRow, type TaskRow, type TaskStatus, type Urgency } from "../route";
 
 type Context = { params: Promise<{ id: string }> };
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 
-async function findVisibleTask(id: number, viewer: { id: number; hierarchyLevel: HierarchyLevel }, hasEditPermission: boolean) {
+async function findVisibleTask(id: number, graph: TaskRoleGraph, viewer: TaskViewer, hasEditPermission: boolean) {
+  // loadTaskRows(id) não filtra deletedAt — é este método que decide se uma tarefa excluída pode
+  // ser exibida (seção 19: preservada só para participantes legítimos e para o cargo raiz).
   const row = (await loadTaskRows(id))[0];
   if (!row) return null;
-  const permissions = applyModuleGate(computeTaskPermissions(viewer, toTaskAuthRow(row), row.assigneeHierarchyLevel as HierarchyLevel | null), hasEditPermission);
+  const everAssignee = await wasEverAssignee(id, viewer.id);
+  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssignee), hasEditPermission);
   if (!permissions.canView) return null;
+  const isLegitParticipant = row.createdBy === viewer.id || row.assigneeId === viewer.id || everAssignee;
+  if (row.deletedAt && !isLegitParticipant && !isRootRole(graph, viewer.taskRoleId)) return null;
   return { row, permissions };
 }
 
@@ -48,8 +56,9 @@ export async function GET(request: Request, { params }: Context) {
   try {
     const id = Number((await params).id);
     if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Tarefa inválida." }, { status: 400 });
-    const viewer = { id: auth.user!.id, hierarchyLevel: auth.user!.hierarchyLevel };
-    const found = await findVisibleTask(id, viewer, auth.user!.permissions.includes("tasks.edit"));
+    const viewer: TaskViewer = { id: auth.user!.id, taskRoleId: auth.user!.taskRoleId };
+    const graph = await loadTaskRoleGraph();
+    const found = await findVisibleTask(id, graph, viewer, auth.user!.permissions.includes("tasks.edit"));
     // 404 (não 403) deliberadamente: um usuário sem acesso não deve conseguir nem confirmar
     // que a tarefa existe tentando IDs diretamente.
     if (!found) return Response.json({ error: "Tarefa não encontrada." }, { status: 404 });
@@ -67,8 +76,9 @@ export async function PUT(request: Request, { params }: Context) {
   try {
     const id = Number((await params).id);
     if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Tarefa inválida." }, { status: 400 });
-    const viewer = { id: auth.user!.id, hierarchyLevel: auth.user!.hierarchyLevel };
-    const found = await findVisibleTask(id, viewer, true);
+    const viewer: TaskViewer = { id: auth.user!.id, taskRoleId: auth.user!.taskRoleId };
+    const graph = await loadTaskRoleGraph();
+    const found = await findVisibleTask(id, graph, viewer, true);
     if (!found) return Response.json({ error: "Tarefa não encontrada." }, { status: 404 });
     const { row: existing, permissions } = found;
 
@@ -96,8 +106,9 @@ export async function PUT(request: Request, { params }: Context) {
     }
 
     // Edição geral: título, descrição, prazo, urgência, status manual, responsável, tarefa pai.
-    // Restrita a criador ou superior hierárquico do responsável — nunca ao responsável "puro"
-    // (ele só tem as ações COMPLETE / NOT_DONE acima, mesmo mandando este corpo por requisição direta).
+    // Restrita a criador, gerenciador autorizado do cargo do responsável, ou cargo raiz — nunca
+    // ao responsável "puro" (ele só tem as ações COMPLETE / NOT_DONE acima, mesmo mandando este
+    // corpo por requisição direta).
     if (!permissions.canEdit) return Response.json({ error: "Você não possui permissão para editar esta tarefa." }, { status: 403 });
     const title = clean(body.title) || existing.title;
     const description = body.description === undefined ? existing.description : (clean(body.description) || null);
@@ -116,6 +127,15 @@ export async function PUT(request: Request, { params }: Context) {
     if (!assignee) return Response.json({ error: "O responsável selecionado não existe." }, { status: 400 });
     if (assignee.status !== "ACTIVE") return Response.json({ error: "O responsável selecionado está inativo." }, { status: 400 });
 
+    const reassigning = assigneeId !== existing.assigneeId;
+    if (reassigning) {
+      // A nova pessoa responsável precisa pertencer a um cargo para o qual quem está reatribuindo
+      // tem permissão de envio OU de gerenciamento — seção 17, nota **.
+      if (assignee.taskRoleId === null) return Response.json({ error: "O responsável selecionado ainda não possui Cargo de Tarefas configurado." }, { status: 400 });
+      const authorized = isRootRole(graph, viewer.taskRoleId) || canSendTo(graph, viewer.taskRoleId, assignee.taskRoleId) || canManageOf(graph, viewer.taskRoleId, assignee.taskRoleId);
+      if (!authorized) return Response.json({ error: "Você não tem permissão de envio ou gerenciamento para o cargo do novo responsável." }, { status: 403 });
+    }
+
     if (parentTaskId !== null) {
       if (parentTaskId === id) return Response.json({ error: "Uma tarefa não pode ser subtarefa dela mesma." }, { status: 400 });
       const parent = (await db.select({ id: tasks.id, dueDate: tasks.dueDate, deletedAt: tasks.deletedAt }).from(tasks).where(eq(tasks.id, parentTaskId)).limit(1))[0];
@@ -130,15 +150,18 @@ export async function PUT(request: Request, { params }: Context) {
     let notDoneAt = existing.notDoneAt; let notDoneBy = existing.notDoneBy; let notDoneReason = existing.notDoneReason;
     if (status === "NOT_DONE" && existing.status !== "NOT_DONE") { notDoneAt = now; notDoneBy = auth.user!.id; }
     else if (status !== "NOT_DONE") { notDoneAt = null; notDoneBy = null; notDoneReason = null; }
+    // O snapshot do cargo do responsável é atualizado a cada reatribuição — é o cargo "no
+    // momento do envio" mais recente, para o Histórico mostrar algo coerente com quem recebeu.
+    const assigneeRoleSnapshotId = reassigning ? assignee.taskRoleId : existing.assigneeRoleSnapshotId;
 
     const before = { title: existing.title, description: existing.description, dueDate: existing.dueDate, urgency: existing.urgency, status: existing.status, assigneeId: existing.assigneeId, parentTaskId: existing.parentTaskId };
     const after = { title, description, dueDate, urgency, status, assigneeId, parentTaskId };
     await db.update(tasks).set({
       title, description, dueDate, urgency: urgency as Urgency, status: status as TaskStatus,
-      assigneeId, parentTaskId, completedAt, completedBy, completionNote, notDoneAt, notDoneBy, notDoneReason, updatedAt: now,
+      assigneeId, assigneeRoleSnapshotId, parentTaskId, completedAt, completedBy, completionNote, notDoneAt, notDoneBy, notDoneReason, updatedAt: now,
     }).where(eq(tasks.id, id));
     await logTaskAudit(auth.user!.id, id, "TASK_UPDATED", before, after);
-    if (assigneeId !== existing.assigneeId) await logTaskAudit(auth.user!.id, id, "TASK_REASSIGNED", { assigneeId: existing.assigneeId }, { assigneeId });
+    if (reassigning) await logTaskAudit(auth.user!.id, id, "TASK_REASSIGNED", { assigneeId: existing.assigneeId }, { assigneeId, assigneeTaskRoleId: assignee.taskRoleId });
     return Response.json({ message: `Tarefa "${title}" atualizada.` });
   } catch (error) {
     console.error("[tasks.id.put]", error);
@@ -152,8 +175,9 @@ export async function DELETE(request: Request, { params }: Context) {
   try {
     const id = Number((await params).id);
     if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Tarefa inválida." }, { status: 400 });
-    const viewer = { id: auth.user!.id, hierarchyLevel: auth.user!.hierarchyLevel };
-    const found = await findVisibleTask(id, viewer, true);
+    const viewer: TaskViewer = { id: auth.user!.id, taskRoleId: auth.user!.taskRoleId };
+    const graph = await loadTaskRoleGraph();
+    const found = await findVisibleTask(id, graph, viewer, true);
     if (!found) return Response.json({ error: "Tarefa não encontrada." }, { status: 404 });
     if (!found.permissions.canDelete) return Response.json({ error: "Você não possui permissão para excluir esta tarefa." }, { status: 403 });
 

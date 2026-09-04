@@ -4,6 +4,7 @@ import "./globals.css";
 import "./qr-admin.css";
 import "./fleet-status.css";
 import "./materials-tasks.css";
+import "./task-roles.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

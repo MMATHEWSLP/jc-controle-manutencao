@@ -21,7 +21,7 @@ export async function POST(request:Request){
     const token=await createSession(row.id);
     try{await audit(row.id,row.id,"LOGIN",undefined,{at:now});}catch{ /* A auditoria não deve impedir um login válido. */ }
     const front=row.serviceFrontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,row.serviceFrontId)).limit(1))[0]:null;
-    const user={id:row.id,name:row.name,username:row.username,email:row.email,profile:row.role,hierarchyLevel:row.hierarchyLevel,status:row.status,theme:row.theme,isPrimaryAdmin:row.isPrimaryAdmin,lastAccessAt:now,createdAt:row.createdAt,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
+    const user={id:row.id,name:row.name,username:row.username,email:row.email,profile:row.role,taskRoleId:row.taskRoleId,status:row.status,theme:row.theme,isPrimaryAdmin:row.isPrimaryAdmin,lastAccessAt:now,createdAt:row.createdAt,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
     return Response.json({user:publicUser(user)},{headers:{"Set-Cookie":sessionCookie(token)}});
   }catch(error){
     console.error("[auth.login] Falha interna ao autenticar",error);

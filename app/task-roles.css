@@ -1,0 +1,85 @@
+.task-role-manager-button{padding:8px 12px;border:1px solid #d9e3e8;border-radius:7px;background:#fff;color:#3f6175;font-size:9px;font-weight:800;margin-left:auto}
+.role-pill.warning{background:#fff3cb;color:#a66f00;font-weight:800;padding:3px 7px;border-radius:10px}
+.hierarchy-group-unassigned{border-color:#eed8a5}
+.hierarchy-group-unassigned>header{background:#fff9e8}
+
+.task-role-manager-modal{width:min(1180px,98vw);max-height:96vh;display:flex;flex-direction:column}
+.task-role-manager-modal header{flex:0 0 auto}
+.task-role-toolbar{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.task-role-toolbar .page-search{flex:0 0 220px}
+.task-role-zoom{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:7px;padding:2px}
+.task-role-zoom button{width:26px;height:26px;border:0;background:none;font-size:14px;font-weight:800;color:#456174;cursor:pointer}
+.task-role-zoom span{min-width:38px;text-align:center;font-size:10px;color:var(--muted)}
+.task-role-hint{color:#a66f00;font-size:10px;font-weight:700}
+
+.task-role-canvas-viewport{flex:0 0 auto;height:min(46vh,420px);overflow:auto;border-bottom:1px solid var(--line);background:var(--canvas)}
+.task-role-canvas-scaler{position:relative}
+.task-role-canvas{position:relative;transform-origin:0 0;padding:20px}
+.task-role-lines{position:absolute;inset:0;overflow:visible;pointer-events:none}
+.task-role-line{fill:none;stroke-width:1.6;cursor:pointer;pointer-events:stroke;opacity:.85}
+.task-role-line:hover{opacity:1;stroke-width:2.4}
+.task-role-line-send{stroke:var(--blue)}
+.task-role-line-view-received{stroke:var(--green);stroke-dasharray:5 4}
+.task-role-line-view-sent{stroke:#e1ad3b;stroke-dasharray:2 3}
+.task-role-line-manage{stroke:var(--red);stroke-width:2.4}
+.task-role-arrow-send{fill:var(--blue)}
+.task-role-arrow-view-received{fill:var(--green)}
+.task-role-arrow-view-sent{fill:#e1ad3b}
+.task-role-arrow-manage{fill:var(--red)}
+.task-role-self{fill:none}
+
+.task-role-card{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 3px 10px rgba(15,48,68,.08);cursor:pointer;transition:.12s ease;z-index:1}
+.task-role-card:hover{border-color:#8fb7ce}
+.task-role-card strong{font-size:11px;color:#1b354a}
+.task-role-card span{font-size:9px;color:var(--muted)}
+.task-role-card.root{border-color:#0878bd;background:#eaf4fb}
+.task-role-card.root strong{color:#0b3f63}
+.task-role-card.selected{border-color:#00a879;box-shadow:0 0 0 3px rgba(0,168,121,.22)}
+.task-role-card.dimmed{opacity:.32}
+
+.task-role-legend{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 20px;border-bottom:1px solid var(--line);font-size:9px;color:var(--muted)}
+.task-role-legend span{display:inline-flex;align-items:center;gap:6px}
+.task-role-swatch{display:inline-block;width:18px;height:0;border-top:2.4px solid}
+.task-role-swatch.send{border-color:var(--blue)}
+.task-role-swatch.view-received{border-color:var(--green);border-top-style:dashed}
+.task-role-swatch.view-sent{border-color:#e1ad3b;border-top-style:dotted}
+.task-role-swatch.manage{border-color:var(--red);border-top-width:3px}
+.task-role-legend-note{flex:1 1 260px;font-style:italic}
+
+.task-role-manager-body{flex:1 1 auto;overflow:auto;padding:14px 20px}
+.task-role-list{display:flex;flex-direction:column;gap:6px}
+.task-role-list h3{margin:0 0 4px;font-size:11px;color:#233c50}
+.task-role-list-item{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--line);border-radius:7px}
+.task-role-list-item input{min-height:34px;font-size:11px}
+.task-role-list-item span{font-size:9px;color:var(--muted);white-space:nowrap}
+.task-role-list-item.inactive{opacity:.55}
+.task-role-list-item button{white-space:nowrap;padding:6px 9px;border-radius:6px;font-size:9px}
+.task-role-new{display:flex;gap:8px;margin-top:6px}
+.task-role-new input{flex:1;min-height:36px}
+.task-role-new button{white-space:nowrap}
+
+.task-role-unsaved{display:flex;align-items:center;gap:10px;margin:0 20px 10px;padding:9px 12px;border:1px solid #eed8a5;border-radius:8px;background:#fff9e8;color:#8a6008}
+.task-role-unsaved span{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:#e1ad3b;color:#fff;font-size:10px;font-weight:900}
+.task-role-unsaved p{flex:1;margin:0;font-size:10px}
+
+.connection-edit-modal{width:min(520px,94vw)}
+.connection-edit-form{display:flex;flex-direction:column;gap:10px}
+.connection-toggle{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}
+.connection-toggle input{width:16px;height:16px;min-height:0;margin-top:2px}
+.connection-toggle b{display:block;font-size:11px;color:#233c50}
+.connection-toggle small{display:block;margin-top:3px;color:var(--muted);font-size:9px;font-weight:400}
+.connection-toggle.checked{border-color:#54a383;background:#edf8f3}
+
+html[data-theme="dark"] .task-role-manager-button{background:#101d28;border-color:#304352;color:#dbe7ee}
+html[data-theme="dark"] .role-pill.warning{background:#3a2f12;color:#e6b94d}
+html[data-theme="dark"] .hierarchy-group-unassigned{border-color:#5a4a1e}
+html[data-theme="dark"] .hierarchy-group-unassigned>header{background:#241f0f}
+html[data-theme="dark"] .task-role-canvas-viewport{background:#0d1a24}
+html[data-theme="dark"] .task-role-card{background:#101f2b;border-color:#2b3d49}
+html[data-theme="dark"] .task-role-card strong{color:#e6edf3}
+html[data-theme="dark"] .task-role-card.root{background:#0e293a;border-color:#2f7bb0}
+html[data-theme="dark"] .task-role-hint{color:#e6b94d}
+html[data-theme="dark"] .task-role-unsaved{background:#241f0f;border-color:#5a4a1e;color:#e6c377}
+html[data-theme="dark"] .connection-toggle{border-color:#304250}
+html[data-theme="dark"] .connection-toggle.checked{background:#14372f;border-color:#286d57}
+html[data-theme="dark"] .task-role-list-item{border-color:#2b3d49}

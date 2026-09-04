@@ -14,12 +14,14 @@ type TaskNode = {
   overdue:boolean; dueSoon:boolean;
   progressPercent:number|null; totalDescendants:number; completedDescendants:number;
   canEdit:boolean; canReassign:boolean; canDelete:boolean; canComplete:boolean; canMarkNotDone:boolean;
+  viewerIsCreator:boolean; viewerIsAssignee:boolean;
   children:TaskNode[];
 };
 type AssignableUser = { id:number; name:string };
 type AuthUser = { name:string; permissions:string[] };
 type HistoryEntry = { id:number; userId:number|null; userName:string|null; action:string; previousValue:string|null; newValue:string|null; occurredAt:string };
 type TaskDetail = TaskNode & { createdAt:string; updatedAt:string };
+type ScopeFilter = "" | "received" | "sent";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 function formatDate(value:string) { if(!value)return "—"; const date=new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short"}).format(date); }
@@ -29,7 +31,9 @@ const statusTone:Record<TaskStatus,string> = { TODO:"gray", IN_PROGRESS:"yellow"
 const HISTORY_ACTION_LABELS:Record<string,string> = { TASK_CREATED:"Tarefa criada", TASK_UPDATED:"Dados atualizados", TASK_REASSIGNED:"Responsável alterado", TASK_COMPLETED:"Concluída", TASK_NOT_DONE:"Marcada como não realizada", TASK_DELETED:"Excluída" };
 
 function flattenTree(nodes:TaskNode[]):TaskNode[] { return nodes.flatMap((node)=>[node,...flattenTree(node.children)]); }
-function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,overdueOnly:boolean) {
+function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,overdueOnly:boolean,scope:ScopeFilter) {
+  if(scope==="received" && !node.viewerIsAssignee) return false;
+  if(scope==="sent" && !node.viewerIsCreator) return false;
   if(overdueOnly && !node.overdue) return false;
   if(urgency && node.urgency!==urgency) return false;
   if(status && node.status!==status) return false;
@@ -39,26 +43,29 @@ function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,
 function nodeMatches(node:TaskNode,predicate:(node:TaskNode)=>boolean):boolean { return predicate(node) || node.children.some((child)=>nodeMatches(child,predicate)); }
 
 export default function TasksView({ flash }:{ authUser:AuthUser; flash:(message:string)=>void }) {
+  const [mainTab,setMainTab]=useState<"tasks"|"history">("tasks");
   const [tree,setTree]=useState<TaskNode[]>([]);
   const [assignableUsers,setAssignableUsers]=useState<AssignableUser[]>([]);
   const [canCreate,setCanCreate]=useState(false);
+  const [viewerHasTaskRole,setViewerHasTaskRole]=useState(true);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
   const [urgencyFilter,setUrgencyFilter]=useState("");
   const [statusFilter,setStatusFilter]=useState("");
   const [overdueOnly,setOverdueOnly]=useState(false);
+  const [scopeFilter,setScopeFilter]=useState<ScopeFilter>("");
   const [collapsed,setCollapsed]=useState<Set<number>>(new Set());
   const [modal,setModal]=useState<{ item:TaskNode|null; presetParentId:number|null }|null>(null);
   const [completing,setCompleting]=useState<TaskNode|null>(null);
   const [notDoing,setNotDoing]=useState<TaskNode|null>(null);
   const [viewingId,setViewingId]=useState<number|null>(null);
 
-  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{ tasks:TaskNode[]; assignableUsers:AssignableUser[]; canCreate:boolean }>("/api/tasks"); setTree(result.tasks); setAssignableUsers(result.assignableUsers); setCanCreate(result.canCreate); }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as tarefas."); }finally{ setLoading(false); } },[]);
+  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{ tasks:TaskNode[]; assignableUsers:AssignableUser[]; canCreate:boolean; viewerHasTaskRole:boolean }>("/api/tasks"); setTree(result.tasks); setAssignableUsers(result.assignableUsers); setCanCreate(result.canCreate); setViewerHasTaskRole(result.viewerHasTaskRole); }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as tarefas."); }finally{ setLoading(false); } },[]);
   useEffect(()=>{ load(); },[load]);
 
   const flatTasks=useMemo(()=>flattenTree(tree),[tree]);
-  const predicate=useCallback((node:TaskNode)=>matchesFilters(node,query,urgencyFilter,statusFilter,overdueOnly),[query,urgencyFilter,statusFilter,overdueOnly]);
+  const predicate=useCallback((node:TaskNode)=>matchesFilters(node,query,urgencyFilter,statusFilter,overdueOnly,scopeFilter),[query,urgencyFilter,statusFilter,overdueOnly,scopeFilter]);
   const visibleRoots=useMemo(()=>tree.filter((root)=>nodeMatches(root,predicate)),[tree,predicate]);
   const overdueCount=useMemo(()=>flatTasks.filter((node)=>node.overdue).length,[flatTasks]);
 
@@ -70,11 +77,15 @@ export default function TasksView({ flash }:{ authUser:AuthUser; flash:(message:
 
   if(loading && tree.length===0) return <div className="page-loading"><span/><p>Carregando tarefas...</p></div>;
   return <>
-    <div className="page-heading module-heading"><div><p className="eyebrow">GESTÃO DE EQUIPE</p><h1>Tarefas</h1><span>Visibilidade por hierarquia: cada um só vê tarefas em que é responsável, criador ou superior do responsável.{overdueCount>0?` ${overdueCount} tarefa(s) atrasada(s) visível(is) para você.`:""}</span></div>{canCreate && <div className="heading-actions"><button className="primary" onClick={()=>setModal({ item:null, presetParentId:null })}>＋ Nova tarefa</button></div>}</div>
+    <div className="page-heading module-heading"><div><p className="eyebrow">GESTÃO DE EQUIPE</p><h1>Tarefas</h1><span>Visibilidade por Cargo de Tarefas: cada um só vê tarefas em que é responsável, criador, já foi responsável, ou tem conexão de visualização/gerenciamento configurada no Gestor de Cargos de Tarefas.{overdueCount>0?` ${overdueCount} tarefa(s) atrasada(s) visível(is) para você.`:""}</span></div>{canCreate && mainTab==="tasks" && <div className="heading-actions"><button className="primary" onClick={()=>setModal({ item:null, presetParentId:null })}>＋ Nova tarefa</button></div>}</div>
+    {!viewerHasTaskRole && <div className="operation-error"><span>!</span><div><strong>Seu Cargo de Tarefas não está configurado</strong><p>Você não poderá criar nem receber novas tarefas até que o administrador regularize seu cadastro em Usuários.</p></div></div>}
     {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
+    <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação de Tarefas"><button className={mainTab==="tasks"?"active":""} onClick={()=>setMainTab("tasks")}>Tarefas</button><button className={mainTab==="history"?"active":""} onClick={()=>setMainTab("history")}>Histórico</button></div>
+    {mainTab==="history" ? <TaskHistoryPanel/> : <>
     <article className="panel module-panel">
       <div className="equipment-management-filters">
         <label className="page-search"><span>⌕</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Pesquisar tarefa ou responsável..."/></label>
+        <label>Escopo<select value={scopeFilter} onChange={(event)=>setScopeFilter(event.target.value as ScopeFilter)}><option value="">Todas visíveis</option><option value="received">Recebidas por mim</option><option value="sent">Enviadas por mim</option></select></label>
         <label>Urgência<select value={urgencyFilter} onChange={(event)=>setUrgencyFilter(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
         <label>Status<select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}><option value="">Todos</option><option value="TODO">Pendente</option><option value="IN_PROGRESS">Em andamento</option><option value="DONE">Concluída</option><option value="NOT_DONE">Não realizada</option></select></label>
         <label className="fleet-check"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/> Somente atrasadas</label>
@@ -87,10 +98,81 @@ export default function TasksView({ flash }:{ authUser:AuthUser; flash:(message:
       </div>
     </article>
     {modal && <TaskModal item={modal.item} presetParentId={modal.presetParentId} assignableUsers={assignableUsers} flatTasks={flatTasks} close={()=>setModal(null)} saved={async(message)=>{ setModal(null); await load(); flash(message); }}/>}
+    </>}
     {completing && <CompleteModal node={completing} close={()=>setCompleting(null)} saved={async(message)=>{ setCompleting(null); await load(); flash(message); }}/>}
     {notDoing && <NotDoneModal node={notDoing} close={()=>setNotDoing(null)} saved={async(message)=>{ setNotDoing(null); await load(); flash(message); }}/>}
     {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)}/>}
   </>;
+}
+
+type TaskRoleOption = { id:number; name:string };
+type HistoryEntryRow = {
+  id:number; title:string; description:string|null;
+  assigneeId:number|null; assigneeName:string|null; assigneeRoleName:string|null;
+  createdBy:number|null; createdByName:string|null; creatorRoleName:string|null;
+  urgency:Urgency; urgencyLabel:string; dueDate:string; status:string; statusLabel:string;
+  reassignedAt:string|null; deletedAt:string|null;
+  completionNote:string|null; notDoneReason:string|null;
+  createdAt:string; updatedAt:string;
+};
+const HISTORY_STATUS_TONE:Record<string,string> = { TODO:"gray", IN_PROGRESS:"yellow", DONE:"green", NOT_DONE:"red", REASSIGNED:"orange" };
+
+// Histórico individual — seção 13: duas abas (Recebidas/Enviadas), sempre centradas no usuário
+// autenticado. Diferente da lista principal, mostra tarefas excluídas/reatribuídas quando o
+// usuário tinha participação legítima, com filtros e linha do tempo completa por tarefa.
+function TaskHistoryPanel() {
+  const [scope,setScope]=useState<"received"|"sent">("received");
+  const [entries,setEntries]=useState<HistoryEntryRow[]>([]);
+  const [taskRoles,setTaskRoles]=useState<TaskRoleOption[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [q,setQ]=useState("");
+  const [status,setStatus]=useState("");
+  const [urgency,setUrgency]=useState("");
+  const [roleId,setRoleId]=useState("");
+  const [from,setFrom]=useState("");
+  const [to,setTo]=useState("");
+  const [overdueOnly,setOverdueOnly]=useState(false);
+  const [viewingId,setViewingId]=useState<number|null>(null);
+
+  const load=useCallback(async()=>{
+    setLoading(true); setError("");
+    const params=new URLSearchParams({ scope });
+    if(q)params.set("q",q); if(status)params.set("status",status); if(urgency)params.set("urgency",urgency);
+    if(roleId)params.set("roleId",roleId); if(from)params.set("from",from); if(to)params.set("to",to);
+    if(overdueOnly)params.set("overdueOnly","1");
+    try{ const result=await api<{ entries:HistoryEntryRow[]; taskRoles:TaskRoleOption[] }>(`/api/tasks/history?${params.toString()}`); setEntries(result.entries); setTaskRoles(result.taskRoles); }
+    catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar o histórico."); }
+    finally{ setLoading(false); }
+  },[scope,q,status,urgency,roleId,from,to,overdueOnly]);
+  useEffect(()=>{ load(); },[load]);
+
+  return <article className="panel module-panel">
+    <div className="main-tabs secondary-module-nav" aria-label="Recebidas ou Enviadas"><button className={scope==="received"?"active":""} onClick={()=>setScope("received")}>Histórico de Recebidas</button><button className={scope==="sent"?"active":""} onClick={()=>setScope("sent")}>Histórico de Enviadas</button></div>
+    <div className="equipment-management-filters">
+      <label className="page-search"><span>⌕</span><input value={q} onChange={(event)=>setQ(event.target.value)} placeholder="Pesquisar por título..."/></label>
+      <label>Status<select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="">Todos</option><option value="TODO">Pendente</option><option value="IN_PROGRESS">Em andamento</option><option value="DONE">Concluída</option><option value="NOT_DONE">Não realizada</option></select></label>
+      <label>Urgência<select value={urgency} onChange={(event)=>setUrgency(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
+      <label>Cargo de Tarefas<select value={roleId} onChange={(event)=>setRoleId(event.target.value)}><option value="">Todos</option>{taskRoles.map((role)=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+      <label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label>
+      <label>Até<input type="date" value={to} onChange={(event)=>setTo(event.target.value)}/></label>
+      <label className="fleet-check"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/> Somente atrasadas</label>
+    </div>
+    {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
+    {loading ? <div className="page-loading"><span/><p>Carregando histórico...</p></div> : <div className="table-scroll"><table><thead><tr><th>Tarefa</th><th>{scope==="received"?"Criador":"Responsável"}</th><th>Cargo</th><th>Prazo</th><th>Urgência</th><th>Status</th><th>Criada em</th><th></th></tr></thead><tbody>
+      {entries.map((entry)=><tr key={entry.id} className={entry.deletedAt?"task-history-deleted":""}>
+        <td><strong className="table-strong">{entry.title}</strong>{entry.deletedAt && <small className="danger-text"> · excluída</small>}</td>
+        <td>{scope==="received"?(entry.createdByName??"—"):(entry.assigneeName??"—")}</td>
+        <td>{(scope==="received"?entry.creatorRoleName:entry.assigneeRoleName)??"—"}</td>
+        <td>{formatDate(entry.dueDate)}</td>
+        <td><span className={`status-pill ${urgencyTone[entry.urgency]}`}>{entry.urgencyLabel}</span></td>
+        <td><span className={`status-pill ${HISTORY_STATUS_TONE[entry.status]??"gray"}`}>{entry.statusLabel}</span>{entry.reassignedAt && <small> em {formatDateTime(entry.reassignedAt)}</small>}</td>
+        <td>{formatDateTime(entry.createdAt)}</td>
+        <td><button onClick={()=>setViewingId(entry.id)}>Ver linha do tempo</button></td>
+      </tr>)}
+    </tbody></table>{entries.length===0 && <div className="empty-state">Nenhum registro encontrado para os filtros atuais.</div>}</div>}
+    {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)}/>}
+  </article>;
 }
 
 function TaskRow({ node, depth, collapsed, toggleCollapse, openEdit, openCreateChild, openComplete, openNotDone, openDetails, remove, canCreate }:{

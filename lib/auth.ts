@@ -1,7 +1,6 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, authBootstrap, serviceFronts, userPermissions, userSessions, users } from "../db/schema";
-import type { HierarchyLevel } from "./task-authorization";
+import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, userSessions, users } from "../db/schema";
 
 export const SESSION_COOKIE = "maintenance_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
@@ -88,7 +87,7 @@ export type SessionUser = {
   username:string;
   email:string;
   profile:Profile;
-  hierarchyLevel:HierarchyLevel;
+  taskRoleId:number|null;
   status:"ACTIVE"|"INACTIVE";
   theme:"LIGHT"|"DARK";
   isPrimaryAdmin:boolean;
@@ -212,13 +211,13 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
   if(!token)return null;
   const db=await getDb();
   const rows=await db.select({
-    id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,hierarchyLevel:users.hierarchyLevel,status:users.status,
+    id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,taskRoleId:users.taskRoleId,status:users.status,
     theme:users.theme,isPrimaryAdmin:users.isPrimaryAdmin,lastAccessAt:users.lastAccessAt,createdAt:users.createdAt,
     serviceFrontId:users.serviceFrontId,serviceFrontName:serviceFronts.name,
   }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(and(eq(userSessions.tokenHash,await tokenHash(token)),gt(userSessions.expiresAt,new Date().toISOString()))).limit(1);
   const row=rows[0];
   if(!row||row.status!=="ACTIVE"||!row.username)return null;
-  return {...row,username:row.username,hierarchyLevel:row.hierarchyLevel as HierarchyLevel,permissions:await effectivePermissions(row.id,row.profile)};
+  return {...row,username:row.username,permissions:await effectivePermissions(row.id,row.profile)};
 }
 
 export async function authorize(request:Request,permission?:Permission) {
@@ -249,19 +248,22 @@ export async function ensurePrimaryAdmin() {
   const hash=await passwordHash(initialPassword,salt);
   let existing=(await db.select({id:users.id}).from(users).where(eq(users.username,INITIAL_ADMIN_USERNAME)).limit(1))[0];
   if(!existing)existing=(await db.select({id:users.id}).from(users).where(eq(users.email,INITIAL_ADMIN_EMAIL)).limit(1))[0];
+  // Cargo raiz do Gestor de Cargos de Tarefas — normalmente já existe (seed da migration), mas
+  // resolvido por nome em vez de ID fixo para não quebrar se o ADMIN renomear o cargo raiz.
+  const rootRole=(await db.select({id:taskRoles.id}).from(taskRoles).where(eq(taskRoles.isRoot,true)).limit(1))[0];
 
   let adminId:number;
   if(existing){
     adminId=existing.id;
     await db.update(users).set({
       name:"Mathews",username:INITIAL_ADMIN_USERNAME,passwordHash:hash,passwordSalt:salt,
-      role:"ADMIN",hierarchyLevel:"ADMIN",status:"ACTIVE",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
+      role:"ADMIN",hierarchyLevel:"ADMIN",taskRoleId:rootRole?.id??null,status:"ACTIVE",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
     }).where(eq(users.id,adminId));
     await db.delete(userSessions).where(eq(userSessions.userId,adminId));
   }else{
     const inserted=await db.insert(users).values({
       email:INITIAL_ADMIN_EMAIL,name:"Mathews",username:INITIAL_ADMIN_USERNAME,
-      passwordHash:hash,passwordSalt:salt,role:"ADMIN",hierarchyLevel:"ADMIN",status:"ACTIVE",
+      passwordHash:hash,passwordSalt:salt,role:"ADMIN",hierarchyLevel:"ADMIN",taskRoleId:rootRole?.id??null,status:"ACTIVE",
       theme:"LIGHT",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
     }).returning({id:users.id});
     adminId=inserted[0].id;

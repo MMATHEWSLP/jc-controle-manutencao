@@ -12,6 +12,9 @@
 .task-title-link{border:0;background:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit}
 .task-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:5px;color:#7c8994;font-size:9px}
 .warning-text{color:#b17a08;font-weight:700}
+.task-history-deleted{opacity:.68}
+.task-history-deleted td{background:#fff8f8}
+html[data-theme="dark"] .task-history-deleted td{background:#2a1418}
 .task-detail-modal{width:min(720px,96vw)}
 .task-detail-modal .modal-form>div:not(.full){display:flex;flex-direction:column;gap:4px}
 .task-detail-modal .modal-form>div:not(.full)>span{color:#4f6070;font-size:8px;font-weight:700;text-transform:uppercase}

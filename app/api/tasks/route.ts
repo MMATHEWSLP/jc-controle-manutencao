@@ -1,9 +1,12 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../../../db";
 import { tasks, users } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
-import { applyModuleGate, computeTaskPermissions, loadUserAuthInfo, logTaskAudit, type HierarchyLevel, type TaskAuthRow } from "../../../lib/task-authorization";
+import {
+  applyModuleGate, canSendTo, computeTaskPermissions, isRootRole, loadEverAssigneeTaskIds, loadTaskRoleGraph, loadUserAuthInfo, logTaskAudit,
+  type TaskAuthRow, type TaskRoleGraph, type TaskViewer,
+} from "../../../lib/task-authorization";
 
 export type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "NOT_DONE";
@@ -20,22 +23,30 @@ function isDueSoon(dueDate: string, status: string) {
   return diffDays >= 0 && diffDays <= 2;
 }
 
-export async function loadTaskRows(id?: number) {
+// `id` informado: busca a tarefa por ID sem filtrar por deletedAt — quem chama decide se uma
+// tarefa excluída pode ser exibida (ver findVisibleTask em [id]/route.ts, que só libera acesso a
+// participantes legítimos ou ao cargo raiz, conforme a seção 19 da especificação). Sem `id`: lista
+// geral, que nunca mostra tarefas excluídas, a menos que `includeDeleted` seja passado (usado pelo
+// Histórico, que também preserva tarefas excluídas para quem tinha participação legítima).
+export async function loadTaskRows(id?: number, includeDeleted = false) {
   const db = await getDb();
   const assignee = alias(users, "assignee_user");
   const creator = alias(users, "creator_user");
   const query = db.select({
     id: tasks.id, parentTaskId: tasks.parentTaskId, title: tasks.title, description: tasks.description,
-    assigneeId: tasks.assigneeId, assigneeName: assignee.name, assigneeHierarchyLevel: assignee.hierarchyLevel,
+    assigneeId: tasks.assigneeId, assigneeName: assignee.name, assigneeTaskRoleId: assignee.taskRoleId,
     urgency: tasks.urgency, dueDate: tasks.dueDate, status: tasks.status,
-    createdBy: tasks.createdBy, createdByName: creator.name, completedAt: tasks.completedAt, completedBy: tasks.completedBy, completionNote: tasks.completionNote,
+    createdBy: tasks.createdBy, createdByName: creator.name, createdByTaskRoleId: creator.taskRoleId,
+    creatorRoleSnapshotId: tasks.creatorRoleSnapshotId, assigneeRoleSnapshotId: tasks.assigneeRoleSnapshotId,
+    completedAt: tasks.completedAt, completedBy: tasks.completedBy, completionNote: tasks.completionNote,
     notDoneAt: tasks.notDoneAt, notDoneBy: tasks.notDoneBy, notDoneReason: tasks.notDoneReason,
     deletedAt: tasks.deletedAt, createdAt: tasks.createdAt, updatedAt: tasks.updatedAt,
   }).from(tasks)
     .leftJoin(assignee, eq(tasks.assigneeId, assignee.id))
     .leftJoin(creator, eq(tasks.createdBy, creator.id))
     .orderBy(asc(tasks.dueDate));
-  return id ? query.where(and(eq(tasks.id, id), isNull(tasks.deletedAt))) : query.where(isNull(tasks.deletedAt));
+  if (id) return query.where(eq(tasks.id, id));
+  return includeDeleted ? query : query.where(isNull(tasks.deletedAt));
 }
 
 export type TaskRow = Awaited<ReturnType<typeof loadTaskRows>>[number];
@@ -48,11 +59,13 @@ type TaskNode = TaskRow & {
   children: TaskNode[]; urgencyLabel: string; statusLabel: string; overdue: boolean; dueSoon: boolean;
   progressPercent: number | null; totalDescendants: number; completedDescendants: number;
   canEdit: boolean; canReassign: boolean; canDelete: boolean; canComplete: boolean; canMarkNotDone: boolean;
+  viewerIsCreator: boolean; viewerIsAssignee: boolean;
 };
 
-function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, viewer: { id: number; hierarchyLevel: HierarchyLevel }, hasEditPermission: boolean): TaskNode {
-  const permissions = applyModuleGate(computeTaskPermissions(viewer, toTaskAuthRow(row), (row.assigneeHierarchyLevel as HierarchyLevel | null)), hasEditPermission);
-  const children = (childrenByParent.get(row.id) ?? []).map((child) => serializeNode(child, childrenByParent, viewer, hasEditPermission));
+function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, graph: TaskRoleGraph, viewer: TaskViewer, everAssigneeIds: Set<number>, hasEditPermission: boolean): TaskNode {
+  const auth = toTaskAuthRow(row);
+  const permissions = applyModuleGate(computeTaskPermissions(graph, viewer, auth, row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id)), hasEditPermission);
+  const children = (childrenByParent.get(row.id) ?? []).map((child) => serializeNode(child, childrenByParent, graph, viewer, everAssigneeIds, hasEditPermission));
   const totalDescendants = children.reduce((sum, child) => sum + child.totalDescendants + 1, 0);
   const completedDescendants = children.reduce((sum, child) => sum + child.completedDescendants + (child.status === "DONE" ? 1 : 0), 0);
   return {
@@ -64,28 +77,40 @@ function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, v
     totalDescendants, completedDescendants,
     canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
     canComplete: permissions.canComplete, canMarkNotDone: permissions.canMarkNotDone,
+    viewerIsCreator: row.createdBy === viewer.id, viewerIsAssignee: row.assigneeId === viewer.id,
   };
 }
 
 export async function GET(request: Request) {
   const auth = await authorize(request, "tasks.view"); if (auth.response) return auth.response;
   try {
-    const viewer = { id: auth.user!.id, hierarchyLevel: auth.user!.hierarchyLevel };
-    const rows = await loadTaskRows();
+    const viewer: TaskViewer = { id: auth.user!.id, taskRoleId: auth.user!.taskRoleId };
+    const [rows, graph, everAssigneeIds] = await Promise.all([loadTaskRows(), loadTaskRoleGraph(), loadEverAssigneeTaskIds(viewer.id)]);
     // Visibilidade: só entram no conjunto (e, portanto, só aparecem em qualquer lugar da árvore)
-    // as tarefas em que o usuário é criador, responsável, ou superior hierárquico do responsável.
-    // Nenhuma tarefa fora dessas condições é exposta, nem mesmo como "contexto" de uma subtarefa visível.
-    const visible = rows.filter((row) => computeTaskPermissions(viewer, toTaskAuthRow(row), row.assigneeHierarchyLevel as HierarchyLevel | null).canView);
+    // as tarefas em que o usuário é criador, responsável atual, já foi responsável, cargo raiz,
+    // ou tem conexão de visualização/gerenciamento configurada no Gestor de Cargos de Tarefas
+    // para o cargo do criador ou do responsável desta tarefa. Nenhuma outra tarefa é exposta,
+    // nem mesmo como "contexto" de uma subtarefa visível.
+    const visible = rows.filter((row) => computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id)).canView);
     const visibleIds = new Set(visible.map((row) => row.id));
     const childrenByParent = new Map<number, TaskRow[]>();
     for (const row of visible) { if (row.parentTaskId !== null) { const list = childrenByParent.get(row.parentTaskId) ?? []; list.push(row); childrenByParent.set(row.parentTaskId, list); } }
     const roots = visible.filter((row) => row.parentTaskId === null || !visibleIds.has(row.parentTaskId));
     const hasEditPermission = auth.user!.permissions.includes("tasks.edit");
-    const tree = roots.map((row) => serializeNode(row, childrenByParent, viewer, hasEditPermission));
+    const tree = roots.map((row) => serializeNode(row, childrenByParent, graph, viewer, everAssigneeIds, hasEditPermission));
 
     const db = await getDb();
-    const assignableUsers = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.status, "ACTIVE")).orderBy(asc(users.name));
-    return Response.json({ tasks: tree, assignableUsers, canCreate: auth.user!.permissions.includes("tasks.create") });
+    const activeUsers = await db.select({ id: users.id, name: users.name, taskRoleId: users.taskRoleId }).from(users).where(eq(users.status, "ACTIVE")).orderBy(asc(users.name));
+    const root = isRootRole(graph, viewer.taskRoleId);
+    // Só pode ser escolhido como responsável quem pertence a um cargo para o qual o cargo atual
+    // do criador tem permissão de envio (ou o criador é o cargo raiz) — seção 10 do spec.
+    const assignableUsers = activeUsers.filter((user) => root || canSendTo(graph, viewer.taskRoleId, user.taskRoleId)).map((user) => ({ id: user.id, name: user.name }));
+    const canSendAny = root || (graph.connectionsBySource.get(viewer.taskRoleId ?? -1) ?? []).some((connection) => connection.canSend);
+    return Response.json({
+      tasks: tree, assignableUsers,
+      canCreate: auth.user!.permissions.includes("tasks.create") && canSendAny && viewer.taskRoleId !== null,
+      viewerHasTaskRole: viewer.taskRoleId !== null,
+    });
   } catch (error) {
     console.error("[tasks.get]", error);
     return Response.json({ error: "Não foi possível carregar as tarefas." }, { status: 500 });
@@ -96,6 +121,9 @@ export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   const auth = await authorize(request, "tasks.create"); if (auth.response) return auth.response;
   try {
+    const creatorRoleId = auth.user!.taskRoleId;
+    if (creatorRoleId === null) return Response.json({ error: "Seu Cargo de Tarefas ainda não foi configurado. Procure o administrador para regularizar seu cadastro antes de criar tarefas." }, { status: 403 });
+
     const body = await request.json() as Record<string, unknown>;
     const title = clean(body.title);
     const description = clean(body.description);
@@ -111,6 +139,12 @@ export async function POST(request: Request) {
     const assignee = await loadUserAuthInfo(assigneeId);
     if (!assignee) return Response.json({ error: "O responsável selecionado não existe." }, { status: 400 });
     if (assignee.status !== "ACTIVE") return Response.json({ error: "O responsável selecionado está inativo." }, { status: 400 });
+    if (assignee.taskRoleId === null) return Response.json({ error: "O responsável selecionado ainda não possui Cargo de Tarefas configurado. Peça ao administrador para regularizar o cadastro dele." }, { status: 400 });
+
+    const graph = await loadTaskRoleGraph();
+    if (!isRootRole(graph, creatorRoleId) && !canSendTo(graph, creatorRoleId, assignee.taskRoleId)) {
+      return Response.json({ error: "Seu cargo de tarefas não tem permissão para enviar tarefas ao cargo deste responsável. Peça ao administrador para configurar essa ligação no Gestor de Cargos de Tarefas." }, { status: 403 });
+    }
 
     const db = await getDb();
     if (parentTaskId) {
@@ -122,14 +156,14 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const inserted = (await db.insert(tasks).values({
       parentTaskId, title, description: description || null, assigneeId,
+      creatorRoleSnapshotId: creatorRoleId, assigneeRoleSnapshotId: assignee.taskRoleId,
       urgency: urgency as Urgency, dueDate, status: "TODO",
       createdBy: auth.user!.id, updatedAt: now,
     }).returning())[0];
-    await logTaskAudit(auth.user!.id, inserted.id, "TASK_CREATED", undefined, { title, assigneeId, dueDate, urgency, parentTaskId });
+    await logTaskAudit(auth.user!.id, inserted.id, "TASK_CREATED", undefined, { title, assigneeId, dueDate, urgency, parentTaskId, assigneeTaskRoleId: assignee.taskRoleId });
     return Response.json({ message: `Tarefa "${title}" criada.`, id: inserted.id }, { status: 201 });
   } catch (error) {
     console.error("[tasks.post]", error);
     return Response.json({ error: "Não foi possível criar a tarefa." }, { status: 500 });
   }
 }
-
