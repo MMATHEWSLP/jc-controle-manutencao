@@ -7,20 +7,29 @@ import {
   applyModuleGate, canSendTo, computeTaskPermissions, isRootRole, loadEverAssigneeTaskIds, loadTaskRoleGraph, loadUserAuthInfo, logTaskAudit,
   type TaskAuthRow, type TaskRoleGraph, type TaskViewer,
 } from "../../../lib/task-authorization";
+import { notifyUser } from "../../../lib/task-notifications";
 
 export type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "NOT_DONE";
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "NOT_DONE" | "CANCELLED";
 
 export const URGENCY_LABELS: Record<Urgency, string> = { LOW: "Baixa", MEDIUM: "Média", HIGH: "Alta", URGENT: "Urgente" };
-export const STATUS_LABELS: Record<TaskStatus, string> = { TODO: "Pendente", IN_PROGRESS: "Em andamento", DONE: "Concluída", NOT_DONE: "Não realizada" };
+export const STATUS_LABELS: Record<TaskStatus, string> = { TODO: "Pendente", IN_PROGRESS: "Em andamento", DONE: "Concluída", NOT_DONE: "Não realizada", CANCELLED: "Cancelada" };
+export const OPEN_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS"];
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-function isOverdue(dueDate: string, status: string) { return status !== "DONE" && status !== "NOT_DONE" && dueDate < todayIso(); }
+function isOverdue(dueDate: string, status: string) { return (OPEN_STATUSES as string[]).includes(status) && dueDate < todayIso(); }
 function isDueSoon(dueDate: string, status: string) {
-  if (status === "DONE" || status === "NOT_DONE" || isOverdue(dueDate, status)) return false;
+  if (!(OPEN_STATUSES as string[]).includes(status) || isOverdue(dueDate, status)) return false;
   const diffDays = Math.round((new Date(`${dueDate}T00:00:00Z`).getTime() - new Date(`${todayIso()}T00:00:00Z`).getTime()) / 86_400_000);
   return diffDays >= 0 && diffDays <= 2;
+}
+// "Visualizada" não é um status gravado — é um rótulo derivado (status ainda Pendente + já foi
+// aberta pelo responsável) usado em toda serialização (lista, detalhe, histórico), para nunca
+// divergir entre as telas.
+export function displayStatusLabel(status: string, viewedAt: string | null) {
+  if (status === "TODO" && viewedAt) return "Visualizada";
+  return STATUS_LABELS[status as TaskStatus] ?? status;
 }
 
 // `id` informado: busca a tarefa por ID sem filtrar por deletedAt — quem chama decide se uma
@@ -38,9 +47,11 @@ export async function loadTaskRows(id?: number, includeDeleted = false) {
     urgency: tasks.urgency, dueDate: tasks.dueDate, status: tasks.status,
     createdBy: tasks.createdBy, createdByName: creator.name, createdByTaskRoleId: creator.taskRoleId,
     creatorRoleSnapshotId: tasks.creatorRoleSnapshotId, assigneeRoleSnapshotId: tasks.assigneeRoleSnapshotId,
+    viewedAt: tasks.viewedAt, viewedBy: tasks.viewedBy,
     completedAt: tasks.completedAt, completedBy: tasks.completedBy, completionNote: tasks.completionNote,
     notDoneAt: tasks.notDoneAt, notDoneBy: tasks.notDoneBy, notDoneReason: tasks.notDoneReason,
-    deletedAt: tasks.deletedAt, createdAt: tasks.createdAt, updatedAt: tasks.updatedAt,
+    cancelledAt: tasks.cancelledAt, cancelledBy: tasks.cancelledBy, cancelReason: tasks.cancelReason,
+    deletedAt: tasks.deletedAt, deletedBy: tasks.deletedBy, createdAt: tasks.createdAt, updatedAt: tasks.updatedAt,
   }).from(tasks)
     .leftJoin(assignee, eq(tasks.assigneeId, assignee.id))
     .leftJoin(creator, eq(tasks.createdBy, creator.id))
@@ -59,6 +70,7 @@ type TaskNode = TaskRow & {
   children: TaskNode[]; urgencyLabel: string; statusLabel: string; overdue: boolean; dueSoon: boolean;
   progressPercent: number | null; totalDescendants: number; completedDescendants: number;
   canEdit: boolean; canReassign: boolean; canDelete: boolean; canComplete: boolean; canMarkNotDone: boolean;
+  canStart: boolean; canCancel: boolean; canRestore: boolean;
   viewerIsCreator: boolean; viewerIsAssignee: boolean;
 };
 
@@ -71,12 +83,15 @@ function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, g
   return {
     ...row, children,
     urgencyLabel: URGENCY_LABELS[row.urgency as Urgency] ?? row.urgency,
-    statusLabel: STATUS_LABELS[row.status as TaskStatus] ?? row.status,
+    statusLabel: displayStatusLabel(row.status, row.viewedAt),
     overdue: isOverdue(row.dueDate, row.status), dueSoon: isDueSoon(row.dueDate, row.status),
     progressPercent: totalDescendants === 0 ? null : Math.round((completedDescendants / totalDescendants) * 100),
     totalDescendants, completedDescendants,
     canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
     canComplete: permissions.canComplete, canMarkNotDone: permissions.canMarkNotDone,
+    canStart: permissions.canComplete && row.status === "TODO",
+    canCancel: permissions.canDelete && (OPEN_STATUSES as string[]).includes(row.status),
+    canRestore: false,
     viewerIsCreator: row.createdBy === viewer.id, viewerIsAssignee: row.assigneeId === viewer.id,
   };
 }
@@ -161,6 +176,7 @@ export async function POST(request: Request) {
       createdBy: auth.user!.id, updatedAt: now,
     }).returning())[0];
     await logTaskAudit(auth.user!.id, inserted.id, "TASK_CREATED", undefined, { title, assigneeId, dueDate, urgency, parentTaskId, assigneeTaskRoleId: assignee.taskRoleId });
+    await notifyUser(assigneeId, inserted.id, "TASK_RECEIVED", `Você recebeu a tarefa "${title}" de ${auth.user!.name}.`);
     return Response.json({ message: `Tarefa "${title}" criada.`, id: inserted.id }, { status: 201 });
   } catch (error) {
     console.error("[tasks.post]", error);

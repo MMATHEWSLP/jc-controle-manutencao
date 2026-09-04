@@ -5,7 +5,7 @@ import { authorize } from "../../../../lib/auth";
 import {
   canManageOf, canViewReceivedOf, canViewSentOf, isRootRole, loadEverAssigneeTaskIds, loadTaskRoleGraph, type TaskViewer,
 } from "../../../../lib/task-authorization";
-import { STATUS_LABELS, URGENCY_LABELS, loadTaskRows, type TaskStatus, type Urgency } from "../route";
+import { OPEN_STATUSES, URGENCY_LABELS, displayStatusLabel, loadTaskRows, type Urgency } from "../route";
 
 function clean(value: string | null) { return (value ?? "").trim(); }
 
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
       visible.push({
         ...row,
         historyStatus: wasReassignedAway ? "REASSIGNED" : row.status,
-        historyStatusLabel: wasReassignedAway ? "Reatribuída" : (STATUS_LABELS[row.status as TaskStatus] ?? row.status),
+        historyStatusLabel: wasReassignedAway ? "Reatribuída" : displayStatusLabel(row.status, row.viewedAt),
         reassignedAt: null,
         creatorRoleName: row.creatorRoleSnapshotId ? roleNameById.get(row.creatorRoleSnapshotId) ?? null : null,
         assigneeRoleName: row.assigneeRoleSnapshotId ? roleNameById.get(row.assigneeRoleSnapshotId) ?? null : null,
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
       }
       if (from && row.createdAt.slice(0, 10) < from) return false;
       if (to && row.createdAt.slice(0, 10) > to) return false;
-      if (overdueOnly && !(row.status !== "DONE" && row.status !== "NOT_DONE" && row.dueDate < new Date().toISOString().slice(0, 10))) return false;
+      if (overdueOnly && !((OPEN_STATUSES as string[]).includes(row.status) && row.dueDate < new Date().toISOString().slice(0, 10))) return false;
       if (q) { const haystack = `${row.title} ${row.assigneeName ?? ""} ${row.createdByName ?? ""}`.toLocaleLowerCase("pt-BR"); if (!haystack.includes(q)) return false; }
       return true;
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
         urgency: row.urgency, urgencyLabel: URGENCY_LABELS[row.urgency as Urgency] ?? row.urgency,
         dueDate: row.dueDate, status: row.historyStatus, statusLabel: row.historyStatusLabel,
         reassignedAt: row.reassignedAt, deletedAt: row.deletedAt,
-        completionNote: row.completionNote, notDoneReason: row.notDoneReason,
+        completionNote: row.completionNote, notDoneReason: row.notDoneReason, cancelReason: row.cancelReason,
         createdAt: row.createdAt, updatedAt: row.updatedAt,
       })),
       taskRoles: roleRows.map((role) => ({ id: role.id, name: role.name })),

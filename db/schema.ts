@@ -638,14 +638,22 @@ export const tasks = pgTable("tasks", {
   assigneeRoleSnapshotId: integer("assignee_role_snapshot_id").references(() => taskRoles.id),
   urgency: text("urgency", { enum:["LOW","MEDIUM","HIGH","URGENT"] }).notNull().default("MEDIUM"),
   dueDate: text("due_date").notNull(),
-  status: text("status", { enum:["TODO","IN_PROGRESS","DONE","NOT_DONE"] }).notNull().default("TODO"),
+  status: text("status", { enum:["TODO","IN_PROGRESS","DONE","NOT_DONE","CANCELLED"] }).notNull().default("TODO"),
   createdBy: integer("created_by").references(() => users.id),
+  // "Visualizada" não é um status próprio (evitaria voltar a refletir status real depois que o
+  // responsável avança para Em andamento/Concluída/etc.) — é um carimbo à parte, e a tela deriva
+  // o rótulo "Visualizada" quando status ainda é TODO mas viewedAt já foi preenchido.
+  viewedAt: text("viewed_at"),
+  viewedBy: integer("viewed_by").references(() => users.id),
   completedAt: text("completed_at"),
   completedBy: integer("completed_by").references(() => users.id),
   completionNote: text("completion_note"),
   notDoneAt: text("not_done_at"),
   notDoneBy: integer("not_done_by").references(() => users.id),
   notDoneReason: text("not_done_reason"),
+  cancelledAt: text("cancelled_at"),
+  cancelledBy: integer("cancelled_by").references(() => users.id),
+  cancelReason: text("cancel_reason"),
   deletedAt: text("deleted_at"),
   deletedBy: integer("deleted_by").references(() => users.id),
   ...timestamps,
@@ -654,4 +662,22 @@ export const tasks = pgTable("tasks", {
   index("tasks_assignee_idx").on(table.assigneeId, table.status),
   index("tasks_due_date_idx").on(table.dueDate),
   index("tasks_deleted_idx").on(table.deletedAt),
+]);
+
+// Notificações do módulo Tarefas (seção 18): uma linha por destinatário/evento, gerada no mesmo
+// momento em que o evento acontece (nunca por varredura), exceto prazo próximo/vencido, que é
+// calculado ao vivo na consulta em vez de linhas persistidas (não há job periódico no projeto).
+// Nunca cria notificação para quem não pode visualizar a tarefa — a query de criação sempre usa
+// o `computeTaskPermissions` do próprio destinatário antes de inserir.
+export const taskNotifications = pgTable("task_notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  taskId: integer("task_id").notNull().references(() => tasks.id),
+  type: text("type").notNull(),
+  message: text("message").notNull(),
+  createdAt: text("created_at").notNull().default(isoNow),
+  readAt: text("read_at"),
+}, (table) => [
+  index("task_notifications_user_idx").on(table.userId, table.readAt),
+  index("task_notifications_task_idx").on(table.taskId),
 ]);

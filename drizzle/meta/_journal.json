@@ -29,6 +29,13 @@
       "when": 1788527233219,
       "tag": "0003_wise_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788530604259,
+      "tag": "0004_acoustic_riptide",
+      "breakpoints": true
     }
   ]
 }
