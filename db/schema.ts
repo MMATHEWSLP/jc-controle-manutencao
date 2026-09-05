@@ -351,6 +351,7 @@ export const maintenancePlans = pgTable("maintenance_plans", {
   lastHours: doublePrecision("last_hours"),
   lastKm: doublePrecision("last_km"),
   lastDate: text("last_date"),
+  lastIsGenericDate: boolean("last_is_generic_date").notNull().default(false),
   nextHours: doublePrecision("next_hours"),
   nextKm: doublePrecision("next_km"),
   nextDate: text("next_date"),

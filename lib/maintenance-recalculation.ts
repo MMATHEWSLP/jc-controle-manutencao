@@ -78,7 +78,7 @@ export async function recalculateMaintenanceCycles(
     d1.prepare(`SELECT c.id,c.category,c.maintenance_type_id,c.interval_value,c.unit,t.name,t.description
       FROM maintenance_interval_configs c INNER JOIN maintenance_types t ON t.id=c.maintenance_type_id
       WHERE c.active=1 AND t.active=1 AND t.category='OIL' ORDER BY c.category,c.maintenance_type_id`).all() as Promise<{results:Row[]}>,
-    d1.prepare(`SELECT id,equipment_id,maintenance_type_id,prefix,service,reading_value,control_type,performed_at FROM imported_maintenance_history WHERE reading_value IS NOT NULL`).all() as Promise<{results:Row[]}>,
+    d1.prepare(`SELECT id,equipment_id,maintenance_type_id,prefix,service,reading_value,control_type,performed_at,is_generic_date FROM imported_maintenance_history WHERE reading_value IS NOT NULL`).all() as Promise<{results:Row[]}>,
     realHistoryStatement.all() as Promise<{results:Row[]}>,
     applicableStatement.all() as Promise<{results:Row[]}>,
     existingPlanStatement.all() as Promise<{results:Row[]}>,
@@ -150,7 +150,7 @@ export async function recalculateMaintenanceCycles(
       associationStatements.push(d1.prepare(`UPDATE imported_maintenance_history SET equipment_id=?,maintenance_type_id=?,updated_at=? WHERE id=?`)
         .bind(item.id,maintenanceTypeId,new Date().toISOString(),Number(row.id)));
     }
-    const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:1,unit};
+    const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:1,unit,isGenericDate:Boolean(row.is_generic_date)};
     const key=`${item.id}:${maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
   }
   await batchInChunks(d1,associationStatements);
@@ -159,7 +159,7 @@ export async function recalculateMaintenanceCycles(
     const maintenanceTypeId=Number(row.maintenance_type_id);
     for(const unit of ["HOURS","KM"] as const){
       const reading=numberOrNull(unit==="KM"?row.km:row.hours);if(reading===null||!compatible(item.control_type,unit))continue;
-      const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:2,unit};
+      const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:2,unit,isGenericDate:false};
       const key=`${item.id}:${maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
     }
   }
@@ -210,15 +210,15 @@ export async function recalculateMaintenanceCycles(
   for(const {equipment:item,maintenanceTypeId,unit,interval,candidate} of targets){
     const lastValue=candidate?.reading??null;const nextValue=lastValue===null||interval===null?null:lastValue+interval;
     planStatements.push(d1.prepare(`INSERT INTO maintenance_plans
-      (equipment_id,maintenance_type_id,interval_hours,interval_km,trigger_mode,last_hours,last_km,last_date,next_hours,next_km,active,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)
+      (equipment_id,maintenance_type_id,interval_hours,interval_km,trigger_mode,last_hours,last_km,last_date,last_is_generic_date,next_hours,next_km,active,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)
       ON CONFLICT(equipment_id,maintenance_type_id) DO UPDATE SET
         interval_hours=excluded.interval_hours,interval_km=excluded.interval_km,trigger_mode=excluded.trigger_mode,
-        last_hours=excluded.last_hours,last_km=excluded.last_km,last_date=excluded.last_date,
+        last_hours=excluded.last_hours,last_km=excluded.last_km,last_date=excluded.last_date,last_is_generic_date=excluded.last_is_generic_date,
         next_hours=excluded.next_hours,next_km=excluded.next_km,
         active=1,updated_at=excluded.updated_at`)
       .bind(item.id,maintenanceTypeId,unit==="HOURS"?interval:null,unit==="KM"?interval:null,unit,
-        unit==="HOURS"?lastValue:null,unit==="KM"?lastValue:null,candidate?.performedAt?.slice(0,10)??null,
+        unit==="HOURS"?lastValue:null,unit==="KM"?lastValue:null,candidate?.performedAt?.slice(0,10)??null,candidate?.isGenericDate?1:0,
         unit==="HOURS"?nextValue:null,unit==="KM"?nextValue:null,now,now));
   }
   await batchInChunks(d1,planStatements);

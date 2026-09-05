@@ -1,6 +1,6 @@
 import { getD1 } from "../../../db";
 import { authorize } from "../../../lib/auth";
-import { calculatePlanState, levelPriority, type ControlType, type PlanTriggerMode } from "../../../lib/maintenance-engine";
+import { calculatePlanState, levelPriority, summarizeEquipmentHealth, type ControlType, type PlanTriggerMode } from "../../../lib/maintenance-engine";
 import { loadThresholds } from "../../../lib/maintenance-data";
 import { loadHistoryEntries } from "../../../lib/history-data";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
@@ -22,7 +22,7 @@ export async function GET(request:Request){
     const d1=await getD1();
     await recalculateMaintenanceCycles(d1,{notify:false});
     const [equipmentResult,applicableResult,typeResult,planResult,readingResult,rawHistory,thresholds,allowedIds]=await Promise.all([
-      d1.prepare(`SELECT e.id,e.code,e.prefix,e.type,e.brand,e.model,e.year,e.serial_number,e.chassis,e.identification_type,e.plate,e.qr_token,
+      d1.prepare(`SELECT e.id,e.code,e.prefix,e.type,e.brand,e.model,e.year,e.serial_number,e.chassis,e.identification_type,e.plate,e.qr_token,e.photo_key,
         e.service_front_id,e.oil_change_enabled,e.current_hours,e.current_km,e.control_type,e.status,e.notes,e.created_at,e.updated_at,sf.name AS front
         FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id WHERE e.oil_change_enabled=1 ORDER BY e.prefix`).all() as Promise<{results:Row[]}>,
       d1.prepare(`SELECT emt.equipment_id,t.id AS type_id,t.name,t.category FROM equipment_maintenance_types emt
@@ -70,19 +70,19 @@ export async function GET(request:Request){
         const estimatedDays=average>0&&state.remaining!==null&&state.remaining>0?Math.ceil(state.remaining/average):null;
         const serialized={id:calculable.id,equipmentId:id,maintenanceTypeId:Number(plan.maintenance_type_id),name:String(plan.maintenance_name),category:String(plan.maintenance_category),
           triggerMode:calculable.triggerMode,intervalHours:calculable.intervalHours,intervalKm:calculable.intervalKm,intervalDays:n(plan.interval_days),
-          lastHours:calculable.lastHours,lastKm:calculable.lastKm,lastDate:text(plan.last_date),nextHours:calculable.nextHours,nextKm:calculable.nextKm,nextDate:text(plan.next_date),
+          lastHours:calculable.lastHours,lastKm:calculable.lastKm,lastDate:text(plan.last_date),lastIsGenericDate:Number(plan.last_is_generic_date)===1,nextHours:calculable.nextHours,nextKm:calculable.nextKm,nextDate:text(plan.next_date),
           oilType:text(plan.oil_type),filterReference:text(plan.filter_reference),notes:text(plan.notes),state,estimatedDays};
         allPlanStates.push({...serialized,prefix:String(row.prefix),equipment:`${row.brand} ${row.model}`,equipmentCategory:String(row.type),front:text(row.front)??"Sem frente"});
         return serialized;
       });
-      const configured=plans.filter((plan)=>plan.state.configured);
-      const worst=configured.sort((a,b)=>levelPriority(a.state.level)-levelPriority(b.state.level)||((a.state.health??100)-(b.state.health??100)))[0];
+      const health=summarizeEquipmentHealth(plans.map((plan)=>({name:plan.name,state:plan.state})));
       const statusMap:Record<string,string>={ACTIVE:"Ativo",STOPPED:"Parado",MAINTENANCE:"Em manutenção",INACTIVE:"Inativo"};
       return {id,code:String(row.code),prefix:String(row.prefix),type:String(row.type),brand:String(row.brand),model:String(row.model),year:n(row.year),
-        qrToken:text(row.qr_token),serviceFrontId:n(row.service_front_id),oilChangeEnabled:Number(row.oil_change_enabled)===1,notes:text(row.notes),
+        qrToken:text(row.qr_token),photoKey:text(row.photo_key),serviceFrontId:n(row.service_front_id),oilChangeEnabled:Number(row.oil_change_enabled)===1,notes:text(row.notes),
         serial:text(row.serial_number)??"",chassis:text(row.chassis),identificationType:String(row.identification_type),identificationValue:String(row.identification_type)==="CHASSIS"?text(row.chassis):text(row.serial_number),
         plate:text(row.plate),front:text(row.front)??"Sem frente",hours:currentHours,km:currentKm,control:controlType,status:statusMap[String(row.status)]??String(row.status),
-        reading:formatReading(currentHours,currentKm,controlType),health:worst?.state.health??null,situation:worst?.state.label??"Sem plano",tone:worst?.state.tone??"gray",
+        reading:formatReading(currentHours,currentKm,controlType),health:health.health,situation:health.situation,tone:health.tone,
+        healthCounts:health.counts,overduePlans:health.overduePlans,
         applicableMaintenanceTypes:applicableMap.get(id)??[],plans,createdAt:String(row.created_at),updatedAt:String(row.updated_at)};
     });
 

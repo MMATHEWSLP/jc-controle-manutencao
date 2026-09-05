@@ -50,6 +50,13 @@
       "when": 1788644453292,
       "tag": "0006_narrow_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788646606912,
+      "tag": "0007_dark_abomination",
+      "breakpoints": true
     }
   ]
 }

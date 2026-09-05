@@ -1,0 +1,1 @@
+ALTER TABLE "maintenance_plans" ADD COLUMN "last_is_generic_date" boolean DEFAULT false NOT NULL;

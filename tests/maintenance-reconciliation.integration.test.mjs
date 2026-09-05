@@ -198,3 +198,29 @@ test("unidade do plano segue o control_type real do equipamento, mesmo com a con
     "a leitura em KM não pode ficar invisível só porque a configuração padrão da categoria está em horas; sem um intervalo em KM válido o plano fica 'Sem plano', nunca com um número na unidade errada");
   database.close();
 });
+
+test("o plano guarda que a última troca usada veio de um histórico com data genérica, e um histórico real mais recente assume a prioridade",async()=>{
+  const database=migratedDatabase();const d1=new LocalD1(database);
+  seedMaintenanceTypes(database,["TROCA DE ÓLEO DO MOTOR"]);
+  seedIntervalConfigs(database,[{category:"CC",unit:"HOURS",interval:250,names:["TROCA DE ÓLEO DO MOTOR"]}]);
+  const ccPrefix="CC-REG-04";
+  const ccId=addEquipment(database,{prefix:ccPrefix,type:"Caminhão coletor",controlType:"HOURS",currentHours:2000,currentKm:0});
+  enableTypes(database,ccId,["TROCA DE ÓLEO DO MOTOR"]);
+  const genericId=database.prepare(`INSERT INTO imported_maintenance_history
+    (prefix,service,reading_raw,reading_value,control_type,performed_at,is_generic_date,date_source,source,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,1,'IMPORT_DEFAULT','REGRESSION_TEST',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`)
+    .run(ccPrefix,"Troca de óleo do motor","1453",1453,"HOURS","2026-07-05").lastInsertRowid;
+  await recalculateMaintenanceCycles(d1,{equipmentId:ccId,force:true,notify:false});
+
+  const motorTypeId=maintenanceTypeId(database,"TROCA DE ÓLEO DO MOTOR");
+  const afterGeneric={...database.prepare(`SELECT last_hours,last_date,last_is_generic_date FROM maintenance_plans WHERE equipment_id=? AND maintenance_type_id=?`).get(ccId,motorTypeId)};
+  assert.deepEqual(afterGeneric,{last_hours:1453,last_date:"2026-07-05",last_is_generic_date:1},"usa o histórico com data genérica quando é o único disponível, e sinaliza a origem");
+  assert.equal(database.prepare("SELECT is_generic_date FROM imported_maintenance_history WHERE id=?").get(genericId).is_generic_date,1,"a correção de data genérica não é desfeita pelo recálculo");
+
+  // Um histórico real, com data POSTERIOR à data genérica, deve assumir a última troca.
+  addImported(database,{prefix:ccPrefix,service:"Troca de óleo do motor",reading:1800,unit:"HOURS",date:"2026-08-01"});
+  await recalculateMaintenanceCycles(d1,{equipmentId:ccId,force:true,notify:false});
+  const afterReal={...database.prepare(`SELECT last_hours,last_date,last_is_generic_date FROM maintenance_plans WHERE equipment_id=? AND maintenance_type_id=?`).get(ccId,motorTypeId)};
+  assert.deepEqual(afterReal,{last_hours:1800,last_date:"2026-08-01",last_is_generic_date:0},"histórico real posterior tem prioridade sobre a data genérica e limpa a marcação");
+  database.close();
+});
