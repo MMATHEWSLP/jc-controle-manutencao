@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 type TaskStatus = "TODO" | "IN_PROGRESS" | "AWAITING_COMPLETION_APPROVAL" | "AWAITING_NOT_DONE_AUTHORIZATION" | "DONE" | "NOT_DONE" | "CANCELLED";
@@ -159,7 +159,7 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
     {cancelling && <CancelTaskModal node={cancelling} close={()=>setCancelling(null)} saved={async(message)=>{ setCancelling(null); await load(); flash(message); }}/>}
     {requestingNotDone && <RequestNotDoneModal node={requestingNotDone} close={()=>setRequestingNotDone(null)} saved={async(message)=>{ setRequestingNotDone(null); await load(); flash(message); }}/>}
     {deciding && <DecisionModal node={deciding.node} kind={deciding.kind} close={()=>setDeciding(null)} saved={async(message)=>{ setDeciding(null); await load(); flash(message); }}/>}
-    {viewingId!==null && <TaskDetailModal id={viewingId} close={()=>setViewingId(null)} onChanged={load} openRequestCompletion={setRequestingCompletion} openRequestNotDone={setRequestingNotDone} openDecide={(node,kind)=>setDeciding({ node, kind })}/>}
+    {viewingId!==null && <TaskDetailModal id={viewingId} subtasks={flatTasks.find((task)=>task.id===viewingId)?.children} close={()=>setViewingId(null)} onChanged={load} openRequestCompletion={setRequestingCompletion} openRequestNotDone={setRequestingNotDone} openDecide={(node,kind)=>setDeciding({ node, kind })} openEdit={(node)=>{ setViewingId(null); setModal({ item:node, presetParentId:null }); }}/>}
   </>;
 }
 
@@ -334,7 +334,10 @@ function TaskCard({ node, depth, collapsed, toggleCollapse, openEdit, openCreate
       </div>
     </header>
     <div className="task-card-body">
-      {node.description && <p className="task-card-description">{node.description}</p>}
+      {node.description && <div className="task-card-description-wrap">
+        <p className="task-card-description">{node.description}</p>
+        {node.description.length>160 && <button type="button" className="task-card-description-more" onClick={()=>openDetails(node)}>Ver mais</button>}
+      </div>}
       <dl>
         <div><dt>Responsável</dt><dd>{node.assigneeName??"—"}</dd></div>
         <div><dt>Criado por</dt><dd>{node.createdByName??"—"}</dd></div>
@@ -345,6 +348,7 @@ function TaskCard({ node, depth, collapsed, toggleCollapse, openEdit, openCreate
       {node.status==="AWAITING_NOT_DONE_AUTHORIZATION" && <p className="task-card-pending-note">Pedido de não realização de {node.requestedNonExecutionAt?formatDateTime(node.requestedNonExecutionAt):"—"}{node.notDoneReason?`: "${node.notDoneReason}"`:""}</p>}
     </div>
     <footer className="task-card-footer">
+      <button type="button" className="view-details-action" onClick={()=>openDetails(node)}>👁 Ver detalhes</button>
       {node.canStart && <button onClick={()=>start(node)}>▸ Iniciar</button>}
       {node.canRequestCompletion && <button className="primary" onClick={()=>openRequestCompletion(node)}>Concluir</button>}
       {node.canRequestNotDone && <button onClick={()=>openRequestNotDone(node)}>Não realizar</button>}
@@ -526,37 +530,83 @@ function CancelTaskModal({ node, close, saved }:{ node:TaskNode; close:()=>void;
   </div>;
 }
 
-function TaskDetailModal({ id, close, onChanged, openRequestCompletion, openRequestNotDone, openDecide }:{
-  id:number; close:()=>void; onChanged?:()=>void;
+function TaskDetailModal({ id, subtasks, close, onChanged, openRequestCompletion, openRequestNotDone, openDecide, openEdit }:{
+  id:number; subtasks?:TaskNode[]; close:()=>void; onChanged?:()=>void;
   openRequestCompletion?:(node:TaskNode)=>void; openRequestNotDone?:(node:TaskNode)=>void; openDecide?:(node:TaskNode,kind:"COMPLETION"|"NOT_DONE")=>void;
+  openEdit?:(node:TaskNode)=>void;
 }) {
   const [detail,setDetail]=useState<TaskDetail|null>(null);
   const [history,setHistory]=useState<HistoryEntry[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [restoring,setRestoring]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const dialogRef=useRef<HTMLElement|null>(null);
+  const previousFocusRef=useRef<HTMLElement|null>(null);
   const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{task:TaskDetail;history:HistoryEntry[]}>(`/api/tasks/${id}`); setDetail(result.task); setHistory(result.history); }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar a tarefa."); }finally{ setLoading(false); } },[id]);
   useEffect(()=>{ load(); },[load]);
+
+  // Acessibilidade do modal (foco preso + Esc + devolução de foco): a captura do elemento
+  // anterior acontece na montagem, antes de mover o foco para dentro do diálogo.
+  useEffect(()=>{
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    function focusableElements() {
+      const root=dialogRef.current; if(!root) return [] as HTMLElement[];
+      return Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((el)=>!el.hasAttribute("disabled"));
+    }
+    focusableElements()[0]?.focus();
+    function onKeyDown(event:KeyboardEvent) {
+      if(event.key==="Escape") { event.preventDefault(); close(); return; }
+      if(event.key==="Tab") {
+        const items=focusableElements(); if(items.length===0) return;
+        const first=items[0]; const last=items[items.length-1];
+        if(event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+        else if(!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener("keydown",onKeyDown);
+    return ()=>{ document.removeEventListener("keydown",onKeyDown); previousFocusRef.current?.focus?.(); };
+  },[close]);
+
   async function restore() {
     setRestoring(true);
     try{ await api<{message:string}>(`/api/tasks/${id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"RESTORE" }) }); await load(); onChanged?.(); }
     catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível restaurar a tarefa."); }
     finally{ setRestoring(false); }
   }
+  async function copyDescription() {
+    if(!detail?.description) return;
+    try{ await navigator.clipboard.writeText(detail.description); setCopied(true); window.setTimeout(()=>setCopied(false),2000); }
+    catch{ /* área de transferência indisponível neste navegador/contexto */ }
+  }
   const decideKind = detail && (detail.status==="AWAITING_COMPLETION_APPROVAL" ? "COMPLETION" : detail.status==="AWAITING_NOT_DONE_AUTHORIZATION" ? "NOT_DONE" : null);
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal task-detail-modal">
-      <header><div><p className="eyebrow">DETALHES DA TAREFA</p><h2>{detail?.title ?? "Carregando..."}</h2><span>Histórico completo de alterações desta tarefa.</span></div><button onClick={close}>×</button></header>
+    <section className="modal task-detail-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-modal-title">
+      <header>
+        <div>
+          <p className="eyebrow">DETALHES DA TAREFA</p>
+          <h2 id="task-detail-modal-title">{detail?`#${detail.id} — ${detail.title}`:"Carregando..."}</h2>
+          {detail && <div className="task-card-badges task-detail-badges">
+            <span className={`status-pill ${urgencyTone[detail.urgency]}`}>{detail.urgencyLabel}</span>
+            <span className={`status-pill ${statusTone[detail.status]}`}>{detail.statusLabel}</span>
+            {detail.overdue && <span className="status-pill red">Atrasada</span>}
+          </div>}
+        </div>
+        <button onClick={close} aria-label="Fechar">×</button>
+      </header>
       <div className="modal-form">
         {loading && <p className="full">Carregando...</p>}
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
         {detail && <>
           {detail.deletedAt && <div className="equipment-form-error full"><span>!</span><div><strong>Tarefa excluída em {formatDateTime(detail.deletedAt)}</strong>{detail.canRestore && <div><button type="button" className="secondary" disabled={restoring} onClick={restore}>{restoring?"Restaurando...":"Restaurar tarefa"}</button></div>}</div></div>}
-          <div className="full"><p>{detail.description || "Sem descrição."}</p></div>
+          <div className="full task-detail-description">
+            <div className="task-detail-description-head"><span>Descrição</span><button type="button" className="secondary small" onClick={copyDescription} disabled={!detail.description}>{copied?"Copiado!":"Copiar descrição"}</button></div>
+            <div className="task-detail-description-body">{detail.description || "Sem descrição."}</div>
+          </div>
           <div><span>Responsável</span><strong>{detail.assigneeName??"—"}</strong></div>
           <div><span>Criado por</span><strong>{detail.createdByName??"—"}</strong></div>
+          <div><span>Criado em</span><strong>{formatDateTime(detail.createdAt)}</strong></div>
           <div><span>Prazo</span><strong>{formatDate(detail.dueDate)}</strong></div>
-          <div><span>Status</span><strong>{detail.statusLabel}</strong></div>
           {detail.viewedAt && <div><span>Visualizada pelo responsável em</span><strong>{formatDateTime(detail.viewedAt)}</strong></div>}
           {detail.completionNote && <div className="full"><span>Observação da conclusão ({formatDateTime(detail.requestedCompletionAt ?? detail.completedAt)})</span><p>{detail.completionNote}</p></div>}
           {detail.completionApprovedAt && <div className="full"><span>Conclusão aprovada em {formatDateTime(detail.completionApprovedAt)}</span></div>}
@@ -565,7 +615,12 @@ function TaskDetailModal({ id, close, onChanged, openRequestCompletion, openRequ
           {detail.nonExecutionApprovedAt && <div className="full"><span>Não realização autorizada em {formatDateTime(detail.nonExecutionApprovedAt)}</span></div>}
           {detail.nonExecutionRejectionReason && <div className="full"><span>Motivo da recusa da não realização</span><p>{detail.nonExecutionRejectionReason}</p></div>}
           {detail.cancelReason && <div className="full"><span>Motivo do cancelamento ({formatDateTime(detail.cancelledAt)})</span><p>{detail.cancelReason}</p></div>}
-          {(detail.canRequestCompletion || detail.canRequestNotDone || (detail.canDecide && decideKind)) && <div className="full modal-footer" style={{ padding:0 }}>
+          {subtasks && subtasks.length>0 && <div className="full task-detail-subtasks">
+            <p className="eyebrow">SUBTAREFAS</p>
+            <ul>{subtasks.map((child)=><li key={child.id}><span>#{child.id} · {child.title}</span><span className={`status-pill ${statusTone[child.status]}`}>{child.statusLabel}</span></li>)}</ul>
+          </div>}
+          {(detail.canEdit || detail.canRequestCompletion || detail.canRequestNotDone || (detail.canDecide && decideKind)) && <div className="full modal-footer" style={{ padding:0 }}>
+            {detail.canEdit && openEdit && <button type="button" className="secondary" onClick={()=>{ close(); openEdit(detail); }}>Editar</button>}
             {detail.canRequestCompletion && openRequestCompletion && <button className="primary" onClick={()=>{ close(); openRequestCompletion(detail); }}>Solicitar conclusão</button>}
             {detail.canRequestNotDone && openRequestNotDone && <button onClick={()=>{ close(); openRequestNotDone(detail); }}>Solicitar não realização</button>}
             {detail.canDecide && decideKind && openDecide && <button className="primary" onClick={()=>{ close(); openDecide(detail,decideKind); }}>Decidir</button>}

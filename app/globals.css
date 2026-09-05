@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
-:root { --navy:#0b2942; --navy-2:#123e60; --blue:#0878bd; --ink:#102333; --muted:#5b6f7f; --line:#dce6ec; --surface:#ffffff; --canvas:#f2f7f9; --green:#00a879; --yellow:#e5a20a; --orange:#f16a21; --red:#e23d49; --font-sans:Inter,Geist,Manrope,"Segoe UI",Arial,sans-serif; }
+:root { --navy:#0b2942; --navy-2:#123e60; --blue:#0878bd; --ink:#102333; --muted:#5b6f7f; --line:#dce6ec; --surface:#ffffff; --canvas:#f2f7f9; --green:#00a879; --yellow:#e5a20a; --orange:#f16a21; --red:#e23d49; --font-sans:Inter,Geist,Manrope,"Segoe UI",Arial,sans-serif;
+  /* Tokens de tema (claro): usados por elementos novos e pelo modo escuro abaixo */
+  --bg:var(--canvas); --field-bg:#ffffff; --text:var(--ink); --text-muted:var(--muted); --text-disabled:#9aa7b1;
+  --danger-bg:#fdebec; --danger-border:#f2d1d2; --danger-text:#c83e43;
+  --warning-bg:#fff5dc; --warning-border:#f3dfbd; --warning-text:#b17a08;
+  --success-bg:#e7f6f0; --success-border:#bfe3d4; --success-text:#188360;
+  --badge-bg:#e5f1fb; --badge-text:#1f6b9c; }
+html[data-theme="dark"] {
+  /* Tokens de tema (escuro) — mesma base usada em toda a auditoria de contraste abaixo */
+  --ink:#F3F6FA; --muted:#B6C2D1; --line:#263141; --surface:#131A22; --canvas:#0B0F14;
+  --bg:#0B0F14; --field-bg:#1A222C; --text:#F3F6FA; --text-muted:#B6C2D1; --text-disabled:#7C8A9C;
+  --danger-bg:#3A1116; --danger-border:#7F1D1D; --danger-text:#FF6B6B;
+  --warning-bg:#3A2A08; --warning-border:#92400E; --warning-text:#FBBF24;
+  --success-bg:#0E2A1C; --success-border:#166534; --success-text:#4ADE80;
+  --badge-bg:#17252F; --badge-text:#9FD8C4;
+}
 * { box-sizing:border-box; }
 html, body { margin:0; min-height:100%; background:var(--canvas); color:var(--ink); }
 body { font-family:var(--font-sans); }
@@ -117,7 +132,7 @@ tbody tr:last-child td { border-bottom:0; }
 .machine-cell strong,.machine-cell small { display:block; }.machine-cell strong { color:#233c50; font-size:9px; }.machine-cell small { color:#87949f; font-size:8px; margin-top:2px; }
 .status-pill { display:inline-flex; align-items:center; border-radius:12px; padding:4px 8px; font-weight:700; font-size:7px; }.status-pill:before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; margin-right:5px; }
 .status-pill.yellow{background:#fff5dc;color:#b17a08}.status-pill.orange{background:#fff0e5;color:#d56617}.status-pill.critical{background:#ffe8dc;color:#c44916}.status-pill.red{background:#fdebec;color:#c83e43}.status-pill.green{background:#e7f6f0;color:#188360}.status-pill.blue{background:#e5f1fb;color:#1f6b9c}
-html[data-theme="dark"] .status-pill.green{background:#123a2c;color:#5ee0ab}html[data-theme="dark"] .status-pill.yellow{background:#3a2f0a;color:#f0c454}html[data-theme="dark"] .status-pill.orange{background:#3a220a;color:#f2a35c}html[data-theme="dark"] .status-pill.critical{background:#3a1810;color:#ff9a6a}html[data-theme="dark"] .status-pill.red{background:#3a1418;color:#ff9a9d}html[data-theme="dark"] .status-pill.gray{background:#1c2b35;color:#9db0bd}html[data-theme="dark"] .status-pill.blue{background:#0f2a3d;color:#7ec4ee}
+html[data-theme="dark"] .status-pill.green{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success-text)}html[data-theme="dark"] .status-pill.yellow,html[data-theme="dark"] .status-pill.orange{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning-text)}html[data-theme="dark"] .status-pill.critical,html[data-theme="dark"] .status-pill.red{background:var(--danger-bg);border:1px solid var(--danger-border);color:var(--danger-text)}html[data-theme="dark"] .status-pill.gray{background:#1c2b35;color:#9db0bd}html[data-theme="dark"] .status-pill.blue{background:#0f2a3d;color:#7ec4ee}
 .danger-text { color:#c83e43; font-weight:700; }.row-action { border:0; background:none; color:#7390a4; font-size:18px; }.empty-state { padding:28px; text-align:center; color:#7e8b96; font-size:11px; }
 .critical-count { background:#fdebec; color:#cb3e44; padding:4px 8px; border-radius:11px; font-size:8px; font-weight:700; }
 .alert-item { margin:0 15px 10px; padding:12px; border:1px solid; border-radius:7px; display:flex; gap:10px; }
@@ -293,17 +308,15 @@ html[data-theme="dark"] .fleet-front-cards article,html[data-theme="dark"] .equi
 --------------------------------------------------------------------------- */
 html[data-theme="dark"] .toast{background:#173a52;border:1px solid #2c5875}
 html[data-theme="dark"] .alert-summary article{background:#101f2a;border-color:#293f4c}
-html[data-theme="dark"] .alert-summary article.red>span{background:#3a1418;color:#ff9a9d}
-html[data-theme="dark"] .alert-summary article.orange>span{background:#3a220a;color:#f2a35c}
-html[data-theme="dark"] .alert-summary article.green>span{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .alert-summary article.red>span{background:var(--danger-bg);color:var(--danger-text)}
+html[data-theme="dark"] .alert-summary article.orange>span{background:var(--warning-bg);color:var(--warning-text)}
+html[data-theme="dark"] .alert-summary article.green>span{background:var(--success-bg);color:var(--success-text)}
 html[data-theme="dark"] .alert-summary small{color:#93a4ae}
 html[data-theme="dark"] .alerts-list{background:#0d1922}
 html[data-theme="dark"] .alert-row{background:#101f2a;border-color:#263745}
-html[data-theme="dark"] .alert-row.red .level-icon{background:#3a1418;color:#ff9a9d}
-html[data-theme="dark"] .alert-row.orange .level-icon{background:#3a220a;color:#f2a35c}
-html[data-theme="dark"] .alert-row.critical .level-icon{background:#3a1810;color:#ff9a6a}
-html[data-theme="dark"] .alert-row.yellow .level-icon{background:#3a2f0a;color:#f0c454}
-html[data-theme="dark"] .alert-row.green .level-icon{background:#123a2c;color:#5ee0ab}
+html[data-theme="dark"] .alert-row.red .level-icon,html[data-theme="dark"] .alert-row.critical .level-icon{background:var(--danger-bg);color:var(--danger-text)}
+html[data-theme="dark"] .alert-row.orange .level-icon,html[data-theme="dark"] .alert-row.yellow .level-icon{background:var(--warning-bg);color:var(--warning-text)}
+html[data-theme="dark"] .alert-row.green .level-icon{background:var(--success-bg);color:var(--success-text)}
 html[data-theme="dark"] .grouped-alerts{background:#0d1922}
 html[data-theme="dark"] .level-icon{background:#16232c}
 
@@ -312,21 +325,19 @@ html[data-theme="dark"] .control-card-head>span{background:#16232c;color:#7ec4ee
 html[data-theme="dark"] .control-card.km .control-card-head>span{background:#123a2c;color:#5ee0ab}
 html[data-theme="dark"] .control-card-head p,html[data-theme="dark"] .overdue-total-card p{color:#93a4ae}
 html[data-theme="dark"] .control-card-head strong{color:#e1edf3}
-html[data-theme="dark"] .overdue-total-card{border-color:#63363b;background:#241418}
-html[data-theme="dark"] .overdue-total-card>span{background:#3a1418;color:#ff9a9d}
-html[data-theme="dark"] .overdue-total-card strong{color:#ff9a9d}
-html[data-theme="dark"] .overdue-total-card small{color:#e08a8d}
+html[data-theme="dark"] .overdue-total-card{border-color:var(--danger-border);background:var(--danger-bg)}
+html[data-theme="dark"] .overdue-total-card>span{background:var(--danger-bg);color:var(--danger-text)}
+html[data-theme="dark"] .overdue-total-card strong{color:var(--danger-text)}
+html[data-theme="dark"] .overdue-total-card small{color:var(--danger-text)}
 
 html[data-theme="dark"] .sheet-backdrop{background:rgba(2,8,13,.76)}
 html[data-theme="dark"] .sheet-close{background:#101d28;border-color:#304352;color:#c3d2db}
 html[data-theme="dark"] .sheet-alert{border-color:#293f4c}
 html[data-theme="dark"] .sheet-alert>span{background:#16232c;color:#c3d2db}
 html[data-theme="dark"] .sheet-alert>div small{color:#93a4ae}
-html[data-theme="dark"] .sheet-alert.red>span{color:#ff9a9d;background:#3a1418}
-html[data-theme="dark"] .sheet-alert.orange>span{color:#f2a35c;background:#3a220a}
-html[data-theme="dark"] .sheet-alert.yellow>span{color:#f0c454;background:#3a2f0a}
-html[data-theme="dark"] .sheet-alert.green>span{color:#5ee0ab;background:#123a2c}
-html[data-theme="dark"] .sheet-alert.critical>span{color:#ff9a6a;background:#3a1810}
+html[data-theme="dark"] .sheet-alert.red>span,html[data-theme="dark"] .sheet-alert.critical>span{color:var(--danger-text);background:var(--danger-bg)}
+html[data-theme="dark"] .sheet-alert.orange>span,html[data-theme="dark"] .sheet-alert.yellow>span{color:var(--warning-text);background:var(--warning-bg)}
+html[data-theme="dark"] .sheet-alert.green>span{color:var(--success-text);background:var(--success-bg)}
 
 html[data-theme="dark"] .auth-shell{background:#0b141d}
 html[data-theme="dark"] .login-error{background:#321f24;color:#ff9a9d}
@@ -349,10 +360,9 @@ html[data-theme="dark"] .equipment-plan-title{background:#101f2a;border-color:#2
 html[data-theme="dark"] .equipment-plan-title p{color:#7ec4ee}
 html[data-theme="dark"] .equipment-plan-title h3{color:#e1edf3}
 html[data-theme="dark"] .equipment-plan-title>div>span{color:#93a4ae}
-html[data-theme="dark"] .unit-badge{background:#0f2a3d;color:#7ec4ee!important}
-html[data-theme="dark"] .unit-badge.km{background:#123a2c;color:#5ee0ab!important}
+html[data-theme="dark"] .unit-badge,html[data-theme="dark"] .unit-badge.km{background:var(--badge-bg)!important;color:var(--badge-text)!important}
 html[data-theme="dark"] .password-field button{color:#7ec4ee}
-html[data-theme="dark"] .maintenance-equipment-search-hint.empty>span{background:#3a1418;color:#ff9a9d}
+html[data-theme="dark"] .maintenance-equipment-search-hint.empty>span{background:var(--danger-bg);color:var(--danger-text)}
 
 html[data-theme="dark"] .history-action{background:#16232c;color:#93a4ae}
 html[data-theme="dark"] .history-action.maintenance{background:#123a2c;color:#5ee0ab}
@@ -370,3 +380,36 @@ html[data-theme="dark"] .manual-send-empty strong,html[data-theme="dark"] .manua
 html[data-theme="dark"] .urgency-example{background:#0f2a22;border-color:#2f6350}
 html[data-theme="dark"] .urgency-example strong{color:#5ee0ab}
 html[data-theme="dark"] .urgency-example span{color:#93a4ae}
+
+
+/* ---------------------------------------------------------------------------
+   Auditoria de contraste do modo escuro (texto/fundo sem contrapartida
+   html[data-theme="dark"]) - gerado a partir de varredura estatica de todas
+   as regras de cor/fundo do arquivo, classificando cada cor por matiz
+   (neutra -> --text/--text-muted; vermelho -> danger; amarelo/laranja ->
+   warning; verde -> success; azul -> tom de link/info) e comparando com as
+   variantes escuras ja existentes. Cobre Central de Alertas, Dashboard,
+   Equipamentos, Horimetros/KM, WhatsApp, Historico, Importacao de leituras,
+   Login e Usuarios.
+--------------------------------------------------------------------------- */
+html[data-theme="dark"] .sidebar-status small,html[data-theme="dark"] .user-card small,html[data-theme="dark"] .demo-banner button,html[data-theme="dark"] .more-button,html[data-theme="dark"] .bar-col>span,html[data-theme="dark"] .legend,html[data-theme="dark"] .health-stats small,html[data-theme="dark"] .machine-cell small,html[data-theme="dark"] .empty-state,html[data-theme="dark"] .alert-item p,html[data-theme="dark"] .attention-footer p,html[data-theme="dark"] .attention-footer button,html[data-theme="dark"] .section-title p,html[data-theme="dark"] label,html[data-theme="dark"] .plan-stats span,html[data-theme="dark"] .table-sub,html[data-theme="dark"] .progress-cell b,html[data-theme="dark"] .alert-copy span,html[data-theme="dark"] .alert-copy p,html[data-theme="dark"] .alert-front small,html[data-theme="dark"] .date-filter span,html[data-theme="dark"] .pagination,html[data-theme="dark"] .pagination button,html[data-theme="dark"] .user-row>div small,html[data-theme="dark"] .role-pill,html[data-theme="dark"] .user-row>button,html[data-theme="dark"] .permission-note p,html[data-theme="dark"] .threshold-row,html[data-theme="dark"] .threshold-row strong,html[data-theme="dark"] .toggle-row small,html[data-theme="dark"] .toggle-row>span,html[data-theme="dark"] .centered-state p,html[data-theme="dark"] .modal header span,html[data-theme="dark"] .modal header button,html[data-theme="dark"] .reading-field span,html[data-theme="dark"] .field-hint,html[data-theme="dark"] .maintenance-selector legend,html[data-theme="dark"] .maintenance-selector legend span,html[data-theme="dark"] .maintenance-selector>p,html[data-theme="dark"] .modal-form label>small,html[data-theme="dark"] .equipment-form-section small,html[data-theme="dark"] .sheet-identity>div>span,html[data-theme="dark"] .sheet-actions>div small,html[data-theme="dark"] .sheet-card-head p,html[data-theme="dark"] .equipment-data dt,html[data-theme="dark"] .health-score span,html[data-theme="dark"] .health-counts span,html[data-theme="dark"] .health-counts b,html[data-theme="dark"] .sheet-empty p,html[data-theme="dark"] .control-stats span,html[data-theme="dark"] .inline-unit span,html[data-theme="dark"] .unit-alert-section>header p,html[data-theme="dark"] .unit-alert-section>header>b,html[data-theme="dark"] .alert-front-inline,html[data-theme="dark"] .alert-copy li b,html[data-theme="dark"] .alert-copy li span,html[data-theme="dark"] .share-presets button,html[data-theme="dark"] .share-equipment small,html[data-theme="dark"] .message-preview>div span,html[data-theme="dark"] .share-footer p,html[data-theme="dark"] .threshold-edit-row,html[data-theme="dark"] .threshold-edit-row>strong,html[data-theme="dark"] .threshold-edit-row label i,html[data-theme="dark"] .threshold-edit-row>b,html[data-theme="dark"] .stored-fields b,html[data-theme="dark"] .profile-button small,html[data-theme="dark"] .profile-button>b,html[data-theme="dark"] .profile-menu p small,html[data-theme="dark"] .page-search,html[data-theme="dark"] .no-access p,html[data-theme="dark"] .login-card>span,html[data-theme="dark"] .login-field>small,html[data-theme="dark"] .security-caption,html[data-theme="dark"] .user-summary span,html[data-theme="dark"] .password-reset-identity small,html[data-theme="dark"] .permission-groups small,html[data-theme="dark"] .page-loading,html[data-theme="dark"] .maintenance-plan-selector label>span small,html[data-theme="dark"] .history-detail small,html[data-theme="dark"] .history-edit-context span,html[data-theme="dark"] .wa-tabs button,html[data-theme="dark"] .wa-missing-box small,html[data-theme="dark"] .wa-switch small,html[data-theme="dark"] .wa-recipient-row small,html[data-theme="dark"] .wa-recipient-row p,html[data-theme="dark"] .wa-test-box small,html[data-theme="dark"] .wa-endpoints small,html[data-theme="dark"] .report-filter-bar>label,html[data-theme="dark"] .category-report-filter summary span,html[data-theme="dark"] .category-report-filter summary b,html[data-theme="dark"] .alert-equipment-combobox>label,html[data-theme="dark"] .alert-equipment-search-control>span,html[data-theme="dark"] .alert-equipment-empty,html[data-theme="dark"] .alert-equipment-selection,html[data-theme="dark"] .meter-selected-equipment,html[data-theme="dark"] .import-steps span,html[data-theme="dark"] .import-file-picker,html[data-theme="dark"] .import-summary span,html[data-theme="dark"] .import-preview-table td small,html[data-theme="dark"] .import-confirmation p,html[data-theme="dark"] .reading-import-complete p,html[data-theme="dark"] .maintenance-equipment-search-control>span,html[data-theme="dark"] .maintenance-selected-equipment,html[data-theme="dark"] .maintenance-equipment-search-hint,html[data-theme="dark"] .maintenance-equipment-result-count,html[data-theme="dark"] .wa-send-mode legend,html[data-theme="dark"] .wa-send-mode small,html[data-theme="dark"] .manual-recipient-picker small,html[data-theme="dark"] .manual-message-preview>p small,html[data-theme="dark"] .manual-whatsapp-modal>footer p,html[data-theme="dark"] .urgency-settings-modal>form>label,html[data-theme="dark"] .urgency-percent-field span,html[data-theme="dark"] .fleet-front-cards small,html[data-theme="dark"] .table-subline,html[data-theme="dark"] .oil-switch small,html[data-theme="dark"] .transfer-route small,html[data-theme="dark"] .transfer-history small{color:#B6C2D1}
+html[data-theme="dark"] .plan-stats strong,html[data-theme="dark"] .table-strong,html[data-theme="dark"] .alert-copy strong,html[data-theme="dark"] .history-reading,html[data-theme="dark"] .equipment-form-section strong,html[data-theme="dark"] .sheet-identity h2,html[data-theme="dark"] .sheet-actions>div strong,html[data-theme="dark"] .sheet-card-head h3,html[data-theme="dark"] .control-stats b,html[data-theme="dark"] .unit-alert-section>header h2,html[data-theme="dark"] .share-controls h3,html[data-theme="dark"] .message-preview h3,html[data-theme="dark"] .wa-send-mode strong,html[data-theme="dark"] .manual-recipient-picker h3,html[data-theme="dark"] .manual-message-preview h3,html[data-theme="dark"] .manual-message-preview pre{color:#F3F6FA}
+html[data-theme="dark"] .eyebrow,html[data-theme="dark"] .link-button,html[data-theme="dark"] .alert-item button,html[data-theme="dark"] .attention-footer>span,html[data-theme="dark"] .details-link,html[data-theme="dark"] .plan-hero p,html[data-theme="dark"] .permission-note button,html[data-theme="dark"] .sheet-identity p,html[data-theme="dark"] .sheet-card-head>span,html[data-theme="dark"] .sheet-card-head button,html[data-theme="dark"] .rule-flow b,html[data-theme="dark"] .forgot-button,html[data-theme="dark"] .permission-groups legend,html[data-theme="dark"] .wa-form legend,html[data-theme="dark"] .wa-history summary{color:#7ec4ee}
+html[data-theme="dark"] .imported-history-badge,html[data-theme="dark"] .big-check,html[data-theme="dark"] .oil-scope-note,html[data-theme="dark"] .whatsapp-mini,html[data-theme="dark"] .wa-health.ready,html[data-theme="dark"] .live-data-badge.ok,html[data-theme="dark"] .wa-result.sent,html[data-theme="dark"] .wa-result.delivered,html[data-theme="dark"] .manual-message-preview>div:first-child>span,html[data-theme="dark"] .fleet-front-cards article>span,html[data-theme="dark"] .oil-pill.yes,html[data-theme="dark"] .equipment-row-actions .transfer-action,html[data-theme="dark"] .transfer-history>div>span{background:#0E2A1C;color:#4ADE80}
+html[data-theme="dark"] .health-line>div b,html[data-theme="dark"] .maintenance-selector label.checked,html[data-theme="dark"] .applicable-selector .selector-actions button:hover,html[data-theme="dark"] .user-name-cell small,html[data-theme="dark"] .import-steps span.done,html[data-theme="dark"] .import-summary .ready strong,html[data-theme="dark"] .import-confirmation p strong,html[data-theme="dark"] .manual-whatsapp-modal header p,html[data-theme="dark"] .urgency-settings-modal header p,html[data-theme="dark"] .transfer-route>span{color:#4ADE80}
+html[data-theme="dark"] .sheet-tabs b,html[data-theme="dark"] .threshold-edit-row.fixed input,html[data-theme="dark"] .rule-flow,html[data-theme="dark"] input:disabled,html[data-theme="dark"] select:disabled,html[data-theme="dark"] .login-card,html[data-theme="dark"] .wa-tabs b,html[data-theme="dark"] .import-steps b{background:#1A222C}
+html[data-theme="dark"] .metric-card.amber .metric-icon,html[data-theme="dark"] .warning .alert-symbol,html[data-theme="dark"] .settings-separation,html[data-theme="dark"] .admin-protection,html[data-theme="dark"] .wa-health.missing,html[data-theme="dark"] .wa-result.pending,html[data-theme="dark"] .front-pill.missing{background:#3A2A08;color:#FBBF24}
+html[data-theme="dark"] .search-wrap,html[data-theme="dark"] .no-conversion,html[data-theme="dark"] .rule-flow span,html[data-theme="dark"] .wa-requirements i,html[data-theme="dark"] .oil-pill.no,html[data-theme="dark"] .equipment-row-actions button{background:#1A222C;color:#B6C2D1}
+html[data-theme="dark"] .danger-text,html[data-theme="dark"] .alert-item span,html[data-theme="dark"] .form-error,html[data-theme="dark"] .alert-copy li span strong,html[data-theme="dark"] .profile-menu .logout-button,html[data-theme="dark"] .import-summary .error strong{color:#FF6B6B}
+html[data-theme="dark"] .permission-note>span,html[data-theme="dark"] .equipment-form-section>span,html[data-theme="dark"] .sheet-empty>span,html[data-theme="dark"] .unit-alert-section>header>span,html[data-theme="dark"] .front-pill,html[data-theme="dark"] .oil-pill{background:#0f2a3d;color:#7ec4ee}
+html[data-theme="dark"] .critical-count,html[data-theme="dark"] .critical .alert-symbol,html[data-theme="dark"] .wa-result.failed{background:#3A1116;color:#FF6B6B}
+html[data-theme="dark"] .stored-fields span,html[data-theme="dark"] .login-info,html[data-theme="dark"] .password-rule{background:#0f2a3d;color:#B6C2D1}
+html[data-theme="dark"] .metric-card.green .metric-icon,html[data-theme="dark"] .applicable-selector,html[data-theme="dark"] .whatsapp-mini:hover{background:#0E2A1C}
+html[data-theme="dark"] .metric-card.red .metric-icon,html[data-theme="dark"] .alert-item.critical,html[data-theme="dark"] .overdue-pdf-action:hover:not(:disabled){background:#3A1116}
+html[data-theme="dark"] .maintenance-selector,html[data-theme="dark"] .alert-settings-action:hover,html[data-theme="dark"] .transfer-modal>footer{background:#0f2a3d}
+html[data-theme="dark"] .warning span,html[data-theme="dark"] .import-summary .warning strong{color:#FBBF24}
+html[data-theme="dark"] .machine-cell>span{background:#0f2a3d;color:#F3F6FA}
+html[data-theme="dark"] .applicable-selector .selector-actions button{background:#1A222C;color:#7ec4ee}
+html[data-theme="dark"] .operation-error button{background:#1A222C;color:#FF6B6B}
+html[data-theme="dark"] .maintenance-equipment-search-control>button:hover{background:#1A222C;color:#F3F6FA}
+html[data-theme="dark"] .alert-item.warning{background:#3A2A08}

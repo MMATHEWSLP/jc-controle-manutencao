@@ -105,11 +105,28 @@ html[data-theme="dark"] .history-card.deleted .task-card-head{background:#2a1418
 .decision-choice button{flex:1;padding:12px;border-radius:8px;font-size:10px;font-weight:800}
 @media(max-width:520px){.decision-choice{flex-direction:column}}
 
+.task-card-description-wrap{margin:0 0 8px}
+.task-card-description-more{display:inline-block;margin-top:2px;border:0;background:none;padding:0;color:#2475a4;font-size:9px;font-weight:700;cursor:pointer}
+.task-card-description-more:hover{text-decoration:underline}
+.view-details-action{display:inline-flex;align-items:center;gap:4px}
+
 .task-detail-modal{width:min(720px,96vw)}
 .task-detail-modal .modal-form>div:not(.full){display:flex;flex-direction:column;gap:4px}
 .task-detail-modal .modal-form>div:not(.full)>span{color:#4f6070;font-size:8px;font-weight:700;text-transform:uppercase}
 .task-detail-modal .modal-form>div:not(.full)>strong{font-size:11px;color:#1b354a}
+.task-detail-badges{margin-top:6px}
+.task-detail-description{display:flex;flex-direction:column;gap:6px}
+.task-detail-description-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.task-detail-description-head>span{color:#4f6070;font-size:8px;font-weight:700;text-transform:uppercase}
+.task-detail-description-head button{padding:6px 9px;border:1px solid #d9e3e8;border-radius:6px;background:#fff;color:#3f6175;font-size:8px;font-weight:700}
+.task-detail-description-body{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;max-height:60vh;overflow-y:auto;padding:10px 12px;border:1px solid #e2e8ec;border-radius:7px;background:#fafcfd;color:#334c60;font-size:11px;line-height:1.6}
+.task-detail-subtasks ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.task-detail-subtasks li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #e2e8ec;border-radius:7px;background:#fafcfd;font-size:10px;color:#334c60}
 html[data-theme="dark"] .task-detail-modal .modal-form>div:not(.full)>strong{color:#e1edf3}
+html[data-theme="dark"] .task-card-description-more{color:#7ec4ee}
+html[data-theme="dark"] .task-detail-description-head>span{color:#B6C2D1}
+html[data-theme="dark"] .task-detail-description-head button{background:#101d28;border-color:#304352;color:#c3d2db}
+html[data-theme="dark"] .task-detail-description-body,html[data-theme="dark"] .task-detail-subtasks li{background:#101f2a;border-color:#293f4c;color:#dbe7ee}
 
 .task-notification-bell{position:relative}
 .task-notification-toggle{position:relative;width:38px;height:38px;border:1px solid #d9e3e8;border-radius:8px;background:#fff;font-size:16px;line-height:1;cursor:pointer}
@@ -170,3 +187,14 @@ html[data-theme="dark"] .hierarchy-group>header{background:#132631}
 html[data-theme="dark"] .hierarchy-group>header h3{color:#e1edf3}
 html[data-theme="dark"] .hierarchy-user-card{background:#0e1c26;border-color:#293f4c}
 html[data-theme="dark"] .hierarchy-user-card strong{color:#e1edf3}
+
+
+/* ---------------------------------------------------------------------------
+   Auditoria de contraste do modo escuro - regras de cor/fundo sem
+   contrapartida html[data-theme="dark"], geradas por varredura estatica e
+   classificadas por matiz (neutra, vermelho/danger, amarelo-laranja/warning,
+   verde/success, azul/info) contra as variantes ja existentes.
+--------------------------------------------------------------------------- */
+html[data-theme="dark"] .task-detail-modal .modal-form>div:not(.full)>span,html[data-theme="dark"] .task-notification-item small,html[data-theme="dark"] .task-summary-grid span,html[data-theme="dark"] .hierarchy-group>header span,html[data-theme="dark"] .hierarchy-user-card small{color:#B6C2D1}
+html[data-theme="dark"] .task-card-subtasks-toggle,html[data-theme="dark"] .task-notification-dropdown header button,html[data-theme="dark"] .hierarchy-user-card button{color:#7ec4ee}
+html[data-theme="dark"] .task-card-footer .danger-action,html[data-theme="dark"] .task-summary-grid>div.danger-text strong{color:#FF6B6B}

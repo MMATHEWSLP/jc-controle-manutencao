@@ -2,3 +2,17 @@
 html[data-theme="dark"] .qr-filter-grid select{background:#101d27;border-color:#2c3e4b}html[data-theme="dark"] .qr-preview,html[data-theme="dark"] .qr-row-button{border-color:#324653}html[data-theme="dark"] .qr-row-button{background:#13232e;color:#b8cbd5}html[data-theme="dark"] .qr-loading{background:#13232e}
 @media(max-width:900px){.qr-filter-grid{grid-template-columns:1fr 1fr}.qr-filter-grid .page-search{grid-column:1/-1}.qr-actions-bar{align-items:stretch;flex-wrap:wrap}.qr-actions-bar>span{width:100%;margin-left:0}}
 @media(max-width:620px){.qr-filter-grid{grid-template-columns:1fr}.qr-filter-grid .page-search{grid-column:auto}.qr-actions-bar button{flex:1}.qr-table th:nth-child(2),.qr-table td:nth-child(2){display:none}}
+
+
+/* ---------------------------------------------------------------------------
+   Auditoria de contraste do modo escuro - regras de cor/fundo sem
+   contrapartida html[data-theme="dark"], geradas por varredura estatica e
+   classificadas por matiz (neutra, vermelho/danger, amarelo-laranja/warning,
+   verde/success, azul/info) contra as variantes ja existentes.
+--------------------------------------------------------------------------- */
+html[data-theme="dark"] .qr-actions-bar>span,html[data-theme="dark"] .qr-loading,html[data-theme="dark"] .qr-equipment small{color:#B6C2D1}
+html[data-theme="dark"] .qr-equipment>span{background:#1A222C;color:#4ADE80}
+html[data-theme="dark"] .category-pill{background:#1A222C;color:#7ec4ee}
+html[data-theme="dark"] .qr-row-button:hover{color:#4ADE80}
+html[data-theme="dark"] .qr-row-button.download{background:#0E2A1C;color:#4ADE80}
+html[data-theme="dark"] .qr-preview{background:#1A222C}
