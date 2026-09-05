@@ -25,3 +25,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node verificar-regularizacao-tarefas.mjs
+
+      - name: Diagnóstico do histórico de troca de óleo (somente leitura)
+        if: hashFiles('diagnosticar-historico-oleo.mjs') != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node diagnosticar-historico-oleo.mjs
