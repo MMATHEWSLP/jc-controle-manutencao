@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+/* eslint-disable @next/next/no-img-element -- foto do equipamento vem de uma rota própria (já otimizada em WebP no navegador antes do envio); o projeto não usa o otimizador de imagem do Next (ver <Image unoptimized/> em BrandMark) */
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import Image from "next/image";
 import { readSpreadsheetFile, type SpreadsheetReadingRow } from "../lib/excel-client";
 import QrCodesView from "./QrCodesView";
@@ -10,6 +11,7 @@ import EquipmentManagementView from "./EquipmentManagementView";
 import MaterialRequestsView from "./MaterialRequestsView";
 import TasksView from "./TasksView";
 import TaskRoleManagerModal from "./TaskRoleManagerModal";
+import { planBalanceText, planDetailStatus, planSortRank, type PlanState } from "../lib/maintenance-engine";
 type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status";
 type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO";
 type TaskRole = { id: number; name: string; visualOrder: number; isRoot: boolean };
@@ -34,22 +36,6 @@ type MaintenanceType = {
     name: string;
     category: string;
 };
-type PlanState = {
-    configured: boolean;
-    unit: "HOURS" | "KM";
-    unitLabel: "h" | "km";
-    currentValue: number;
-    lastValue: number | null;
-    interval: number | null;
-    nextValue: number | null;
-    remaining: number | null;
-    overdue: number;
-    used: number | null;
-    health: number | null;
-    level: "OK" | "WARNING" | "NEAR" | "OVERDUE";
-    label: string;
-    tone: string;
-};
 type Plan = {
     id: number;
     equipmentId: number;
@@ -63,6 +49,7 @@ type Plan = {
     lastHours: number | null;
     lastKm: number | null;
     lastDate: string | null;
+    lastIsGenericDate: boolean;
     nextHours: number | null;
     nextKm: number | null;
     nextDate: string | null;
@@ -94,7 +81,10 @@ type Equipment = {
     health: number | null;
     situation: string;
     tone: string;
+    healthCounts: { normal: number; attention: number; overdue: number; pending: number };
+    overduePlans: Array<{ name: string; nextValue: number | null; overdue: number; unitLabel: "h" | "km" }>;
     qrToken: string | null;
+    photoKey: string | null;
     applicableMaintenanceTypes: MaintenanceType[];
     plans: Plan[];
     createdAt: string;
@@ -137,6 +127,7 @@ type HistoryItem = {
     workOrder: string;
     notes: string | null;
     cost: number;
+    isGenericDate: boolean;
 };
 type Dashboard = {
     equipmentTotal: number;
@@ -200,10 +191,6 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> { co
 catch { /* tratada abaixo */ } if (!response.ok)
     throw Object.assign(new Error(String(data.error ?? "A operação não pôde ser concluída.")), { status: response.status, data }); return data as T; }
 function formatNumber(value: number | null | undefined) { return value === null || value === undefined ? "—" : value.toLocaleString("pt-BR", { maximumFractionDigits: 1 }); }
-function planBalanceText(state: PlanState) { if (!state.configured || state.remaining === null)
-    return "—"; if (state.level === "NEAR")
-    return `Urgente — vencido há ${formatNumber(state.overdue)} ${state.unitLabel}`; if (state.level === "OVERDUE")
-    return `Vencido há ${formatNumber(state.overdue)} ${state.unitLabel}`; return `Restam ${formatNumber(state.remaining)} ${state.unitLabel}`; }
 function formatDate(value: string, withTime = true) { if (!value) return "Sem data"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("pt-BR", withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(date); }
 function localDateTime() { const date = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); return date.toISOString().slice(0, 16); }
 function inputDateTime(value: string) { const date = new Date(value); if (Number.isNaN(date.getTime()))
@@ -396,7 +383,7 @@ function PlanTable({ plans, openEquipment }: {
 function EquipmentView({ data, openEquipment }: {
     data: SystemData;
     openEquipment: (id: number) => void;
-}) { const [query, setQuery] = useState(""); const normalized = query.toLowerCase(); const items = data.equipment.filter((item) => !normalized || [item.prefix, item.type, item.brand, item.model, item.plate, item.front].some((value) => String(value ?? "").toLowerCase().includes(normalized))); return <><ModuleHeader eyebrow="TROCA DE ÓLEO" title="Equipamentos da troca" subtitle="Somente equipamentos da sua frente com troca de óleo habilitada."/><div className="summary-strip"><div><strong>{data.dashboard.equipmentTotal}</strong><span>Total cadastrado</span></div><div><strong>{data.dashboard.active}</strong><span>Ativos</span></div><div><strong>{data.dashboard.stopped}</strong><span>Parados / manutenção</span></div><div><strong>{data.dashboard.fronts}</strong><span>Frentes de serviço</span></div></div><article className="panel module-panel"><div className="toolbar page-search-toolbar"><label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar prefixo, tipo, marca, modelo, placa ou frente..."/></label><span className="live-data-badge">{items.length} ENCONTRADOS</span></div><div className="equipment-grid">{items.map((item) => <button className="equipment-card" key={item.id} onClick={() => openEquipment(item.id)}><div className="equipment-card-top"><span className="equipment-avatar">{item.prefix.slice(0, 2)}</span><span className={`status-pill ${item.status === "Ativo" ? "green" : "gray"}`}>{item.status}</span></div><p>{item.type}</p><h3>{item.prefix} · {item.brand} {item.model}</h3><div className="equipment-meta"><span>Frente<strong>{item.front}</strong></span><span>Leitura<strong>{item.reading}</strong></span><span>Planos<strong>{item.plans.length} configurados</strong></span></div><div className={`health-line ${item.tone}`}><div><span>Saúde preventiva</span><b>{item.health === null ? "Sem plano" : `${item.health}%`}</b></div><i><em style={{ width: `${item.health ?? 0}%` }}/></i></div><span className="details-link">Abrir ficha do equipamento →</span></button>)}</div>{items.length === 0 && <div className="empty-state">Nenhum equipamento encontrado.</div>}</article></>; }
+}) { const [query, setQuery] = useState(""); const normalized = query.toLowerCase(); const items = data.equipment.filter((item) => !normalized || [item.prefix, item.type, item.brand, item.model, item.plate, item.front].some((value) => String(value ?? "").toLowerCase().includes(normalized))); return <><ModuleHeader eyebrow="TROCA DE ÓLEO" title="Equipamentos da troca" subtitle="Somente equipamentos da sua frente com troca de óleo habilitada."/><div className="summary-strip"><div><strong>{data.dashboard.equipmentTotal}</strong><span>Total cadastrado</span></div><div><strong>{data.dashboard.active}</strong><span>Ativos</span></div><div><strong>{data.dashboard.stopped}</strong><span>Parados / manutenção</span></div><div><strong>{data.dashboard.fronts}</strong><span>Frentes de serviço</span></div></div><article className="panel module-panel"><div className="toolbar page-search-toolbar"><label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar prefixo, tipo, marca, modelo, placa ou frente..."/></label><span className="live-data-badge">{items.length} ENCONTRADOS</span></div><div className="equipment-grid">{items.map((item) => <button className={`equipment-card${item.overduePlans.length > 0 ? " has-overdue" : ""}`} key={item.id} onClick={() => openEquipment(item.id)}><div className="equipment-card-top"><span className="equipment-avatar">{item.prefix.slice(0, 2)}</span><div className="equipment-card-badges"><span className={`status-pill ${item.status === "Ativo" ? "green" : "gray"}`}>{item.status}</span>{item.overduePlans.length > 0 && <span className="status-pill red overdue-count-badge">{item.overduePlans.length === 1 ? "Vencido" : `${item.overduePlans.length} trocas vencidas`}</span>}</div></div><p>{item.type}</p><h3>{item.prefix} · {item.brand} {item.model}</h3><div className="equipment-meta"><span>Frente<strong>{item.front}</strong></span><span>Leitura<strong>{item.reading}</strong></span><span>Planos<strong>{item.plans.length} configurados</strong></span></div>{item.overduePlans.length > 0 ? <div className="overdue-services"><strong className="overdue-services-title">Trocas vencidas</strong><ul>{item.overduePlans.slice(0, 3).map((plan, index) => <li key={index}><span className="overdue-service-name">{plan.name}</span><span className="overdue-service-detail">próxima: {formatNumber(plan.nextValue)} {plan.unitLabel} · vencida há {formatNumber(plan.overdue)} {plan.unitLabel}</span></li>)}</ul>{item.overduePlans.length > 3 && <span className="overdue-more">+ {item.overduePlans.length - 3} outra{item.overduePlans.length - 3 > 1 ? "s" : ""} troca{item.overduePlans.length - 3 > 1 ? "s" : ""} vencida{item.overduePlans.length - 3 > 1 ? "s" : ""}</span>}</div> : <div className={`health-line ${item.tone}`}><div><span>Saúde preventiva</span><b>{item.health === null ? item.situation : `${item.health}%`}</b></div><i><em style={{ width: `${item.health ?? 0}%` }}/></i></div>}<span className="details-link">Abrir ficha do equipamento →</span></button>)}</div>{items.length === 0 && <div className="empty-state">Nenhum equipamento encontrado.</div>}</article></>; }
 type ReadingImportPreviewRow = { rowNumber:number;equipmentInput:string;equipmentId:number|null;prefix:string;equipment:string;reading:number|null;readingRaw:string;unit:"HOURS"|"KM"|"HOURS_KM"|null;currentReading:number|null;responsible:string;readingDate:string|null;notes:string;front:string;status:"READY"|"WARNING"|"ERROR";code:string;message:string;ready:boolean };
 type ReadingImportAnalysis = { fileName:string;rows:ReadingImportPreviewRow[];summary:{total:number;ready:number;warnings:number;errors:number;blocked:number} };
 type ReadingImportResult = { fileName:string;updated:number;skipped:number;errors:number;total:number;errorRows:ReadingImportPreviewRow[] };
@@ -702,7 +689,7 @@ function HistoryView({ data, authUser, refresh, flash, openEquipment }: {
             setDeleting(null);
         }
     }
-    return <><ModuleHeader eyebrow="RASTREABILIDADE" title="Histórico completo" subtitle="Consulte, filtre e exporte os registros organizados pela categoria real de cada equipamento."/><article className="panel module-panel"><div className="toolbar page-search-toolbar"><label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar equipamento, ação, serviço, responsável ou OS..."/></label><select className="history-kind-filter" value={kind} onChange={(event) => setKind(event.target.value)}><option value="TODOS">Todas as ações</option><option value="READING">Leituras</option><option value="MAINTENANCE">Manutenções</option><option value="IMPORTED">Importados</option></select><button className="report-pdf-action history-report-export" disabled={rows.length === 0} onClick={exportReport}>⇩ EXPORTAR RELATÓRIO PDF ({rows.length})</button></div><div className="report-filter-bar history-report-filters"><label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}><option value="TODAS">Todas as frentes</option>{fronts.map((front) => <option key={front}>{front}</option>)}</select></label><CategoryReportFilter categories={categories} selected={selectedCategories} onChange={setSelectedCategories}/><label>Equipamento<select value={equipmentFilter} onChange={(event) => setEquipmentFilter(event.target.value)}><option value="TODOS">Todos os equipamentos</option>{data.equipment.filter((item) => selectedCategories.length === 0 || selectedCategories.includes(item.type)).map((item) => <option key={item.id} value={item.id}>{item.prefix} · {item.type}</option>)}</select></label><label>Status atual<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="TODOS">Todos / sem status</option><option value="OK">Normal</option><option value="WARNING">Perto de vencer</option><option value="NEAR">Urgente</option><option value="OVERDUE">Vencido</option></select></label><label>Data inicial<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)}/></label><label>Data final<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)}/></label></div><div className="table-scroll"><table className="history-table"><thead><tr><th>Data e hora</th><th>Equipamento</th><th>Ação</th><th>Item / Serviço</th><th>Nova leitura</th><th>Responsável</th><th>OS</th><th>Ações</th></tr></thead><tbody>{rows.slice(0, 1000).map((item) => <tr key={item.id}><td><span className="history-detail"><strong>{formatDate(item.date)}</strong><small>Registrado: {formatDate(item.recordedAt)}</small></span></td><td><span className="history-detail"><strong className="table-strong">{item.prefix}</strong><small>{item.equipmentCategory} · {item.front??"Frente não registrada"}</small></span></td><td><span className={`history-action ${item.kind.toLowerCase()}`}>{item.action}</span></td><td><span className="history-detail"><strong>{item.service}</strong>{item.kind !== "READING" && <small>{item.category} · Intervalo: {formatNumber(item.interval)} {item.unit === "KM" ? "km" : "h"} · Próxima: {formatNumber(item.nextReading)} {item.unit === "KM" ? "km" : "h"}</small>}</span></td><td><strong className="history-reading">{historyReading(item)}</strong></td><td>{item.responsible}</td><td><span className="os-pill">{item.workOrder}</span></td><td><div className="history-row-actions">{item.kind !== "READING" && <button className="history-pdf-action" onClick={() => exportMaintenancePdf(item)}>⇩ PDF individual</button>}{canEditItem(item) && <><button className="history-edit-action" onClick={() => setEditing(item)}>✎ Editar</button><button className="history-delete-action" disabled={deleting === item.id} onClick={() => remove(item)}>{deleting === item.id ? "Excluindo..." : "Excluir"}</button></>}{item.equipmentId && <button className="row-action" title="Abrir equipamento" onClick={() => openEquipment(item.equipmentId!)}>›</button>}</div></td></tr>)}</tbody></table></div>{rows.length === 0 && <div className="empty-state">Nenhum registro corresponde aos filtros.</div>}</article>{editing && <HistoryEditModal item={editing} data={data} close={() => setEditing(null)} saved={async (message) => { setEditing(null); await refresh(); flash(message); }}/>}</>;
+    return <><ModuleHeader eyebrow="RASTREABILIDADE" title="Histórico completo" subtitle="Consulte, filtre e exporte os registros organizados pela categoria real de cada equipamento."/><article className="panel module-panel"><div className="toolbar page-search-toolbar"><label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar equipamento, ação, serviço, responsável ou OS..."/></label><select className="history-kind-filter" value={kind} onChange={(event) => setKind(event.target.value)}><option value="TODOS">Todas as ações</option><option value="READING">Leituras</option><option value="MAINTENANCE">Manutenções</option><option value="IMPORTED">Importados</option></select><button className="report-pdf-action history-report-export" disabled={rows.length === 0} onClick={exportReport}>⇩ EXPORTAR RELATÓRIO PDF ({rows.length})</button></div><div className="report-filter-bar history-report-filters"><label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}><option value="TODAS">Todas as frentes</option>{fronts.map((front) => <option key={front}>{front}</option>)}</select></label><CategoryReportFilter categories={categories} selected={selectedCategories} onChange={setSelectedCategories}/><label>Equipamento<select value={equipmentFilter} onChange={(event) => setEquipmentFilter(event.target.value)}><option value="TODOS">Todos os equipamentos</option>{data.equipment.filter((item) => selectedCategories.length === 0 || selectedCategories.includes(item.type)).map((item) => <option key={item.id} value={item.id}>{item.prefix} · {item.type}</option>)}</select></label><label>Status atual<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="TODOS">Todos / sem status</option><option value="OK">Normal</option><option value="WARNING">Perto de vencer</option><option value="NEAR">Urgente</option><option value="OVERDUE">Vencido</option></select></label><label>Data inicial<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)}/></label><label>Data final<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)}/></label></div><div className="table-scroll"><table className="history-table"><thead><tr><th>Data e hora</th><th>Equipamento</th><th>Ação</th><th>Item / Serviço</th><th>Nova leitura</th><th>Responsável</th><th>OS</th><th>Ações</th></tr></thead><tbody>{rows.slice(0, 1000).map((item) => <tr key={item.id}><td><span className="history-detail"><strong>{formatDate(item.date)}</strong>{item.isGenericDate && <span className="generic-date-badge" title="Histórico importado sem data original. A data 05/07/2026 foi aplicada como marcação padrão e não representa a data real da troca.">Data genérica</span>}<small>Registrado: {formatDate(item.recordedAt)}</small></span></td><td><span className="history-detail"><strong className="table-strong">{item.prefix}</strong><small>{item.equipmentCategory} · {item.front??"Frente não registrada"}</small></span></td><td><span className={`history-action ${item.kind.toLowerCase()}`}>{item.action}</span></td><td><span className="history-detail"><strong>{item.service}</strong>{item.kind !== "READING" && <small>{item.category} · Intervalo: {formatNumber(item.interval)} {item.unit === "KM" ? "km" : "h"} · Próxima: {formatNumber(item.nextReading)} {item.unit === "KM" ? "km" : "h"}</small>}</span></td><td><strong className="history-reading">{historyReading(item)}</strong></td><td>{item.responsible}</td><td><span className="os-pill">{item.workOrder}</span></td><td><div className="history-row-actions">{item.kind !== "READING" && <button className="history-pdf-action" onClick={() => exportMaintenancePdf(item)}>⇩ PDF individual</button>}{canEditItem(item) && <><button className="history-edit-action" onClick={() => setEditing(item)}>✎ Editar</button><button className="history-delete-action" disabled={deleting === item.id} onClick={() => remove(item)}>{deleting === item.id ? "Excluindo..." : "Excluir"}</button></>}{item.equipmentId && <button className="row-action" title="Abrir equipamento" onClick={() => openEquipment(item.equipmentId!)}>›</button>}</div></td></tr>)}</tbody></table></div>{rows.length === 0 && <div className="empty-state">Nenhum registro corresponde aos filtros.</div>}</article>{editing && <HistoryEditModal item={editing} data={data} close={() => setEditing(null)} saved={async (message) => { setEditing(null); await refresh(); flash(message); }}/>}</>;
 }
 function HistoryEditModal({ item, data, close, saved }: {
     item: HistoryItem;
@@ -775,6 +762,99 @@ function TaskRoleGroupsView({ users, authUser, openUserModal, taskRoles }: {
     openUserModal: (item: UserRecord) => void;
     taskRoles: TaskRole[];
 }) { const active = users.filter((user) => user.status === "ACTIVE"); const unassigned = active.filter((user) => user.taskRoleId === null); return <article className="panel module-panel hierarchy-panel">{taskRoles.map((role) => { const group = active.filter((user) => user.taskRoleId === role.id); return <section className="hierarchy-group" key={role.id}><header><h3>{role.name}{role.isRoot && <small> · cargo raiz</small>}</h3><span>{group.length} usuário(s)</span></header><div className="hierarchy-group-users">{group.map((user) => <div className="hierarchy-user-card" key={user.id}><span className="avatar light">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("")}</span><div><strong>{user.name}</strong><small>{user.profileLabel}{user.serviceFrontName ? ` · ${user.serviceFrontName}` : ""}</small></div>{can(authUser, "users.edit") && <button onClick={() => openUserModal(user)}>Editar</button>}</div>)}{group.length === 0 && <div className="empty-state">Nenhum usuário neste cargo.</div>}</div></section>; })}{unassigned.length > 0 && <section className="hierarchy-group hierarchy-group-unassigned"><header><h3>Sem Cargo de Tarefas</h3><span>{unassigned.length} usuário(s) · precisam de regularização</span></header><div className="hierarchy-group-users">{unassigned.map((user) => <div className="hierarchy-user-card" key={user.id}><span className="avatar light">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("")}</span><div><strong>{user.name}</strong><small>{user.profileLabel}{user.serviceFrontName ? ` · ${user.serviceFrontName}` : ""}</small></div>{can(authUser, "users.edit") && <button onClick={() => openUserModal(user)}>Editar</button>}</div>)}</div></section>}</article>; }
+// Todo o processamento da foto (orientação EXIF, corte a ~1600px no lado
+// maior, conversão para WebP) acontece aqui, no navegador — createImageBitmap
+// já aplica a orientação EXIF automaticamente, e reencodar via canvas
+// descarta todo o metadado original (inclusive localização GPS) como efeito
+// colateral do próprio recorte de pixels. O servidor nunca recebe o arquivo
+// original nem precisa de uma biblioteca nativa de imagem.
+async function processEquipmentPhoto(file: File): Promise<Blob> {
+    const looksHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+    if (!file.type.startsWith("image/") && !looksHeic) throw new Error("Selecione um arquivo de imagem (JPEG, PNG ou WebP).");
+    if (file.size > 10 * 1024 * 1024) throw new Error("A imagem original deve ter no máximo 10 MB.");
+    let bitmap: ImageBitmap;
+    try {
+        bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    }
+    catch {
+        if (looksHeic) throw new Error("Este navegador não consegue processar fotos em HEIC/HEIF diretamente. No iPhone, ajuste em Ajustes > Câmera > Formatos para \"Mais compatível\" ou exporte a foto como JPEG antes de enviar.");
+        throw new Error("Não foi possível ler esta imagem. Tente outro arquivo.");
+    }
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Não foi possível processar esta imagem neste navegador.");
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+    if (!blob) throw new Error("Não foi possível otimizar a imagem.");
+    return blob;
+}
+
+function EquipmentPhoto({ equipmentId, photoKey, canEdit, onChanged, flash }: {
+    equipmentId: number;
+    photoKey: string | null;
+    canEdit: boolean;
+    onChanged: (photoKey: string | null) => void;
+    flash: (message: string) => void;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [zoomed, setZoomed] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const src = photoKey ? `/api/equipment/${equipmentId}/photo?v=${encodeURIComponent(photoKey)}` : null;
+    useEffect(() => {
+        if (!zoomed) return;
+        const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setZoomed(false); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [zoomed]);
+    async function handleFile(event: FormEvent<HTMLInputElement>) {
+        const file = event.currentTarget.files?.[0] ?? null;
+        event.currentTarget.value = "";
+        if (!file) return;
+        setBusy(true); setError("");
+        try {
+            const optimized = await processEquipmentPhoto(file);
+            const form = new FormData();
+            form.append("file", optimized, "foto.webp");
+            const response = await fetch(`/api/equipment/${equipmentId}/photo`, { method: "POST", body: form });
+            const result = await response.json().catch(() => ({})) as { error?: string; photoKey?: string };
+            if (!response.ok) throw new Error(result.error ?? "Não foi possível salvar a foto.");
+            onChanged(result.photoKey ?? null);
+            flash("Foto do equipamento salva.");
+        }
+        catch (problem) {
+            setError(problem instanceof Error ? problem.message : "Não foi possível salvar a foto.");
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    async function remove() {
+        if (!window.confirm("Remover a foto deste equipamento? Esta ação não pode ser desfeita.")) return;
+        setBusy(true); setError("");
+        try {
+            const response = await fetch(`/api/equipment/${equipmentId}/photo`, { method: "DELETE" });
+            const result = await response.json().catch(() => ({})) as { error?: string };
+            if (!response.ok) throw new Error(result.error ?? "Não foi possível remover a foto.");
+            onChanged(null);
+            flash("Foto do equipamento removida.");
+        }
+        catch (problem) {
+            setError(problem instanceof Error ? problem.message : "Não foi possível remover a foto.");
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    return <div className="equipment-photo-card"><div className="equipment-photo-frame">{src ? <img src={src} alt="Foto do equipamento"/> : <div className="equipment-photo-placeholder"><span>📷</span><p>Adicionar foto do equipamento</p></div>}{busy && <div className="equipment-photo-busy">Enviando...</div>}</div>{(canEdit || src) && <div className="equipment-photo-actions">{src && <button type="button" className="secondary" onClick={() => setZoomed(true)}>Ampliar</button>}{canEdit && <button type="button" className="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>{src ? "Substituir foto" : "Adicionar foto"}</button>}{canEdit && src && <button type="button" className="secondary" disabled={busy} onClick={remove}>Remover foto</button>}{canEdit && <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden onChange={handleFile}/>}</div>}{error && <div className="equipment-form-error"><span>!</span><strong>{error}</strong></div>}{zoomed && src && <div className="photo-lightbox" onMouseDown={(event) => { if (event.target === event.currentTarget) setZoomed(false); }}><img src={src} alt="Foto ampliada do equipamento"/><button type="button" className="photo-lightbox-close" onClick={() => setZoomed(false)}>×</button></div>}</div>;
+}
+
 function EquipmentSheet({ equipment, authUser, close, refresh, flash }: {
     equipment: Equipment;
     authUser: AuthUser;
@@ -782,10 +862,26 @@ function EquipmentSheet({ equipment, authUser, close, refresh, flash }: {
     refresh: () => Promise<void>;
     flash: (message: string) => void;
 }) { const [tab, setTab] = useState<"summary" | "plan" | "history" | "alerts">("summary"); return <div className="sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget)
-    close(); }}><section className="equipment-sheet"><header className="sheet-header"><div className="sheet-identity"><span className="equipment-avatar sheet-avatar">{equipment.prefix.slice(0, 2)}</span><div><p>{equipment.type.toUpperCase()}</p><h2>{equipment.prefix} · {equipment.brand} {equipment.model}</h2><span>ID {equipment.id} · {equipment.front} · Dados persistentes</span></div></div><button className="sheet-close" onClick={close}>×</button></header><div className="sheet-actions"><div><span className={`status-pill ${equipment.status === "Ativo" ? "green" : "gray"}`}>{equipment.status}</span><strong>{equipment.reading}</strong><small>Leitura atual</small></div></div><nav className="sheet-tabs"><button className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>Dados gerais</button><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}>Plano de Manutenção <b>{equipment.plans.length}</b></button><button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button><button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>Alertas</button></nav><div className="sheet-content">{tab === "summary" && <><div className="sheet-summary-grid"><article className="sheet-card equipment-data"><div className="sheet-card-head"><h3>Dados do equipamento</h3><span>▣</span></div><dl><div><dt>ID interno</dt><dd>{equipment.id}</dd></div><div><dt>Prefixo</dt><dd>{equipment.prefix}</dd></div><div><dt>Tipo</dt><dd>{equipment.type}</dd></div><div><dt>Marca / Modelo</dt><dd>{equipment.brand} {equipment.model}</dd></div><div><dt>Placa</dt><dd>{equipment.plate ?? "—"}</dd></div><div><dt>Frente</dt><dd>{equipment.front}</dd></div><div className="wide"><dt>{equipment.identificationType === "CHASSIS" ? "Chassi" : "Número de série"}</dt><dd>{equipment.identificationValue ?? "—"}</dd></div></dl></article><article className="sheet-card health-overview"><div className="sheet-card-head"><h3>Saúde preventiva</h3><span>◉</span></div><div className="health-score"><strong>{equipment.health === null ? "—" : `${equipment.health}%`}</strong><span>{equipment.situation}</span></div><div className={`health-line large ${equipment.tone}`}><i><em style={{ width: `${equipment.health ?? 0}%` }}/></i></div><div className="health-counts"><span><b>{equipment.plans.filter((plan) => plan.state.level === "OK").length}</b>Normais</span><span><b>{equipment.plans.filter((plan) => plan.state.level !== "OK").length}</b>Requerem atenção</span><span><b>{equipment.plans.length}</b>Planos</span></div></article></div><article className="sheet-card applicable-summary"><div className="sheet-card-head"><div><h3>Itens aplicáveis</h3><p>Somente estes itens podem compor os planos deste equipamento.</p></div></div><div>{equipment.applicableMaintenanceTypes.map((type) => <span key={type.id}>✓ {type.name}</span>)}</div></article></>}{tab === "plan" && <PlanEditor equipment={equipment} editable={can(authUser, "equipment.edit_plan")} refresh={refresh} flash={flash}/>} {tab === "history" && <EquipmentHistory equipmentId={equipment.id}/>} {tab === "alerts" && <article className="sheet-card"><div className="sheet-card-head"><h3>Alertas do equipamento</h3></div>{equipment.plans.filter((plan) => plan.state.configured).map((plan) => <div className={`sheet-alert ${plan.state.tone}`} key={plan.id}><span>{plan.state.level === "OK" ? "✓" : "!"}</span><div><strong>{plan.name}</strong><small>{planBalanceText(plan.state)} · Próxima: {formatNumber(plan.state.nextValue)} {plan.state.unitLabel}</small></div><StatusPill state={plan.state}/></div>)}{equipment.plans.length === 0 && <div className="empty-state">Salve o Plano de Manutenção para gerar alertas.</div>}</article>}</div></section></div>; }
+    close(); }}><section className="equipment-sheet"><header className="sheet-header"><div className="sheet-identity"><span className="equipment-avatar sheet-avatar">{equipment.prefix.slice(0, 2)}</span><div><p>{equipment.type.toUpperCase()}</p><h2>{equipment.prefix} · {equipment.brand} {equipment.model}</h2><span>ID {equipment.id} · {equipment.front} · Dados persistentes</span></div></div><button className="sheet-close" onClick={close}>×</button></header><div className="sheet-actions"><div><span className={`status-pill ${equipment.status === "Ativo" ? "green" : "gray"}`}>{equipment.status}</span><strong>{equipment.reading}</strong><small>Leitura atual</small></div></div><nav className="sheet-tabs"><button className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>Dados gerais</button><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}>Plano de Manutenção <b>{equipment.plans.length}</b></button><button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button><button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>Alertas</button></nav><div className="sheet-content">{tab === "summary" && <><div className="sheet-summary-grid"><article className="sheet-card equipment-data"><div className="sheet-card-head"><h3>Dados do equipamento</h3><span>▣</span></div><EquipmentPhoto equipmentId={equipment.id} photoKey={equipment.photoKey} canEdit={can(authUser, "equipment.edit")} onChanged={() => { void refresh(); }} flash={flash}/><dl><div><dt>ID interno</dt><dd>{equipment.id}</dd></div><div><dt>Prefixo</dt><dd>{equipment.prefix}</dd></div><div><dt>Tipo</dt><dd>{equipment.type}</dd></div><div><dt>Marca / Modelo</dt><dd>{equipment.brand} {equipment.model}</dd></div><div><dt>Placa</dt><dd>{equipment.plate ?? "—"}</dd></div><div><dt>Frente</dt><dd>{equipment.front}</dd></div><div className="wide"><dt>{equipment.identificationType === "CHASSIS" ? "Chassi" : "Número de série"}</dt><dd>{equipment.identificationValue ?? "—"}</dd></div></dl></article><article className="sheet-card health-overview"><div className="sheet-card-head"><h3>Saúde preventiva</h3><span>◉</span></div><div className="health-score"><strong>{equipment.health === null ? equipment.situation : `${equipment.health}%`}</strong><span>{equipment.health === null ? "" : equipment.situation}</span></div><div className={`health-line large ${equipment.tone}`}><i><em style={{ width: `${equipment.health ?? 0}%` }}/></i></div><div className="health-counts"><span><b>{equipment.healthCounts.normal}</b>Em dia</span><span><b>{equipment.healthCounts.attention}</b>Próximos</span><span><b>{equipment.healthCounts.overdue}</b>Vencidos</span><span><b>{equipment.healthCounts.pending}</b>Sem dados</span></div></article></div>{equipment.overduePlans.length > 0 && <article className="sheet-card critical-summary"><div className="sheet-card-head"><div><h3>Itens críticos</h3><p>O detalhamento completo está na aba Plano de Manutenção.</p></div><button onClick={() => setTab("plan")}>Ver detalhes →</button></div><ul>{equipment.overduePlans.slice(0, 3).map((plan, index) => <li key={index}><strong>{plan.name}</strong><span>vencida há {formatNumber(plan.overdue)} {plan.unitLabel}</span></li>)}</ul>{equipment.overduePlans.length > 3 && <small>+ {equipment.overduePlans.length - 3} outra(s) troca(s) vencida(s)</small>}</article>}<article className="sheet-card applicable-summary"><div className="sheet-card-head"><div><h3>Itens aplicáveis</h3><p>Somente estes itens podem compor os planos deste equipamento.</p></div></div><div>{equipment.applicableMaintenanceTypes.map((type) => <span key={type.id}>✓ {type.name}</span>)}</div></article></>}{tab === "plan" && <><PlanDetailList equipment={equipment} openHistory={() => setTab("history")}/><PlanEditor equipment={equipment} editable={can(authUser, "equipment.edit_plan")} refresh={refresh} flash={flash}/></>} {tab === "history" && <EquipmentHistory equipmentId={equipment.id}/>} {tab === "alerts" && <article className="sheet-card"><div className="sheet-card-head"><h3>Alertas do equipamento</h3></div>{equipment.plans.filter((plan) => plan.state.configured).map((plan) => <div className={`sheet-alert ${plan.state.tone}`} key={plan.id}><span>{plan.state.level === "OK" ? "✓" : "!"}</span><div><strong>{plan.name}</strong><small>{planBalanceText(plan.state)} · Próxima: {formatNumber(plan.state.nextValue)} {plan.state.unitLabel}</small></div><StatusPill state={plan.state}/></div>)}{equipment.plans.length === 0 && <div className="empty-state">Salve o Plano de Manutenção para gerar alertas.</div>}</article>}</div></section></div>; }
 function EquipmentHistory({ equipmentId }: {
     equipmentId: number;
-}) { const [data, setData] = useState<SystemData | null>(null); useEffect(() => { fetchJson<SystemData>("/api/system").then(setData).catch(() => undefined); }, []); const rows = data?.history.filter((item) => item.equipmentId === equipmentId) ?? []; return <article className="sheet-card"><div className="sheet-card-head"><h3>Histórico permanente</h3></div><div className="table-scroll"><table><thead><tr><th>Data</th><th>Ação</th><th>Serviço</th><th>Leitura</th><th>Usuário</th></tr></thead><tbody>{rows.map((item) => <tr key={item.id}><td>{formatDate(item.date)}</td><td>{item.action}</td><td>{item.service}</td><td>{formatNumber(item.newReading)} {item.unit === "KM" ? "km" : "h"}</td><td>{item.responsible}</td></tr>)}</tbody></table></div>{rows.length === 0 && <div className="empty-state">Nenhum registro para este equipamento.</div>}</article>; }
+}) { const [data, setData] = useState<SystemData | null>(null); useEffect(() => { fetchJson<SystemData>("/api/system").then(setData).catch(() => undefined); }, []); const rows = data?.history.filter((item) => item.equipmentId === equipmentId) ?? []; return <article className="sheet-card"><div className="sheet-card-head"><h3>Histórico permanente</h3></div><div className="table-scroll"><table><thead><tr><th>Data</th><th>Ação</th><th>Serviço</th><th>Leitura</th><th>Usuário</th></tr></thead><tbody>{rows.map((item) => <tr key={item.id}><td>{formatDate(item.date)}{item.isGenericDate && <span className="generic-date-badge" title="Histórico importado sem data original. A data 05/07/2026 foi aplicada como marcação padrão e não representa a data real da troca.">Data genérica</span>}</td><td>{item.action}</td><td>{item.service}</td><td>{formatNumber(item.newReading)} {item.unit === "KM" ? "km" : "h"}</td><td>{item.responsible}</td></tr>)}</tbody></table></div>{rows.length === 0 && <div className="empty-state">Nenhum registro para este equipamento.</div>}</article>; }
+type PlanDetailFilter = "TODOS" | "VENCIDOS" | "PROXIMOS" | "EM_DIA" | "SEM_DADOS";
+function PlanDetailList({ equipment, openHistory }: {
+    equipment: Equipment;
+    openHistory: () => void;
+}) {
+    const [filter, setFilter] = useState<PlanDetailFilter>("TODOS");
+    const sorted = useMemo(() => [...equipment.plans].sort((a, b) => planSortRank(a.state) - planSortRank(b.state) || (a.state.remaining ?? 0) - (b.state.remaining ?? 0)), [equipment.plans]);
+    const filtered = sorted.filter((plan) => {
+        if (filter === "TODOS") return true;
+        if (filter === "VENCIDOS") return plan.state.level === "OVERDUE" || plan.state.level === "NEAR";
+        if (filter === "PROXIMOS") return plan.state.level === "WARNING";
+        if (filter === "EM_DIA") return plan.state.configured && plan.state.level === "OK";
+        return !plan.state.configured;
+    });
+    return <article className="sheet-card plan-detail-card"><div className="sheet-card-head"><div><h3>Detalhamento por plano</h3><p>Última troca, próxima prevista e saldo exato de cada item, na mesma regra usada em toda a interface.</p></div></div><div className="filter-chips plan-detail-filters">{([["TODOS", "Todos"], ["VENCIDOS", "Vencidos"], ["PROXIMOS", "Próximos"], ["EM_DIA", "Em dia"], ["SEM_DADOS", "Sem dados"]] as Array<[PlanDetailFilter, string]>).map(([key, label]) => <button key={key} className={filter === key ? "selected" : ""} onClick={() => setFilter(key)}>{label}</button>)}</div><div className="plan-detail-list">{filtered.map((plan) => { const status = planDetailStatus(plan.state); const danger = plan.state.level === "OVERDUE" || plan.state.level === "NEAR"; return <article className={`plan-detail-row ${status.tone}`} key={plan.id}><div className="plan-detail-row-head"><strong>{plan.name}</strong><span className={`status-pill ${status.tone}`}>{status.label}</span></div><div className="plan-detail-grid"><div><span>Última troca</span><strong>{plan.lastDate ? formatDate(plan.lastDate, false) : "—"}{plan.lastIsGenericDate && <span className="generic-date-badge" title="Histórico importado sem data original. A data 05/07/2026 foi aplicada como marcação padrão.">Data genérica</span>}</strong></div><div><span>Leitura da última troca</span><strong>{formatNumber(plan.state.lastValue)} {plan.state.unitLabel}</strong></div><div><span>Intervalo configurado</span><strong>{formatNumber(plan.state.interval)} {plan.state.unitLabel}</strong></div><div><span>Leitura atual</span><strong>{formatNumber(plan.state.currentValue)} {plan.state.unitLabel}</strong></div><div><span>Próxima troca prevista</span><strong>{formatNumber(plan.state.nextValue)} {plan.state.unitLabel}</strong></div><div><span>Saldo</span><strong className={danger ? "danger-text" : ""}>{planBalanceText(plan.state)}</strong></div></div><div className={`health-line ${plan.state.tone}`}><i><em style={{ width: `${plan.state.health ?? 0}%` }}/></i></div><button type="button" className="secondary plan-detail-history-link" onClick={openHistory}>Ver histórico usado no cálculo →</button></article>; })}{filtered.length === 0 && <div className="empty-state">Nenhum plano corresponde a este filtro.</div>}</div></article>;
+}
 function PlanEditor({ equipment, editable, refresh, flash }: {
     equipment: Equipment;
     editable: boolean;

@@ -7,6 +7,7 @@ export type MaintenanceHistoryCandidate={
   reading:number;
   sourcePriority:number;
   unit:"HOURS"|"KM";
+  isGenericDate:boolean;
 };
 
 function normalizedText(value:unknown){

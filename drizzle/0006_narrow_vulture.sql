@@ -1,0 +1,2 @@
+ALTER TABLE "imported_maintenance_history" ADD COLUMN "is_generic_date" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "imported_maintenance_history" ADD COLUMN "date_source" text DEFAULT 'ORIGINAL' NOT NULL;

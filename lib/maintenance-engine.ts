@@ -91,3 +91,92 @@ export function alertMessage(prefix:string,maintenanceName:string,state:PlanStat
 export function levelPriority(level:MaintenanceLevel) {
   return level==="NEAR"?0:level==="OVERDUE"?1:level==="WARNING"?2:3;
 }
+
+const quantityFormatter=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:1});
+
+// Texto do saldo de um plano — usado por igual no card do equipamento, na
+// ficha, na aba Plano de Manutenção, na Central de Alertas, no Dashboard e
+// nos PDFs, para que a mesma combinação de leitura/última troca/intervalo
+// nunca produza um texto diferente em telas diferentes.
+export function planBalanceText(state:PlanState):string {
+  if(state.interval===null)return "—";
+  if(!Number.isFinite(state.currentValue))return "Leitura atual necessária";
+  if(!state.configured||state.lastValue===null||state.nextValue===null||state.remaining===null)return "Histórico sem leitura suficiente para calcular";
+  if(state.remaining>0)return `Faltam ${quantityFormatter.format(state.remaining)} ${state.unitLabel}`;
+  if(state.remaining===0)return "Troca no limite atual";
+  return `Vencida há ${quantityFormatter.format(Math.abs(state.remaining))} ${state.unitLabel}`;
+}
+
+export type EquipmentSituation="Vencido"|"Próximo"|"Em dia"|"Dados pendentes"|"Sem plano";
+export type OverduePlanSummary={name:string;nextValue:number|null;overdue:number;unitLabel:"h"|"km"};
+export type EquipmentHealthSummary={
+  situation:EquipmentSituation;
+  tone:"red"|"critical"|"yellow"|"green"|"pending"|"gray";
+  health:number|null;
+  counts:{normal:number;attention:number;overdue:number;pending:number};
+  overduePlans:OverduePlanSummary[];
+};
+
+// Resumo de saúde preventiva do EQUIPAMENTO (card externo e quadro "Saúde
+// preventiva" da ficha), calculado sempre a partir do PIOR estado entre os
+// planos configurados — nunca de uma média, para que vencimento e urgência
+// nunca fiquem escondidos atrás de planos que estão em dia:
+//   1) Vencido        — existe ao menos um plano NEAR (urgente) ou OVERDUE;
+//   2) Próximo        — nenhum vencido, mas existe algum WARNING;
+//   3) Em dia         — todos os planos calculáveis (com histórico e
+//                        intervalo) estão OK; a % de saúde é a do pior
+//                        plano OK (mais próximo do limite, health mais baixo);
+//   4) Dados pendentes — nenhum plano calculável, mas existe algum com
+//                        intervalo configurado e sem histórico suficiente;
+//   5) Sem plano      — não há nenhum plano com intervalo configurado.
+// A % de saúde exibida é sempre a do plano usado para decidir o status
+// (o mais crítico), nunca uma média entre planos — assim ela nunca contradiz
+// o rótulo mostrado ao lado. Quando o status é "Dados pendentes" ou
+// "Sem plano" não existe saldo numérico para mostrar, então health=null.
+export function summarizeEquipmentHealth(plans:Array<{name:string;state:PlanState}>):EquipmentHealthSummary {
+  const overdue=plans.filter(({state})=>state.level==="OVERDUE"||state.level==="NEAR");
+  const attention=plans.filter(({state})=>state.level==="WARNING");
+  const normal=plans.filter(({state})=>state.configured&&state.level==="OK");
+  const pending=plans.filter(({state})=>!state.configured&&state.label==="Sem histórico");
+  const counts={normal:normal.length,attention:attention.length,overdue:overdue.length,pending:pending.length};
+
+  if(overdue.length>0){
+    const sorted=[...overdue].sort((a,b)=>levelPriority(a.state.level)-levelPriority(b.state.level)||b.state.overdue-a.state.overdue);
+    const worst=sorted[0].state;
+    return {situation:"Vencido",tone:worst.tone as EquipmentHealthSummary["tone"],health:worst.health,counts,
+      overduePlans:sorted.map(({name,state})=>({name,nextValue:state.nextValue,overdue:state.overdue,unitLabel:state.unitLabel}))};
+  }
+  if(attention.length>0){
+    const worst=[...attention].sort((a,b)=>(a.state.remaining??0)-(b.state.remaining??0))[0].state;
+    return {situation:"Próximo",tone:"yellow",health:worst.health,counts,overduePlans:[]};
+  }
+  if(normal.length>0){
+    const worst=[...normal].sort((a,b)=>(a.state.health??100)-(b.state.health??100))[0].state;
+    return {situation:"Em dia",tone:"green",health:worst.health,counts,overduePlans:[]};
+  }
+  if(pending.length>0)return {situation:"Dados pendentes",tone:"pending",health:null,counts,overduePlans:[]};
+  return {situation:"Sem plano",tone:"gray",health:null,counts,overduePlans:[]};
+}
+
+// Vocabulário de status usado no detalhamento por plano da ficha (aba Plano
+// de Manutenção). Deriva sempre do mesmo PlanState centralizado — nunca
+// recalcula nada, só traduz o resultado já calculado para os rótulos
+// pedidos nessa tela (Em dia/Próxima/Urgente/No limite/Vencida/Sem
+// histórico/Dados insuficientes).
+export function planDetailStatus(state:PlanState):{label:string;tone:string} {
+  if(!state.configured)return state.label==="Sem histórico"?{label:"Sem histórico",tone:"gray"}:{label:"Dados insuficientes",tone:"gray"};
+  if(state.level==="NEAR")return {label:"Urgente",tone:"critical"};
+  if(state.level==="OVERDUE")return {label:"Vencida",tone:"red"};
+  if(state.level==="WARNING")return {label:state.remaining===0?"No limite":"Próxima",tone:"yellow"};
+  return {label:"Em dia",tone:"green"};
+}
+
+// Ordem exigida na ficha: vencidas (mais críticas primeiro) → urgentes/
+// próximas → no limite → em dia → sem histórico/dados insuficientes.
+export function planSortRank(state:PlanState) {
+  if(state.level==="NEAR")return 0;
+  if(state.level==="OVERDUE")return 1;
+  if(state.level==="WARNING")return state.remaining===0?2:3;
+  if(state.configured&&state.level==="OK")return 4;
+  return 5;
+}
