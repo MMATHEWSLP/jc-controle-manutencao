@@ -66,7 +66,6 @@ export const PERMISSION_GROUPS = [
     ["users.edit","Editar usuários"],
     ["users.permissions","Alterar permissões"],
     ["users.status","Ativar/desativar usuários"],
-    ["users.delete","Excluir usuários (exclusão lógica, reversível pelo administrador)"],
   ]},
 ] as const;
 
