@@ -7,7 +7,7 @@ import {
   type TaskPermissions, type TaskRoleGraph, type TaskViewer,
 } from "../../../../lib/task-authorization";
 import { notifyUser } from "../../../../lib/task-notifications";
-import { ACTIONABLE_STATUSES, AWAITING_STATUSES, OPEN_STATUSES, STATUS_LABELS, URGENCY_LABELS, displayStatusLabel, loadTaskRows, toTaskAuthRow, type TaskRow, type TaskStatus, type Urgency } from "../route";
+import { ACTIONABLE_STATUSES, AWAITING_STATUSES, CLOSED_STATUSES, OPEN_STATUSES, STATUS_LABELS, URGENCY_LABELS, displayStatusLabel, loadTaskRows, toTaskAuthRow, type TaskRow, type TaskStatus, type Urgency } from "../route";
 
 type Context = { params: Promise<{ id: string }> };
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -37,13 +37,18 @@ async function isDescendantOf(candidateParentId: number, taskId: number) {
   return false;
 }
 
-function serializeDetail(row: TaskRow, permissions: TaskPermissions, root: boolean) {
+function serializeDetail(row: TaskRow, permissions: TaskPermissions, root: boolean, graph: TaskRoleGraph) {
   return {
     id: row.id, parentTaskId: row.parentTaskId, title: row.title, description: row.description,
     assigneeId: row.assigneeId, assigneeName: row.assigneeName,
+    // Cargo de Tarefas de cada pessoa NO MOMENTO do envio/atribuição (snapshot gravado na própria
+    // tarefa) — informativo na ficha, igual ao que o Histórico já exibe (seção 3 da especificação:
+    // dado que já existe no banco mas não aparecia aqui).
+    assigneeRoleName: row.assigneeRoleSnapshotId ? graph.roles.get(row.assigneeRoleSnapshotId)?.name ?? null : null,
     urgency: row.urgency, urgencyLabel: URGENCY_LABELS[row.urgency as Urgency] ?? row.urgency,
     dueDate: row.dueDate, status: row.status, statusLabel: displayStatusLabel(row.status, row.viewedAt),
     createdBy: row.createdBy, createdByName: row.createdByName,
+    createdByRoleName: row.creatorRoleSnapshotId ? graph.roles.get(row.creatorRoleSnapshotId)?.name ?? null : null,
     viewedAt: row.viewedAt, viewedBy: row.viewedBy,
     requestedCompletionBy: row.requestedCompletionBy, requestedCompletionAt: row.requestedCompletionAt,
     completedAt: row.completedAt, completedBy: row.completedBy, completionNote: row.completionNote,
@@ -54,7 +59,9 @@ function serializeDetail(row: TaskRow, permissions: TaskPermissions, root: boole
     cancelledAt: row.cancelledAt, cancelledBy: row.cancelledBy, cancelReason: row.cancelReason,
     deletedAt: row.deletedAt, deletedBy: row.deletedBy,
     createdAt: row.createdAt, updatedAt: row.updatedAt,
-    canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
+    canEdit: permissions.canEdit && !(CLOSED_STATUSES as string[]).includes(row.status),
+    canReassign: permissions.canReassign && !(CLOSED_STATUSES as string[]).includes(row.status),
+    canDelete: permissions.canDelete,
     canRequestCompletion: permissions.canRequestCompletion && (ACTIONABLE_STATUSES as string[]).includes(row.status),
     canRequestNotDone: permissions.canRequestNotDone && (ACTIONABLE_STATUSES as string[]).includes(row.status),
     canDecide: permissions.canDecide && (AWAITING_STATUSES as string[]).includes(row.status),
@@ -86,7 +93,7 @@ export async function GET(request: Request, { params }: Context) {
       row = { ...row, viewedAt: now, viewedBy: viewer.id };
     }
     const history = await loadTaskHistory(id);
-    return Response.json({ task: serializeDetail(row, found.permissions, isRootRole(graph, viewer.taskRoleId)), history });
+    return Response.json({ task: serializeDetail(row, found.permissions, isRootRole(graph, viewer.taskRoleId), graph), history });
   } catch (error) {
     console.error("[tasks.id.get]", error);
     return Response.json({ error: "Não foi possível carregar a tarefa." }, { status: 500 });
@@ -232,6 +239,9 @@ export async function PUT(request: Request, { params }: Context) {
     // (START/REQUEST_COMPLETION/APPROVE_COMPLETION/REJECT_COMPLETION/REQUEST_NOT_DONE/
     // AUTHORIZE_NOT_DONE/DENY_NOT_DONE/CANCEL), cada uma com sua própria trilha de
     // auditoria/notificação.
+    // Ficha somente leitura para tarefa encerrada (seção 4/11 da especificação): a checagem no
+    // frontend (canEdit) já esconde o botão, mas a validação real é aqui — nunca confiar só na UI.
+    if ((CLOSED_STATUSES as string[]).includes(existing.status)) return Response.json({ error: "Esta tarefa já foi encerrada (concluída, não realizada ou cancelada) e não pode mais ser editada." }, { status: 400 });
     if (!permissions.canEdit) return Response.json({ error: "Você não possui permissão para editar esta tarefa." }, { status: 403 });
     const title = clean(body.title) || existing.title;
     const description = body.description === undefined ? existing.description : (clean(body.description) || null);

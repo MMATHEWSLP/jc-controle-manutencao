@@ -29,7 +29,7 @@ type TaskNode = {
 type AssignableUser = { id:number; name:string };
 type AuthUser = { name:string; permissions:string[]; profile:string };
 type HistoryEntry = { id:number; userId:number|null; userName:string|null; action:string; previousValue:string|null; newValue:string|null; occurredAt:string };
-type TaskDetail = TaskNode & { createdAt:string; updatedAt:string };
+type TaskDetail = TaskNode & { createdAt:string; updatedAt:string; createdByRoleName:string|null; assigneeRoleName:string|null };
 type ScopeFilter = "" | "received" | "sent";
 type MainTab = "tasks" | "approvals" | "history";
 
@@ -41,10 +41,17 @@ const statusTone:Record<TaskStatus,string> = {
   TODO:"gray", IN_PROGRESS:"blue", AWAITING_COMPLETION_APPROVAL:"orange", AWAITING_NOT_DONE_AUTHORIZATION:"orange",
   DONE:"green", NOT_DONE:"red", CANCELLED:"gray",
 };
-const STATUS_OPTIONS:Array<{value:TaskStatus|"";label:string}> = [
+// Duas listas separadas (em vez de uma única com todos os status): a aba Tarefas só recebe
+// tarefas ativas do servidor (Concluída/Não realizada saem da lista — seção 5 da especificação),
+// e o Histórico só recebe tarefas finais (seção 6) — oferecer os status do "lado errado" em cada
+// filtro criaria uma opção que nunca traz resultado nenhum.
+const ACTIVE_STATUS_OPTIONS:Array<{value:TaskStatus|"";label:string}> = [
   { value:"", label:"Todos" }, { value:"TODO", label:"Pendente" }, { value:"IN_PROGRESS", label:"Em andamento" },
   { value:"AWAITING_COMPLETION_APPROVAL", label:"Aguard. aprovação da conclusão" }, { value:"AWAITING_NOT_DONE_AUTHORIZATION", label:"Aguard. autorização p/ não realizar" },
-  { value:"DONE", label:"Concluída" }, { value:"NOT_DONE", label:"Não realizada" }, { value:"CANCELLED", label:"Cancelada" },
+  { value:"CANCELLED", label:"Cancelada" },
+];
+const FINAL_STATUS_OPTIONS:Array<{value:TaskStatus|"";label:string}> = [
+  { value:"", label:"Todos" }, { value:"DONE", label:"Concluída" }, { value:"NOT_DONE", label:"Não realizada" },
 ];
 // Ações legadas (TASK_COMPLETED/TASK_NOT_DONE) continuam mapeadas para não quebrar a leitura do
 // histórico de tarefas gravado antes do fluxo de aprovação em duas etapas.
@@ -68,6 +75,31 @@ function matchesFilters(node:TaskNode,query:string,urgency:string,status:string,
   return true;
 }
 function nodeMatches(node:TaskNode,predicate:(node:TaskNode)=>boolean):boolean { return predicate(node) || node.children.some((child)=>nodeMatches(child,predicate)); }
+
+// Acessibilidade compartilhada por todo modal/drawer do módulo (seção 11 da especificação): Esc
+// fecha, Tab fica preso dentro do diálogo enquanto ele está aberto, e o foco volta ao elemento que
+// abriu o modal quando ele fecha. Um único hook em vez de repetir a mesma lógica em cada modal.
+function useModalA11y(dialogRef:React.RefObject<HTMLElement|null>, close:()=>void) {
+  useEffect(()=>{
+    const previousFocus=document.activeElement as HTMLElement|null;
+    function focusableElements() {
+      const root=dialogRef.current; if(!root) return [] as HTMLElement[];
+      return Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((el)=>!el.hasAttribute("disabled"));
+    }
+    focusableElements()[0]?.focus();
+    function onKeyDown(event:KeyboardEvent) {
+      if(event.key==="Escape") { event.preventDefault(); close(); return; }
+      if(event.key==="Tab") {
+        const items=focusableElements(); if(items.length===0) return;
+        const first=items[0]; const last=items[items.length-1];
+        if(event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+        else if(!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener("keydown",onKeyDown);
+    return ()=>{ document.removeEventListener("keydown",onKeyDown); previousFocus?.focus?.(); };
+  },[dialogRef,close]);
+}
 
 export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash:(message:string)=>void }) {
   const [mainTab,setMainTab]=useState<MainTab>("tasks");
@@ -140,7 +172,7 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
         <label className="page-search span-wide"><span>⌕</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Pesquisar por título ou responsável..."/></label>
         <label>Escopo<select value={scopeFilter} onChange={(event)=>setScopeFilter(event.target.value as ScopeFilter)}><option value="">Todas visíveis</option><option value="received">Recebidas por mim</option><option value="sent">Enviadas por mim</option></select></label>
         <label>Urgência<select value={urgencyFilter} onChange={(event)=>setUrgencyFilter(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
-        <label>Status<select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}>{STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label>Status<select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}>{ACTIVE_STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         <label className="compact-switch"><input type="checkbox" checked={overdueOnly} onChange={(event)=>setOverdueOnly(event.target.checked)}/><span>Somente atrasadas</span></label>
         {hasActiveFilters && <button type="button" className="secondary clear-filters" onClick={clearFilters}>Limpar filtros</button>}
       </div>
@@ -281,7 +313,7 @@ function TaskHistoryPanel() {
     <div className="main-tabs secondary-module-nav" aria-label="Recebidas ou Enviadas"><button className={scope==="received"?"active":""} onClick={()=>setScope("received")}>Histórico de Recebidas</button><button className={scope==="sent"?"active":""} onClick={()=>setScope("sent")}>Histórico de Enviadas</button></div>
     <div className="module-filters-grid">
       <label className="page-search span-wide"><span>⌕</span><input value={q} onChange={(event)=>setQ(event.target.value)} placeholder="Pesquisar por título..."/></label>
-      <label>Status<select value={status} onChange={(event)=>setStatus(event.target.value)}>{STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label>Status<select value={status} onChange={(event)=>setStatus(event.target.value)}>{FINAL_STATUS_OPTIONS.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <label>Urgência<select value={urgency} onChange={(event)=>setUrgency(event.target.value)}><option value="">Todas</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="URGENT">Urgente</option></select></label>
       <label>Cargo de Tarefas<select value={roleId} onChange={(event)=>setRoleId(event.target.value)}><option value="">Todos</option>{taskRoles.map((role)=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
       <div className="date-range"><label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label><label>Até<input type="date" value={to} onChange={(event)=>setTo(event.target.value)}/></label></div>
@@ -304,7 +336,7 @@ function TaskHistoryPanel() {
           </dl>
           {entry.deletedAt && <p className="danger-text">Excluída em {formatDateTime(entry.deletedAt)}</p>}
         </div>
-        <footer className="task-card-footer"><button onClick={()=>setViewingId(entry.id)}>Ver linha do tempo</button></footer>
+        <footer className="task-card-footer"><button type="button" className="view-details-action" onClick={()=>setViewingId(entry.id)}>👁 Abrir tarefa</button></footer>
       </article>)}
     </div>}
     {!loading && entries.length===0 && <div className="empty-state">Nenhum registro encontrado para os filtros atuais.{hasActiveFilters && <button type="button" className="secondary" onClick={clearFilters}>Limpar filtros</button>}</div>}
@@ -348,7 +380,7 @@ function TaskCard({ node, depth, collapsed, toggleCollapse, openEdit, openCreate
       {node.status==="AWAITING_NOT_DONE_AUTHORIZATION" && <p className="task-card-pending-note">Pedido de não realização de {node.requestedNonExecutionAt?formatDateTime(node.requestedNonExecutionAt):"—"}{node.notDoneReason?`: "${node.notDoneReason}"`:""}</p>}
     </div>
     <footer className="task-card-footer">
-      <button type="button" className="view-details-action" onClick={()=>openDetails(node)}>👁 Ver detalhes</button>
+      <button type="button" className="view-details-action" onClick={()=>openDetails(node)}>👁 Abrir tarefa</button>
       {node.canStart && <button onClick={()=>start(node)}>▸ Iniciar</button>}
       {node.canRequestCompletion && <button className="primary" onClick={()=>openRequestCompletion(node)}>Concluir</button>}
       {node.canRequestNotDone && <button onClick={()=>openRequestNotDone(node)}>Não realizar</button>}
@@ -380,6 +412,8 @@ function TaskModal({ item, presetParentId, assignableUsers, flatTasks, close, sa
   const [error,setError]=useState("");
   const lockParent=presetParentId!==null && !item;
   const parentOptions=flatTasks.filter((task)=>task.id!==item?.id);
+  const dialogRef=useRef<HTMLElement|null>(null);
+  useModalA11y(dialogRef, close);
 
   async function submit(event:FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
@@ -394,8 +428,8 @@ function TaskModal({ item, presetParentId, assignableUsers, flatTasks, close, sa
     finally { setBusy(false); }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal">
+  return <div className="modal-backdrop">
+    <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
       <header><div><p className="eyebrow">TAREFAS</p><h2>{item?"Editar tarefa":"Nova tarefa"}</h2><span>O criador é definido automaticamente pelo sistema e não pode ser alterado.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Título da tarefa *<input required value={title} onChange={(event)=>setTitle(event.target.value)}/></label>
@@ -418,6 +452,8 @@ function RequestCompletionModal({ node, close, saved }:{ node:TaskNode; close:()
   const [note,setNote]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
+  const dialogRef=useRef<HTMLElement|null>(null);
+  useModalA11y(dialogRef, close);
   async function submit(event:FormEvent) {
     event.preventDefault();
     if(!note.trim()) { setError("A observação da conclusão é obrigatória."); return; }
@@ -426,8 +462,8 @@ function RequestCompletionModal({ node, close, saved }:{ node:TaskNode; close:()
     catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível solicitar a conclusão."); }
     finally { setBusy(false); }
   }
-  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal">
+  return <div className="modal-backdrop">
+    <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
       <header><div><p className="eyebrow">SOLICITAR CONCLUSÃO</p><h2>{node.title}</h2><span>Descreva o que foi feito. A tarefa só será concluída após a aprovação de quem a criou.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Observação da conclusão *<textarea required value={note} onChange={(event)=>setNote(event.target.value)} placeholder="Descreva como a tarefa foi concluída."/></label>
@@ -443,6 +479,8 @@ function RequestNotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>v
   const [reason,setReason]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
+  const dialogRef=useRef<HTMLElement|null>(null);
+  useModalA11y(dialogRef, close);
   async function submit(event:FormEvent) {
     event.preventDefault();
     if(!reason.trim()) { setError("A justificativa é obrigatória."); return; }
@@ -451,8 +489,8 @@ function RequestNotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>v
     catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível registrar o pedido de não realização."); }
     finally { setBusy(false); }
   }
-  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal">
+  return <div className="modal-backdrop">
+    <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
       <header><div><p className="eyebrow">SOLICITAR NÃO REALIZAÇÃO</p><h2>{node.title}</h2><span>Justifique por que a tarefa não será realizada. A decisão final é de quem a criou.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Justificativa *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explique o motivo."/></label>
@@ -474,6 +512,8 @@ function DecisionModal({ node, kind, close, saved }:{ node:TaskNode; kind:"COMPL
   const approveAction=isCompletion?"APPROVE_COMPLETION":"AUTHORIZE_NOT_DONE";
   const rejectAction=isCompletion?"REJECT_COMPLETION":"DENY_NOT_DONE";
   const rejectField=isCompletion?"completionRejectionReason":"nonExecutionRejectionReason";
+  const dialogRef=useRef<HTMLElement|null>(null);
+  useModalA11y(dialogRef, close);
 
   async function submit(event:FormEvent) {
     event.preventDefault();
@@ -487,8 +527,8 @@ function DecisionModal({ node, kind, close, saved }:{ node:TaskNode; kind:"COMPL
     finally { setBusy(false); }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal">
+  return <div className="modal-backdrop">
+    <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
       <header><div><p className="eyebrow">{isCompletion?"DECIDIR CONCLUSÃO":"DECIDIR NÃO REALIZAÇÃO"}</p><h2>{node.title}</h2><span>Responsável: {node.assigneeName??"—"}</span></div><button onClick={close}>×</button></header>
       <div className="modal-form">
         <div className="full"><span>{isCompletion?"Observação enviada":"Justificativa enviada"}</span><p>{(isCompletion?node.completionNote:node.notDoneReason) || "—"}</p></div>
@@ -510,6 +550,8 @@ function CancelTaskModal({ node, close, saved }:{ node:TaskNode; close:()=>void;
   const [reason,setReason]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
+  const dialogRef=useRef<HTMLElement|null>(null);
+  useModalA11y(dialogRef, close);
   async function submit(event:FormEvent) {
     event.preventDefault();
     if(!reason.trim()) { setError("O motivo do cancelamento é obrigatório."); return; }
@@ -518,8 +560,8 @@ function CancelTaskModal({ node, close, saved }:{ node:TaskNode; close:()=>void;
     catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível cancelar a tarefa."); }
     finally { setBusy(false); }
   }
-  return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
-    <section className="modal">
+  return <div className="modal-backdrop">
+    <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
       <header><div><p className="eyebrow">CANCELAR TAREFA</p><h2>{node.title}</h2><span>Cancelar preserva a tarefa no histórico — diferente de excluir. Informe o motivo.</span></div><button onClick={close}>×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Motivo do cancelamento *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explique por que esta tarefa está sendo cancelada."/></label>
@@ -542,31 +584,9 @@ function TaskDetailModal({ id, subtasks, close, onChanged, openRequestCompletion
   const [restoring,setRestoring]=useState(false);
   const [copied,setCopied]=useState(false);
   const dialogRef=useRef<HTMLElement|null>(null);
-  const previousFocusRef=useRef<HTMLElement|null>(null);
   const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{task:TaskDetail;history:HistoryEntry[]}>(`/api/tasks/${id}`); setDetail(result.task); setHistory(result.history); }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar a tarefa."); }finally{ setLoading(false); } },[id]);
   useEffect(()=>{ load(); },[load]);
-
-  // Acessibilidade do modal (foco preso + Esc + devolução de foco): a captura do elemento
-  // anterior acontece na montagem, antes de mover o foco para dentro do diálogo.
-  useEffect(()=>{
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    function focusableElements() {
-      const root=dialogRef.current; if(!root) return [] as HTMLElement[];
-      return Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((el)=>!el.hasAttribute("disabled"));
-    }
-    focusableElements()[0]?.focus();
-    function onKeyDown(event:KeyboardEvent) {
-      if(event.key==="Escape") { event.preventDefault(); close(); return; }
-      if(event.key==="Tab") {
-        const items=focusableElements(); if(items.length===0) return;
-        const first=items[0]; const last=items[items.length-1];
-        if(event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
-        else if(!event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
-      }
-    }
-    document.addEventListener("keydown",onKeyDown);
-    return ()=>{ document.removeEventListener("keydown",onKeyDown); previousFocusRef.current?.focus?.(); };
-  },[close]);
+  useModalA11y(dialogRef, close);
 
   async function restore() {
     setRestoring(true);
@@ -603,10 +623,11 @@ function TaskDetailModal({ id, subtasks, close, onChanged, openRequestCompletion
             <div className="task-detail-description-head"><span>Descrição</span><button type="button" className="secondary small" onClick={copyDescription} disabled={!detail.description}>{copied?"Copiado!":"Copiar descrição"}</button></div>
             <div className="task-detail-description-body">{detail.description || "Sem descrição."}</div>
           </div>
-          <div><span>Responsável</span><strong>{detail.assigneeName??"—"}</strong></div>
-          <div><span>Criado por</span><strong>{detail.createdByName??"—"}</strong></div>
+          <div><span>Responsável</span><strong>{detail.assigneeName??"—"}{detail.assigneeRoleName?` (${detail.assigneeRoleName})`:""}</strong></div>
+          <div><span>Criado por</span><strong>{detail.createdByName??"—"}{detail.createdByRoleName?` (${detail.createdByRoleName})`:""}</strong></div>
           <div><span>Criado em</span><strong>{formatDateTime(detail.createdAt)}</strong></div>
           <div><span>Prazo</span><strong>{formatDate(detail.dueDate)}</strong></div>
+          {subtasks && subtasks.length>0 && <div><span>Progresso</span><strong>{subtasks.filter((child)=>child.status==="DONE").length}/{subtasks.length} subtarefas concluídas</strong></div>}
           {detail.viewedAt && <div><span>Visualizada pelo responsável em</span><strong>{formatDateTime(detail.viewedAt)}</strong></div>}
           {detail.completionNote && <div className="full"><span>Observação da conclusão ({formatDateTime(detail.requestedCompletionAt ?? detail.completedAt)})</span><p>{detail.completionNote}</p></div>}
           {detail.completionApprovedAt && <div className="full"><span>Conclusão aprovada em {formatDateTime(detail.completionApprovedAt)}</span></div>}
