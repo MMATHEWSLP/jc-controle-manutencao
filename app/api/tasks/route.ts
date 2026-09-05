@@ -26,6 +26,15 @@ export const AWAITING_STATUSES: TaskStatus[] = ["AWAITING_COMPLETION_APPROVAL", 
 // Estados "normais" de execução, em que o responsável ainda pode solicitar conclusão ou não
 // realização (nenhum pedido em aberto ainda).
 export const ACTIONABLE_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS"];
+// Estados finais "de resultado" (seções 5/6/9 da especificação): única fonte de verdade para
+// decidir o que sai da aba Tarefas e passa a existir somente no Histórico. Nunca reimplemente
+// esta lista em outro arquivo — sempre importe daqui (rota principal, detalhe, histórico).
+export const FINAL_STATUSES: TaskStatus[] = ["DONE", "NOT_DONE"];
+// Estados "encerrados" para fins de edição geral (seção 4: ficha de tarefa finalizada é somente
+// leitura). Inclui Cancelada além dos estados finais acima — cancelar também não é reversível por
+// edição comum, mesmo que Cancelada continue visível na aba Tarefas (a especificação só pede a
+// saída de Concluída/Não realizada da lista ativa, não de Cancelada).
+export const CLOSED_STATUSES: TaskStatus[] = ["DONE", "NOT_DONE", "CANCELLED"];
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
@@ -104,7 +113,9 @@ function serializeNode(row: TaskRow, childrenByParent: Map<number, TaskRow[]>, g
     overdue: isOverdue(row.dueDate, row.status), dueSoon: isDueSoon(row.dueDate, row.status),
     progressPercent: totalDescendants === 0 ? null : Math.round((completedDescendants / totalDescendants) * 100),
     totalDescendants, completedDescendants,
-    canEdit: permissions.canEdit, canReassign: permissions.canReassign, canDelete: permissions.canDelete,
+    canEdit: permissions.canEdit && !(CLOSED_STATUSES as string[]).includes(row.status),
+    canReassign: permissions.canReassign && !(CLOSED_STATUSES as string[]).includes(row.status),
+    canDelete: permissions.canDelete,
     canRequestCompletion: permissions.canRequestCompletion && (ACTIONABLE_STATUSES as string[]).includes(row.status),
     canRequestNotDone: permissions.canRequestNotDone && (ACTIONABLE_STATUSES as string[]).includes(row.status),
     canDecide: permissions.canDecide && (AWAITING_STATUSES as string[]).includes(row.status),
@@ -126,10 +137,20 @@ export async function GET(request: Request) {
     // para o cargo do criador ou do responsável desta tarefa. Nenhuma outra tarefa é exposta,
     // nem mesmo como "contexto" de uma subtarefa visível.
     const visible = rows.filter((row) => computeTaskPermissions(graph, viewer, toTaskAuthRow(row), row.createdByTaskRoleId, row.assigneeTaskRoleId, everAssigneeIds.has(row.id), row.createdByStatus).canView);
-    const visibleIds = new Set(visible.map((row) => row.id));
+    const visibleById = new Map(visible.map((row) => [row.id, row]));
     const childrenByParent = new Map<number, TaskRow[]>();
     for (const row of visible) { if (row.parentTaskId !== null) { const list = childrenByParent.get(row.parentTaskId) ?? []; list.push(row); childrenByParent.set(row.parentTaskId, list); } }
-    const roots = visible.filter((row) => row.parentTaskId === null || !visibleIds.has(row.parentTaskId));
+    // Tarefas finalizadas (Concluída/Não realizada) nunca viram card ativo na aba Tarefas — elas só
+    // existem no Histórico a partir daqui (seção 5). Uma subtarefa ainda ativa cujo pai já foi
+    // finalizado "sobe" para o nível raiz, em vez de ficar presa sob um pai que sumiu da árvore;
+    // os filhos de uma raiz ativa continuam TODOS presentes (mesmo os finalizados) para manter o
+    // progresso e a lista de subtarefas coerentes na ficha.
+    const roots = visible.filter((row) => {
+      if ((FINAL_STATUSES as string[]).includes(row.status)) return false;
+      if (row.parentTaskId === null) return true;
+      const parent = visibleById.get(row.parentTaskId);
+      return !parent || (FINAL_STATUSES as string[]).includes(parent.status);
+    });
     const hasEditPermission = auth.user!.permissions.includes("tasks.edit");
     const tree = roots.map((row) => serializeNode(row, childrenByParent, graph, viewer, everAssigneeIds, hasEditPermission));
 

@@ -5,7 +5,7 @@ import { authorize } from "../../../../lib/auth";
 import {
   canManageOf, canViewReceivedOf, canViewSentOf, isRootRole, loadEverAssigneeTaskIds, loadTaskRoleGraph, type TaskViewer,
 } from "../../../../lib/task-authorization";
-import { OPEN_STATUSES, URGENCY_LABELS, displayStatusLabel, loadTaskRows, type Urgency } from "../route";
+import { FINAL_STATUSES, OPEN_STATUSES, URGENCY_LABELS, displayStatusLabel, loadTaskRows, type Urgency } from "../route";
 
 function clean(value: string | null) { return (value ?? "").trim(); }
 
@@ -50,6 +50,11 @@ export async function GET(request: Request) {
       const visibleHere = root || isParticipant || (thirdPartyView && !row.deletedAt);
       if (!visibleHere) continue;
       const wasReassignedAway = scope === "received" && row.assigneeId !== viewer.id && everAssigneeIds.has(row.id) && !root;
+      // Histórico concentra exclusivamente tarefas em estado final (Concluída/Não realizada
+      // aprovada) — seção 6. A única exceção é a lembrança "Reatribuída": ela é sobre a
+      // participação passada DESTE usuário, independente do estado atual da tarefa (funcionalidade
+      // pré-existente, preservada).
+      if (!(FINAL_STATUSES as string[]).includes(row.status) && !wasReassignedAway) continue;
       visible.push({
         ...row,
         historyStatus: wasReassignedAway ? "REASSIGNED" : row.status,
