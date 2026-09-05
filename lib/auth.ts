@@ -73,12 +73,19 @@ export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((group) => group.items.
 export type Permission = typeof ALL_PERMISSIONS[number];
 export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO";
 
+// REGRA DO PROJETO (pedido explícito do administrador): ao criar uma função/permissão nova,
+// NUNCA adicione a chave nos arrays de OFICINA/OPERADOR/ALMOXARIFADO (perfis de funcionário)
+// nem de GESTOR sem confirmar antes — toda função nova nasce sem acesso para quem não é ADMIN,
+// e é o administrador quem concede manualmente depois, por usuário, em Usuários → Permissões
+// (grava um registro em user_permissions, sem alterar este padrão). Isso vale também para
+// Tarefas e Materiais: os funcionários (OFICINA/ALMOXARIFADO) tiveram esse acesso padrão
+// removido por pedido explícito — quem precisar, o administrador libera individualmente.
 export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
   GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit"],
-  OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.request","tasks.view","tasks.create","tasks.edit"],
+  OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
-  ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","materials.view","materials.ship","tasks.view","tasks.create","tasks.edit"],
+  ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
 };
 
 export type SessionUser = {
