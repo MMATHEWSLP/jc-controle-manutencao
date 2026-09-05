@@ -108,7 +108,7 @@ async function main() {
   //    equipment_id/maintenance_type_id resolvidos, e quantos falham em cada etapa.
   const withDateAndReading = importedRows.rows.filter((row) => isValidDate(row.performed_at) && row.reading_value !== null);
   console.log(`[PARTE 2] Registros COM data válida e leitura: ${withDateAndReading.length}`);
-  let resolvedBoth = 0, missingEquipment = 0, missingType = 0, noConfigForType = 0, notApplicable = 0, incompatibleUnit = 0, fullyUsable = 0;
+  let missingEquipment = 0, missingType = 0, noConfigForType = 0, notApplicable = 0, incompatibleUnit = 0, fullyUsable = 0;
   const samples = { missingEquipment: [], missingType: [], noConfigForType: [], notApplicable: [], incompatibleUnit: [] };
   for (const row of withDateAndReading) {
     const equipment = row.equipment_id ? equipmentById.get(row.equipment_id) : equipmentByPrefix.get(canonicalEquipmentPrefix(row.prefix));
@@ -120,7 +120,6 @@ async function main() {
       maintenanceTypeId = bySvc?.maintenance_type_id ?? null;
       if (!maintenanceTypeId) { missingType++; if (samples.missingType.length < 8) samples.missingType.push({ ...row, canonicalService: canonicalMaintenanceService(row.service), category: cat }); continue; }
     }
-    resolvedBoth++;
     const cat = equipmentCategory(equipment.prefix);
     const config = configByType.get(`${cat}:${maintenanceTypeId}`);
     if (!config) { noConfigForType++; if (samples.noConfigForType.length < 8) samples.noConfigForType.push({ ...row, category: cat, resolvedTypeId: maintenanceTypeId }); continue; }

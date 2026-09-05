@@ -18,7 +18,7 @@ type IntervalConfig={
   interval:number;
   unit:IntervalUnit;
 };
-const RECALCULATION_ENGINE_VERSION="history-date-association-v3";
+const RECALCULATION_ENGINE_VERSION="history-date-association-v4";
 const numberOrNull=(value:unknown)=>{
   if(value===null||value===undefined||value==="")return null;
   const parsed=Number(value);return Number.isFinite(parsed)&&parsed>=0?parsed:null;
@@ -71,8 +71,8 @@ export async function recalculateMaintenanceCycles(
     :d1.prepare(`SELECT equipment_id,maintenance_type_id,trigger_mode,interval_hours,interval_km FROM maintenance_plans`);
 
   const applicableStatement=options.equipmentId
-    ?d1.prepare(`SELECT emt.equipment_id,emt.maintenance_type_id FROM equipment_maintenance_types emt INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.equipment_id=? AND emt.applicable=1 AND t.active=1 AND t.category='OIL'`).bind(options.equipmentId)
-    :d1.prepare(`SELECT emt.equipment_id,emt.maintenance_type_id FROM equipment_maintenance_types emt INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.applicable=1 AND t.active=1 AND t.category='OIL'`);
+    ?d1.prepare(`SELECT emt.equipment_id,emt.maintenance_type_id,t.name AS maintenance_name FROM equipment_maintenance_types emt INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.equipment_id=? AND emt.applicable=1 AND t.active=1 AND t.category='OIL'`).bind(options.equipmentId)
+    :d1.prepare(`SELECT emt.equipment_id,emt.maintenance_type_id,t.name AS maintenance_name FROM equipment_maintenance_types emt INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.applicable=1 AND t.active=1 AND t.category='OIL'`);
   const [equipmentResult,configResult,importedResult,realResult,applicableResult,existingPlanResult]=await Promise.all([
     equipmentStatement.all() as Promise<{results:Row[]}>,
     d1.prepare(`SELECT c.id,c.category,c.maintenance_type_id,c.interval_value,c.unit,t.name,t.description
@@ -91,7 +91,7 @@ export async function recalculateMaintenanceCycles(
     id:Number(row.id),category:String(row.category),maintenanceTypeId:Number(row.maintenance_type_id),maintenanceName:String(row.name),
     maintenanceDescription:String(row.description),interval:Number(row.interval_value),unit:String(row.unit) as IntervalUnit,
   }));
-  if(equipment.length===0||configs.length===0)return {recalculated:false,equipment:equipment.length,plans:0};
+  if(equipment.length===0)return {recalculated:false,equipment:equipment.length,plans:0};
 
   const equipmentByPrefix=new Map(equipment.map((item)=>[canonicalEquipmentPrefix(item.prefix),item]));
   const equipmentById=new Map(equipment.map((item)=>[item.id,item]));
@@ -104,51 +104,90 @@ export async function recalculateMaintenanceCycles(
   const existingPlans=new Map(existingPlanResult.results.map((row)=>[`${Number(row.equipment_id)}:${Number(row.maintenance_type_id)}`,{
     triggerMode:String(row.trigger_mode) as PlanTriggerMode,intervalHours:numberOrNull(row.interval_hours),intervalKm:numberOrNull(row.interval_km),
   }]));
+
+  // A lista de vínculos aplicáveis (equipamento × item de manutenção) é a
+  // fonte de verdade de QUAIS planos existem — nunca depende de já existir
+  // uma configuração de intervalo padrão (maintenance_interval_configs) para
+  // a categoria. Categorias cadastradas sem um intervalo padrão (ex.:
+  // equipamentos de categorias novas) não podem deixar o histórico "invisível"
+  // para o cálculo só porque falta esse valor padrão — o intervalo, nesse
+  // caso, fica em aberto ("Sem plano") até o administrador configurá-lo.
+  const applicableList=applicableResult.results.map((row)=>({
+    equipmentId:Number(row.equipment_id),maintenanceTypeId:Number(row.maintenance_type_id),maintenanceName:String(row.maintenance_name),
+  }));
+  const typeIdsByCanonicalName=new Map<string,Set<number>>();
+  for(const row of applicableList){
+    const key=canonicalMaintenanceService(row.maintenanceName);
+    const set=typeIdsByCanonicalName.get(key)??new Set<number>();
+    set.add(row.maintenanceTypeId);typeIdsByCanonicalName.set(key,set);
+  }
+  // Resolve o tipo de manutenção pelo texto do serviço sempre que possível
+  // (permite corrigir automaticamente uma associação antiga incorreta), com
+  // um nome de tipo globalmente único como rede de segurança quando a
+  // categoria não tem configuração de intervalo própria. Nunca resolve de
+  // forma ambígua (nome normalizado usado por mais de um tipo): nesse caso
+  // mantém a associação anterior, se houver, e não inventa uma nova.
+  function resolveServiceTypeId(category:string,serviceText:string,storedTypeId:number|null):number|null{
+    const canonical=canonicalMaintenanceService(serviceText);
+    const byConfig=configByService.get(`${category}:${canonical}`)?.maintenanceTypeId;
+    if(byConfig)return byConfig;
+    const candidates=typeIdsByCanonicalName.get(canonical);
+    if(candidates&&candidates.size===1)return [...candidates][0];
+    return storedTypeId;
+  }
+
   const latest=new Map<string,MaintenanceHistoryCandidate>();
   const associationStatements:D1PreparedStatementLike[]=[];
 
   for(const row of importedResult.results){
     const item=equipmentByPrefix.get(canonicalEquipmentPrefix(row.prefix))??equipmentById.get(Number(row.equipment_id));
     if(!item)continue;
-    const serviceConfig=configByService.get(`${equipmentCategory(item.prefix)}:${canonicalMaintenanceService(row.service)}`);
-    const storedConfig=configByType.get(`${equipmentCategory(item.prefix)}:${Number(row.maintenance_type_id)}`);
-    const config=serviceConfig??storedConfig;
+    const storedTypeId=row.maintenance_type_id===null||row.maintenance_type_id===undefined?null:Number(row.maintenance_type_id);
+    const maintenanceTypeId=resolveServiceTypeId(equipmentCategory(item.prefix),String(row.service),storedTypeId);
     const reading=numberOrNull(row.reading_value);const unit=String(row.control_type) as IntervalUnit;
-    if(!config||reading===null||(unit!=="HOURS"&&unit!=="KM")||!compatible(item.control_type,unit))continue;
-    if(Number(row.equipment_id)!==item.id||Number(row.maintenance_type_id)!==config.maintenanceTypeId){
+    if(maintenanceTypeId===null||reading===null||(unit!=="HOURS"&&unit!=="KM")||!compatible(item.control_type,unit))continue;
+    if(Number(row.equipment_id)!==item.id||storedTypeId!==maintenanceTypeId){
       associationStatements.push(d1.prepare(`UPDATE imported_maintenance_history SET equipment_id=?,maintenance_type_id=?,updated_at=? WHERE id=?`)
-        .bind(item.id,config.maintenanceTypeId,new Date().toISOString(),Number(row.id)));
+        .bind(item.id,maintenanceTypeId,new Date().toISOString(),Number(row.id)));
     }
-    const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId:config.maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:1,unit};
-    const key=`${item.id}:${config.maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
+    const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:1,unit};
+    const key=`${item.id}:${maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
   }
   await batchInChunks(d1,associationStatements);
   for(const row of realResult.results){
     const item=equipmentById.get(Number(row.equipment_id));if(!item)continue;
-    const config=configByType.get(`${equipmentCategory(item.prefix)}:${Number(row.maintenance_type_id)}`);if(!config)continue;
+    const maintenanceTypeId=Number(row.maintenance_type_id);
     for(const unit of ["HOURS","KM"] as const){
       const reading=numberOrNull(unit==="KM"?row.km:row.hours);if(reading===null||!compatible(item.control_type,unit))continue;
-      const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId:config.maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:2,unit};
-      const key=`${item.id}:${config.maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
+      const candidate:MaintenanceHistoryCandidate={equipmentId:item.id,maintenanceTypeId,performedAt:row.performed_at==null?null:String(row.performed_at),reading,sourcePriority:2,unit};
+      const key=`${item.id}:${maintenanceTypeId}:${unit}`;latest.set(key,chooseLatestHistoryCandidate(latest.get(key),candidate));
     }
   }
 
-  const applicableKeys=new Set(applicableResult.results.map((row)=>`${Number(row.equipment_id)}:${Number(row.maintenance_type_id)}`));
-  const targets=equipment.flatMap((item)=>configs
-    .filter((config)=>config.category===equipmentCategory(item.prefix)&&compatible(item.control_type,config.unit)&&applicableKeys.has(`${item.id}:${config.maintenanceTypeId}`))
-    .map((config)=>{
-      const existing=existingPlans.get(`${item.id}:${config.maintenanceTypeId}`);
-      const unit=maintenancePlanUnit(item.control_type,config.unit,existing?.triggerMode,existing?.intervalHours??null,existing?.intervalKm??null);
-      const storedInterval=unit==="KM"?existing?.intervalKm:existing?.intervalHours;
-      const interval=storedInterval!==null&&storedInterval!==undefined&&storedInterval>0?storedInterval:config.interval;
-      return {equipment:item,config,unit,interval,candidate:latest.get(`${item.id}:${config.maintenanceTypeId}:${unit}`)};
-    }));
+  // A unidade do plano é sempre derivada do control_type REAL do equipamento
+  // (maintenancePlanUnit), nunca da unidade cadastrada na configuração padrão
+  // — evita que uma configuração de categoria cadastrada na unidade errada
+  // (ex.: horas para um veículo controlado por KM) esconda o histórico válido
+  // do cálculo. Quando a unidade resolvida não bate com a da configuração
+  // padrão, o intervalo fica em aberto em vez de aplicar um número que
+  // representaria outra unidade.
+  const targets=applicableList.flatMap((applicable)=>{
+    const item=equipmentById.get(applicable.equipmentId);if(!item)return [];
+    const existing=existingPlans.get(`${item.id}:${applicable.maintenanceTypeId}`);
+    const config=configByType.get(`${equipmentCategory(item.prefix)}:${applicable.maintenanceTypeId}`);
+    const unit=maintenancePlanUnit(item.control_type,config?.unit??"HOURS",existing?.triggerMode,existing?.intervalHours??null,existing?.intervalKm??null);
+    const storedInterval=unit==="KM"?existing?.intervalKm:existing?.intervalHours;
+    const interval=storedInterval!==null&&storedInterval!==undefined&&storedInterval>0
+      ?storedInterval
+      :(config&&config.unit===unit?config.interval:null);
+    return [{equipment:item,maintenanceTypeId:applicable.maintenanceTypeId,unit,interval,candidate:latest.get(`${item.id}:${applicable.maintenanceTypeId}:${unit}`)}];
+  });
   const stateKey=options.equipmentId?`EQUIPMENT:${options.equipmentId}`:"GLOBAL";
   const thresholds=await loadThresholds(d1);
-  const signature=await signatureOf({engine:RECALCULATION_ENGINE_VERSION,thresholds,targets:targets.map(({equipment:item,config,unit,interval,candidate})=>({
+  const signature=await signatureOf({engine:RECALCULATION_ENGINE_VERSION,thresholds,targets:targets.map(({equipment:item,maintenanceTypeId,unit,interval,candidate})=>({
     equipmentId:item.id,prefix:item.prefix,currentHours:item.current_hours,currentKm:item.current_km,control:item.control_type,
-    configId:config.id,typeId:config.maintenanceTypeId,interval,unit,
-    history:candidate?[candidate.performedAt,candidate.reading,candidate.sourcePriority]:null,applicable:true,
+    typeId:maintenanceTypeId,interval,unit,
+    history:candidate?[candidate.performedAt,candidate.reading,candidate.sourcePriority]:null,
   }))});
   if(!options.force){
     const previous=await d1.prepare(`SELECT signature FROM maintenance_recalculation_state WHERE key=?`).bind(stateKey).first<{signature:string}>();
@@ -168,8 +207,8 @@ export async function recalculateMaintenanceCycles(
     await d1.prepare(`UPDATE alerts SET status='CLOSED',closed_at=?,updated_at=? WHERE status<>'CLOSED' AND plan_id IN (SELECT id FROM maintenance_plans WHERE active=0)`).bind(now,now).run();
   }
   const planStatements:D1PreparedStatementLike[]=[];
-  for(const {equipment:item,config,unit,interval,candidate} of targets){
-    const lastValue=candidate?.reading??null;const nextValue=lastValue===null?null:lastValue+interval;
+  for(const {equipment:item,maintenanceTypeId,unit,interval,candidate} of targets){
+    const lastValue=candidate?.reading??null;const nextValue=lastValue===null||interval===null?null:lastValue+interval;
     planStatements.push(d1.prepare(`INSERT INTO maintenance_plans
       (equipment_id,maintenance_type_id,interval_hours,interval_km,trigger_mode,last_hours,last_km,last_date,next_hours,next_km,active,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)
@@ -178,7 +217,7 @@ export async function recalculateMaintenanceCycles(
         last_hours=excluded.last_hours,last_km=excluded.last_km,last_date=excluded.last_date,
         next_hours=excluded.next_hours,next_km=excluded.next_km,
         active=1,updated_at=excluded.updated_at`)
-      .bind(item.id,config.maintenanceTypeId,unit==="HOURS"?interval:null,unit==="KM"?interval:null,unit,
+      .bind(item.id,maintenanceTypeId,unit==="HOURS"?interval:null,unit==="KM"?interval:null,unit,
         unit==="HOURS"?lastValue:null,unit==="KM"?lastValue:null,candidate?.performedAt?.slice(0,10)??null,
         unit==="HOURS"?nextValue:null,unit==="KM"?nextValue:null,now,now));
   }

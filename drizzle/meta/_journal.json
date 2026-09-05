@@ -43,6 +43,13 @@
       "when": 1788545196068,
       "tag": "0005_shocking_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788644453292,
+      "tag": "0006_narrow_vulture",
+      "breakpoints": true
     }
   ]
 }

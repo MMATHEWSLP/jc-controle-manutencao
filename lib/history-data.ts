@@ -29,6 +29,7 @@ export type HistoryEntry = {
   workOrder:string;
   notes:string|null;
   cost:number;
+  isGenericDate:boolean;
 };
 
 const numberOrNull=(value:unknown)=>value===null||value===undefined?null:Number(value);
@@ -58,7 +59,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       LEFT JOIN service_fronts sf ON sf.id=r.service_front_id
       LEFT JOIN users u ON u.id=r.created_by
       ORDER BY r.created_at DESC,r.id DESC LIMIT 2000`).all() as Promise<{results:Row[]}>,
-    d1.prepare(`SELECT h.id,h.prefix,h.service,h.reading_value,h.control_type,h.performed_at,h.source,h.import_type,h.notes,h.created_at,
+    d1.prepare(`SELECT h.id,h.prefix,h.service,h.reading_value,h.control_type,h.performed_at,h.is_generic_date,h.source,h.import_type,h.notes,h.created_at,
       COALESCE(e.id,legacy_e.id) AS equipment_id,COALESCE(e.type,legacy_e.type) AS equipment_category,
       COALESCE(t.id,legacy_t.id) AS maintenance_type_id,c.category AS interval_category,c.interval_value,NULL AS historical_front
       FROM imported_maintenance_history h
@@ -83,7 +84,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       action:String(row.maintenance_name).toUpperCase().includes("FILTRO")?"TROCA DE FILTRO":"TROCA DE ÓLEO",
       category:String(row.maintenance_category),service:String(row.maintenance_name),previousReading:null,newReading:reading,hours:numberOrNull(row.hours),km:numberOrNull(row.km),
       interval,nextReading:reading!==null&&interval!==null?reading+interval:null,unit:unit as "HOURS"|"KM",method:"MANUAL",
-      responsible:String(row.responsible),workOrder:String(row.work_order),notes:textOrNull(row.notes),cost:Number(row.cost??0),
+      responsible:String(row.responsible),workOrder:String(row.work_order),notes:textOrNull(row.notes),cost:Number(row.cost??0),isGenericDate:false,
     };
   });
   const readings:HistoryEntry[]=readingResult.results.map((row)=>{
@@ -93,7 +94,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       front:textOrNull(row.historical_front),
       action:String(row.control_type)==="KM"?"ATUALIZAÇÃO DE KM":String(row.control_type)==="HOURS_KM"?"ATUALIZAÇÃO DE HORÍMETRO / KM":"ATUALIZAÇÃO DE HORÍMETRO",
       category:"LEITURA",service:`Leitura operacional · ${method}`,previousReading:null,newReading:numberOrNull(unit==="KM"?row.km:row.hours),hours:numberOrNull(row.hours),km:numberOrNull(row.km),interval:null,nextReading:null,
-      unit:unit as "HOURS"|"KM",method,responsible:String(row.responsible),workOrder:"—",notes:textOrNull(row.notes),cost:0,
+      unit:unit as "HOURS"|"KM",method,responsible:String(row.responsible),workOrder:"—",notes:textOrNull(row.notes),cost:0,isGenericDate:false,
     };
   });
   const imported:HistoryEntry[]=importedResult.results.map((row)=>{
@@ -107,7 +108,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       unit:String(row.control_type)==="KM"?"KM":"HOURS",
       method:String(row.source)==="CONTROLE_DA_JANETE"?"IMPORTAÇÃO HISTÓRICA · CONTROLE DA JANETE":"IMPORTAÇÃO HISTÓRICA",
       responsible:String(row.source)==="CONTROLE_DA_JANETE"?"Controle da Janete":"Importado da planilha",
-      workOrder:"—",notes:textOrNull(row.notes),cost:0,
+      workOrder:"—",notes:textOrNull(row.notes),cost:0,isGenericDate:Boolean(row.is_generic_date),
     };
   });
   return [...maintenances,...readings,...imported].sort((a,b)=>new Date(b.recordedAt).getTime()-new Date(a.recordedAt).getTime()||new Date(b.date).getTime()-new Date(a.date).getTime());

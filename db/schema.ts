@@ -403,6 +403,8 @@ export const importedMaintenanceHistory = pgTable("imported_maintenance_history"
   readingValue: doublePrecision("reading_value"),
   controlType: text("control_type", { enum:["HOURS","KM"] }).notNull(),
   performedAt: text("performed_at"),
+  isGenericDate: boolean("is_generic_date").notNull().default(false),
+  dateSource: text("date_source", { enum:["ORIGINAL","IMPORT_DEFAULT"] }).notNull().default("ORIGINAL"),
   source: text("source").notNull().default("PLANILHA_IMPORTADA"),
   importType: text("import_type"),
   importKey: text("import_key"),
