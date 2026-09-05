@@ -1,7 +1,12 @@
 name: Migrar banco de dados (Drizzle)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      confirmar_data_generica:
+        description: "Aplicar de verdade a correção de data genérica dos históricos importados (sem marcar, roda em dry-run e não grava nada)"
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -31,3 +36,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node diagnosticar-historico-oleo.mjs
+
+      - name: Corrigir históricos importados sem data (data genérica 05/07/2026)
+        if: hashFiles('corrigir-historico-data-generica.mjs') != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node corrigir-historico-data-generica.mjs ${{ github.event.inputs.confirmar_data_generica == 'true' && '--confirmar' || '' }}
