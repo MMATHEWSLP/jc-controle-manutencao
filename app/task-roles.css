@@ -70,19 +70,19 @@
 .connection-toggle small{display:block;margin-top:3px;color:var(--muted);font-size:9px;font-weight:400}
 .connection-toggle.checked{border-color:#54a383;background:#edf8f3}
 
-html[data-theme="dark"] .task-role-manager-button{background:#101d28;border-color:#304352;color:#dbe7ee}
+html[data-theme="dark"] .task-role-manager-button{background:#1f1d19;border-color:#45423d;color:#e7e5e2}
 html[data-theme="dark"] .role-pill.warning{background:#3a2f12;color:#e6b94d}
 html[data-theme="dark"] .hierarchy-group-unassigned{border-color:#5a4a1e}
 html[data-theme="dark"] .hierarchy-group-unassigned>header{background:#241f0f}
-html[data-theme="dark"] .task-role-canvas-viewport{background:#0d1a24}
-html[data-theme="dark"] .task-role-card{background:#101f2b;border-color:#2b3d49}
-html[data-theme="dark"] .task-role-card strong{color:#e6edf3}
-html[data-theme="dark"] .task-role-card.root{background:#0e293a;border-color:#2f7bb0}
+html[data-theme="dark"] .task-role-canvas-viewport{background:#1b1916}
+html[data-theme="dark"] .task-role-card{background:#201e1b;border-color:#3d3b37}
+html[data-theme="dark"] .task-role-card strong{color:#eeedeb}
+html[data-theme="dark"] .task-role-card.root{background:#272521;border-color:#7a7365}
 html[data-theme="dark"] .task-role-hint{color:#e6b94d}
 html[data-theme="dark"] .task-role-unsaved{background:#241f0f;border-color:#5a4a1e;color:#e6c377}
-html[data-theme="dark"] .connection-toggle{border-color:#304250}
+html[data-theme="dark"] .connection-toggle{border-color:#44413c}
 html[data-theme="dark"] .connection-toggle.checked{background:#14372f;border-color:#286d57}
-html[data-theme="dark"] .task-role-list-item{border-color:#2b3d49}
+html[data-theme="dark"] .task-role-list-item{border-color:#3d3b37}
 
 
 /* ---------------------------------------------------------------------------
@@ -91,5 +91,5 @@ html[data-theme="dark"] .task-role-list-item{border-color:#2b3d49}
    classificadas por matiz (neutra, vermelho/danger, amarelo-laranja/warning,
    verde/success, azul/info) contra as variantes ja existentes.
 --------------------------------------------------------------------------- */
-html[data-theme="dark"] .task-role-card.root strong,html[data-theme="dark"] .task-role-list h3,html[data-theme="dark"] .connection-toggle b{color:#F3F6FA}
-html[data-theme="dark"] .task-role-zoom button{color:#B6C2D1}
+html[data-theme="dark"] .task-role-card.root strong,html[data-theme="dark"] .task-role-list h3,html[data-theme="dark"] .connection-toggle b{color:#f7f7f6}
+html[data-theme="dark"] .task-role-zoom button{color:#c6c4c1}
