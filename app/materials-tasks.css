@@ -78,6 +78,8 @@ html[data-theme="dark"] .warning-text{color:#e7bd6a}
 
 .history-card.deleted{opacity:.7}
 .history-card.deleted .task-card-head{background:#fff8f8}
+.deleted-users-switch{margin:14px 16px 0}
+tr.deleted-row{opacity:.65;background:#fff8f8}
 
 html[data-theme="dark"] .module-filters-grid{background:#1c1b18;border-color:#3e3c37}
 html[data-theme="dark"] .module-filters-grid>label{color:#a3a19e}
@@ -96,6 +98,7 @@ html[data-theme="dark"] .task-card-footer button{background:#1f1d19;border-color
 html[data-theme="dark"] .task-card-footer .transfer-action{background:#0f2a22;border-color:#2f6350;color:#7fd6ae}
 html[data-theme="dark"] .task-card-subtasks{border-color:#393732}
 html[data-theme="dark"] .history-card.deleted .task-card-head{background:#2a1418}
+html[data-theme="dark"] tr.deleted-row{background:#2a1418}
 
 /* ---------------------------------------------------------------------------
    Decisão do criador (DecisionModal) — dois botões grandes lado a lado, para

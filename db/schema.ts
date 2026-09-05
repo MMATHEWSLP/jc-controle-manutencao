@@ -44,6 +44,13 @@ export const users = pgTable("users", {
   lastAccessAt: text("last_access_at"),
   passwordUpdatedAt: text("password_updated_at"),
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  // Exclusão lógica (botão "Excluir" em Usuários): nunca um DELETE real — o usuário tem até 33
+  // referências de chave estrangeira no banco (tarefas criadas, manutenções, histórico de
+  // auditoria etc.), sem cascade em nenhuma delas, então apagar a linha de verdade quebraria
+  // essas referências. Excluído sai da lista e de qualquer seletor de responsável, mas o registro
+  // e todo o histórico ligado a ele continuam intactos e podem ser restaurados pelo administrador.
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references((): AnyPgColumn => users.id),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
@@ -51,6 +58,7 @@ export const users = pgTable("users", {
   index("users_status_role_idx").on(table.status, table.role),
   index("users_service_front_idx").on(table.serviceFrontId),
   index("users_task_role_idx").on(table.taskRoleId),
+  index("users_deleted_idx").on(table.deletedAt),
 ]);
 
 // Cargos de Tarefas: papel usado exclusivamente para definir quem pode enviar, receber,

@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { serviceFronts, taskRoles, userPermissions, userSessions, users } from "../../../db/schema";
 import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel } from "../../../lib/auth";
@@ -36,7 +36,7 @@ async function serialize(row:typeof users.$inferSelect){
   const profile=(row.role==="ALMOXARIFADO"?"OPERADOR":row.role) as Profile;
   const db=await getDb();const front=row.serviceFrontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,row.serviceFrontId)).limit(1))[0]:null;
   const taskRole=row.taskRoleId?(await db.select({name:taskRoles.name}).from(taskRoles).where(eq(taskRoles.id,row.taskRoleId)).limit(1))[0]:null;
-  return {id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),taskRoleId:row.taskRoleId,taskRoleName:taskRole?.name??null,status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
+  return {id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),taskRoleId:row.taskRoleId,taskRoleName:taskRole?.name??null,status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null,deletedAt:row.deletedAt};
 }
 
 async function serviceFrontId(value:unknown,required:boolean){
@@ -48,7 +48,13 @@ async function serviceFrontId(value:unknown,required:boolean){
 export async function GET(request:Request){
   const auth=await authorize(request,"users.view");if(auth.response)return auth.response;
   try{
-    const db=await getDb();const rows=await db.select().from(users).orderBy(asc(users.name));
+    const includeDeleted=new URL(request.url).searchParams.get("includeDeleted")==="1";
+    const db=await getDb();
+    const query=db.select().from(users).orderBy(asc(users.name));
+    // Por padrão nunca lista excluídos: qualquer tela que reaproveite esta lista (seletor de
+    // responsável em Tarefas/Materiais, por exemplo) já fica correta sem precisar filtrar de novo.
+    // A tela de Usuários pede includeDeleted=1 só para a seção "Mostrar excluídos"/restaurar.
+    const rows=includeDeleted?await query:await query.where(isNull(users.deletedAt));
     return Response.json({users:await Promise.all(rows.map(serialize))});
   }catch{return Response.json({error:"Não foi possível carregar os usuários agora."},{status:500});}
 }
@@ -106,6 +112,31 @@ export async function PUT(request:Request){
       await audit(auth.user!.id,id,"PASSWORD_RESET",undefined,{at:now});
       return Response.json({ok:true});
     }
+
+    if(action==="DELETE"){
+      if(!auth.user!.permissions.includes("users.delete"))return Response.json({error:"Você não possui permissão para excluir usuários."},{status:403});
+      if(auth.user!.id===id)return Response.json({error:"Você não pode excluir seu próprio usuário."},{status:400});
+      if(current.deletedAt)return Response.json({error:"Este usuário já está excluído."},{status:400});
+      const now=new Date().toISOString();
+      // Exclusão lógica: preserva a linha e tudo que referencia este usuário (tarefas criadas,
+      // manutenções, auditoria). status=INACTIVE garante que qualquer consulta antiga que ainda
+      // filtre só por status (em vez de por deletedAt) continue correta.
+      await db.update(users).set({deletedAt:now,deletedBy:auth.user!.id,status:"INACTIVE",updatedAt:now}).where(eq(users.id,id));
+      await db.delete(userSessions).where(eq(userSessions.userId,id));
+      await audit(auth.user!.id,id,"USER_DELETED",{status:current.status},{deletedAt:now});
+      return Response.json({message:`Usuário "${current.name}" excluído.`});
+    }
+
+    if(action==="RESTORE"){
+      if(!auth.user!.permissions.includes("users.delete"))return Response.json({error:"Você não possui permissão para restaurar usuários."},{status:403});
+      if(!current.deletedAt)return Response.json({error:"Este usuário não está excluído."},{status:400});
+      const now=new Date().toISOString();
+      await db.update(users).set({deletedAt:null,deletedBy:null,updatedAt:now}).where(eq(users.id,id));
+      await audit(auth.user!.id,id,"USER_RESTORED",{deletedAt:current.deletedAt},{deletedAt:null});
+      return Response.json({message:`Usuário "${current.name}" restaurado. Ele continua Inativo — ative-o quando for liberar o acesso de novo.`});
+    }
+
+    if(current.deletedAt)return Response.json({error:"Este usuário está excluído. Restaure-o antes de editar."},{status:409});
 
     const name=clean(body.name);const username=clean(body.username).toLowerCase();const email=clean(body.email).toLowerCase();
     if(!name||!validUsername(username)||!validEmail(email))return Response.json({error:"Revise nome, usuário e e-mail."},{status:400});
