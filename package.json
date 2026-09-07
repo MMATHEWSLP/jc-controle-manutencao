@@ -21,7 +21,8 @@
     "test:db-sql": "esbuild tests/db-sql-translation.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-db-sql-translation.mjs && node --test tests/.tmp-db-sql-translation.mjs",
     "test:pg-parameter-safety": "node --test tests/pg-parameter-type-safety.test.mjs",
     "test:task-authorization": "esbuild tests/task-authorization.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-task-authorization.mjs && node --test tests/.tmp-task-authorization.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:generic-date-correction && npm run test:equipment-health-summary && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization",
+    "test:products-import": "esbuild tests/products-import.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-products-import.mjs && node --test /tmp/manutencao-preventiva-products-import.mjs",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:generic-date-correction && npm run test:equipment-health-summary && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization && npm run test:products-import",
     "import:equipamentos": "node importar-equipamentos.mjs",
     "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
     "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular"

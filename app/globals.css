@@ -441,3 +441,48 @@ html[data-theme="dark"] .applicable-selector .selector-actions button{background
 html[data-theme="dark"] .operation-error button{background:#252421;color:#FF6B6B}
 html[data-theme="dark"] .maintenance-equipment-search-control>button:hover{background:#252421;color:#f7f7f6}
 html[data-theme="dark"] .alert-item.warning{background:#3A2A08}
+
+/* Módulo Produtos */
+.products-panel{overflow:hidden}
+.products-filters{display:grid;grid-template-columns:minmax(240px,2fr) repeat(3,minmax(140px,1fr)) auto;gap:10px;align-items:end;padding:13px 15px;border-bottom:1px solid var(--line);background:#f8fbfc}
+.products-filters label{display:flex;flex-direction:column;font-size:9px;color:#5a6d78;font-weight:700}
+.products-filters select,.products-filters input{margin-top:5px}
+.products-filters .page-search{display:grid;grid-template-columns:auto 1fr;align-items:center;align-self:end}
+.products-filters .page-search span{padding-left:10px;font-size:18px}
+.products-filters .page-search input{margin:0;border:0;background:transparent}
+.products-review-toggle{display:flex;align-items:center;gap:8px;align-self:end;min-height:44px;padding:0 12px;border:1px solid #dce5e9;border-radius:8px;background:var(--surface);cursor:pointer;white-space:nowrap}
+.products-review-toggle input{width:15px;height:15px;accent-color:#b17a08}
+.products-review-toggle strong{font-size:9px;color:#4a6272}
+.products-table th button{display:inline-flex;align-items:center;gap:4px;border:0;background:none;padding:0;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer}
+.products-table th button:hover{color:#1b5d82}
+.products-table td.price-cell{text-align:right;font-variant-numeric:tabular-nums}
+.products-table td.tag-cell{font-weight:800;color:#233c50}
+.products-review-badge{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 7px;border-radius:10px;font-size:7px;font-weight:700;background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning-text)}
+.products-review-badge:before{content:"⚠"}
+.products-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px;border-bottom:1px solid var(--line)}
+.products-toolbar-info{color:#7a8d98;font-size:9px}
+.pagination-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px}
+.pagination-bar .pagination-controls{display:flex;align-items:center;gap:6px}
+.pagination-bar button{padding:7px 11px;border:1px solid #d9e3e8;border-radius:6px;background:#fff;color:#3f6175;font-size:9px;font-weight:800}
+.pagination-bar button:disabled{opacity:.4;cursor:default}
+.pagination-bar span{color:#7a8d98;font-size:9px}
+.product-form-modal .modal-form{grid-template-columns:1fr 1fr}
+.combo-with-create{display:flex;gap:6px}
+.combo-with-create select{flex:1}
+.combo-with-create button{white-space:nowrap;padding:0 10px;border:1px solid #d9e3e8;border-radius:6px;background:#f7fafb;color:#3f6175;font-size:9px;font-weight:800}
+.equipment-model-manager{margin-top:16px;padding:14px 15px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.equipment-model-manager summary{cursor:pointer;font-size:11px;font-weight:800;color:#29465a}
+.equipment-model-manager-list{display:grid;gap:6px;margin-top:12px}
+.equipment-model-manager-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:center;padding:8px;border:1px solid #e5ebee;border-radius:7px}
+.equipment-model-manager-row input{margin:0}
+@media(max-width:900px){.products-filters{grid-template-columns:1fr 1fr}.products-filters .page-search{grid-column:1/-1}.product-form-modal .modal-form{grid-template-columns:1fr}.equipment-model-manager-row{grid-template-columns:1fr}}
+html[data-theme="dark"] .products-filters{background:#201e1a;border-color:#47443e}
+html[data-theme="dark"] .products-filters label{color:#c6c4c1}
+html[data-theme="dark"] .products-review-toggle{background:#252421;border-color:#47443e}
+html[data-theme="dark"] .products-review-toggle strong{color:#c6c4c1}
+html[data-theme="dark"] .products-table th button:hover{color:#7fd1f0}
+html[data-theme="dark"] .products-table td.tag-cell{color:#f7f7f6}
+html[data-theme="dark"] .pagination-bar button,html[data-theme="dark"] .combo-with-create button{background:#252421;border-color:#47443e;color:#d3d1cd}
+html[data-theme="dark"] .equipment-model-manager{background:#1c1b19;border-color:#363431}
+html[data-theme="dark"] .equipment-model-manager summary{color:#f7f7f6}
+html[data-theme="dark"] .equipment-model-manager-row{border-color:#363431}
