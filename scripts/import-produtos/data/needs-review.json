@@ -1,0 +1,3996 @@
+[
+  {
+    "tag": "1001",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1010",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1011",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1012",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1016",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1017",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1023",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "104",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1059",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1061",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1066",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1072",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1084",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1101",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1103",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1108",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1128",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1138",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1139",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1160",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1163",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1167",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "117",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1173",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1174",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1175",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1176",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1177",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1178",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "118",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1183",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1185",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "1186",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1187",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "119",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1193",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "120",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1202",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "121",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1226",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1229",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1230",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1236",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1252",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1259",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1264",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1268",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "127",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1275",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1276",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1277",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1299",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1303",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1305",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1321",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1324",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1325",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1346",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1359",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "136",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1360",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1363",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1365",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1366",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "138",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1390",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1401",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1402",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "142",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "143",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1430",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1434",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1436",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "144",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1441",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1445",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1448",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1449",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1450",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1451",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1454",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1461",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1463",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1465",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1466",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1467",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "147",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "148",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1480",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1487",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1489",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1496",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "1505",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "152",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1523",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1526",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1527",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1544",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1545",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1546",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1547",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1553",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1554",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1556",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1557",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1559",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "157",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1571",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1579",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1584",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1589",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1592",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1597",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "160",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1605",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1606",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1608",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "162",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1662",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1665",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1669",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1670",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1675",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "17",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1708",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1714",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1719",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1726",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1737",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1738",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1740",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1746",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1763",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1776",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1785",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1786",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1789",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1790",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1796",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1797",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1798",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1799",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1806",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1813",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1828",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1839",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1841",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1855",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1857",
+    "reasons": [
+      "Quantidade negativa (-5.0)"
+    ]
+  },
+  {
+    "tag": "1876",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1889",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "1895",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1898",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1899",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1900",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1901",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1902",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1903",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1907",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1912",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1913",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1914",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1915",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1919",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1923",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1925",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1937",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1938",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1942",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1944",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1955",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1971",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "1993",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2016",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2017",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2018",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2019",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2020",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2021",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2032",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2033",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2035",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2038",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2046",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2071",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2078",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2092",
+    "reasons": [
+      "Possivel duplicidade (mesmo nome+referencia)"
+    ]
+  },
+  {
+    "tag": "2100",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2108",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2109",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2124",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2128",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "2135",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "215",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "217",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2173",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2180",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2183",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2186",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2193",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2194",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2202",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2220",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2221",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2224",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2227",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2230",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2232",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2245",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2249",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2253",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2254",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2255",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2256",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2257",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2258",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2268",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2271",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2272",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2273",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2274",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2275",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2276",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2277",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2278",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2279",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2287",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2288",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2289",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2290",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2291",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2292",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2297",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2313",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2314",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2315",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2356",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2361",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2364",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2366",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2367",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2368",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2375",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2396",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2398",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2399",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2400",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2402",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2407",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2454",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2455",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "2456",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2458",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2461",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2462",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2463",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2468",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2471",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2483",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2487",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "25",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "251",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "252",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "253",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "254",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "256",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "26",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2616",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2617",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2621",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2622",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2641",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2663",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2670",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2671",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2672",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2685",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2695",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "2706",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2713",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2716",
+    "reasons": [
+      "Quantidade negativa (-2.0)"
+    ]
+  },
+  {
+    "tag": "2750",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2752",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2759",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "276",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2760",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2765",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2772",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "278",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2781",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "28",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2833",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2834",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2836",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2869",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2872",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2880",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "2888",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2890",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2891",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2892",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2894",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2896",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2897",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2903",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2904",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2909",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2910",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2911",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2917",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2918",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2919",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2920",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2921",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2922",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2924",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2925",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2926",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2927",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2929",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2930",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2933",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2934",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2936",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2938",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2952",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2954",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2959",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2960",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2961",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2964",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2966",
+    "reasons": [
+      "Possivel duplicidade (mesmo nome+referencia)"
+    ]
+  },
+  {
+    "tag": "297",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2971",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2979",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2986",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "2987",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3001",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3004",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "3006",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3011",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3013",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3016",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3017",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3026",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3027",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3029",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3031",
+    "reasons": [
+      "Sem referencia",
+      "Possivel duplicidade (mesmo nome+referencia)"
+    ]
+  },
+  {
+    "tag": "3032",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3034",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3035",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3036",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3038",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3039",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3048",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "307",
+    "reasons": [
+      "Quantidade negativa (-3.0)"
+    ]
+  },
+  {
+    "tag": "3077",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3079",
+    "reasons": [
+      "Quantidade negativa (-2.0)"
+    ]
+  },
+  {
+    "tag": "308",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3081",
+    "reasons": [
+      "Quantidade negativa (-16.0)"
+    ]
+  },
+  {
+    "tag": "3085",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3086",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3088",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3089",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3095",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3097",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3098",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3099",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "310",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3100",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3102",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3104",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3106",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3108",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3109",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3110",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3111",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3112",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3116",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3117",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "313",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3133",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3135",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3139",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3146",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3147",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "315",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3176",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3177",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3183",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3185",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3186",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3187",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3189",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3190",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3191",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3192",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3193",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3197",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "32",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3200",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3201",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3202",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3205",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3206",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3211",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3212",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3225",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3226",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3227",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3231",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3232",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3233",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3235",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3236",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "3239",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3240",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3241",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3242",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3243",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3244",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3249",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "3250",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3259",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3272",
+    "reasons": [
+      "Possivel duplicidade (mesmo nome+referencia)"
+    ]
+  },
+  {
+    "tag": "3283",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3291",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3295",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3297",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3298",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "33",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3304",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3306",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "331",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3310",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3312",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3314",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3315",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3316",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3317",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3319",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "332",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3320",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3321",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3322",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3324",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3329",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3330",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3333",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3334",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3338",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "334",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3340",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3342",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3343",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3344",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3345",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3348",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3349",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "335",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3350",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "3352",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3353",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3354",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3361",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3366",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3368",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3377",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3383",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "3384",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "3394",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "344",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "356",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "368",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "375",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "396",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "399",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4004",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4006",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4017",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4023",
+    "reasons": [
+      "Sem referencia",
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4024",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia",
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4026",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4027",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4028",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4029",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4030",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4035",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4036",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4037",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4040",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4043",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4044",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4045",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4048",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4049",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4050",
+    "reasons": [
+      "Sem referencia",
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4052",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4054",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4055",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4056",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4057",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4058",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4059",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4060",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4062",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4064",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4066",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4067",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4068",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4070",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4071",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4072",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4073",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4077",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4080",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4082",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4085",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4092",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4094",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4095",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4096",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4099",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4108",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4120",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4121",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4122",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4126",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4127",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4133",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4137",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4140",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4141",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4144",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4145",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4154",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4157",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4158",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4160",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4161",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4168",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4169",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4171",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4174",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4179",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4183",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4185",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4190",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4199",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4210",
+    "reasons": [
+      "Quantidade negativa (-1.0)",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4211",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4231",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4234",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4235",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4236",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4238",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4241",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4246",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "4247",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4252",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4255",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4258",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4262",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4269",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4278",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4282",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4283",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4284",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4285",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4288",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4291",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4292",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4295",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4302",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4303",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4309",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "431",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4315",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4316",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4317",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4318",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4319",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4320",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4321",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4322",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4323",
+    "reasons": [
+      "Sem preco unitario",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4332",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4333",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4350",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4351",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4354",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4355",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "4374",
+    "reasons": [
+      "TAG ausente na origem - TAG provisoria gerada"
+    ]
+  },
+  {
+    "tag": "4375",
+    "reasons": [
+      "TAG ausente na origem - TAG provisoria gerada"
+    ]
+  },
+  {
+    "tag": "4376",
+    "reasons": [
+      "TAG ausente na origem - TAG provisoria gerada",
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "4377",
+    "reasons": [
+      "TAG ausente na origem - TAG provisoria gerada"
+    ]
+  },
+  {
+    "tag": "447",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "449",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "458",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "491",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "498",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "50",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "505",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "513",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "532",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "534",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "55",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "550",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "560",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "572",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "576",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "628",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "656",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "661",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "677",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "688",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "697",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "702",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "710",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "713",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "714",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "731",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "732",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "744",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "745",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "751",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "758",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "759",
+    "reasons": [
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "761",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "793",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "797",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "799",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "803",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "806",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "809",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "824",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "839",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "84",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia",
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "846",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "852",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "853",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "866",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "874",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "876",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "91",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "914",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "936",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "942",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "991",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "992",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "993",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "997",
+    "reasons": [
+      "Quantidade negativa (-1.0)"
+    ]
+  },
+  {
+    "tag": "998",
+    "reasons": [
+      "Aplicacao generica - definir modelo"
+    ]
+  },
+  {
+    "tag": "Totais",
+    "reasons": [
+      "Sem preco unitario"
+    ]
+  },
+  {
+    "tag": "teste1",
+    "reasons": [
+      "Sem referencia"
+    ]
+  },
+  {
+    "tag": "teste2",
+    "reasons": [
+      "Referencia invalida (repetia o nome) - limpa",
+      "Sem referencia"
+    ]
+  }
+]

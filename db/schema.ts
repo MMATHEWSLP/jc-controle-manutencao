@@ -142,6 +142,10 @@ export const equipment = pgTable("equipment", {
   photoKey: text("photo_key"),
   qrToken: text("qr_token"),
   oilChangeEnabled: boolean("oil_change_enabled").notNull().default(true),
+  // FK para equipment_models (módulo Produtos), preenchida por rotina de casamento textual best-effort
+  // com o `model` acima. Convive com `model`/`brand` (texto livre, nunca sobrescritos) durante a
+  // transição: fica NULL sempre que a rotina não tiver certeza do casamento.
+  equipmentModelId: integer("equipment_model_id").references((): AnyPgColumn => equipmentModels.id),
   ...timestamps,
 }, (table) => [
   uniqueIndex("equipment_code_unique").on(table.code),
@@ -150,6 +154,7 @@ export const equipment = pgTable("equipment", {
   uniqueIndex("equipment_qr_token_unique").on(table.qrToken),
   index("equipment_front_idx").on(table.serviceFrontId),
   index("equipment_oil_front_idx").on(table.oilChangeEnabled, table.serviceFrontId),
+  index("equipment_model_idx").on(table.equipmentModelId),
 ]);
 
 export const equipmentTransfers = pgTable("equipment_transfers", {
@@ -716,3 +721,59 @@ export const taskNotifications = pgTable("task_notifications", {
   index("task_notifications_user_idx").on(table.userId, table.readAt),
   index("task_notifications_task_idx").on(table.taskId),
 ]);
+
+// Módulo Produtos (peças, insumos, EPI e mantimentos). Lista usada pelo campo "Aplicação" no
+// cadastro de produto (vínculo 1:1 — cada produto aponta para no máximo um modelo) e também pela
+// rotina best-effort de `equipment.equipmentModelId` acima.
+export const equipmentModels = pgTable("equipment_models", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  manufacturer: text("manufacturer"),
+  category: text("category"),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("equipment_models_name_unique").on(table.name),
+  index("equipment_models_active_idx").on(table.active),
+]);
+
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  cnpj: text("cnpj"),
+  phone: text("phone"),
+  email: text("email"),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("suppliers_name_unique").on(table.name),
+  index("suppliers_active_idx").on(table.active),
+]);
+
+export const products = pgTable("products", {
+  id: serial("id").primaryKey(),
+  tag: text("tag").notNull(),
+  name: text("name").notNull(),
+  reference: text("reference"),
+  price: doublePrecision("price").notNull().default(0),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  brand: text("brand"),
+  // A Aplicação (vínculo 1:1 com um modelo de equipamento). NULL = produto de uso geral
+  // (parafuso, abraçadeira, EPI, mantimento).
+  equipmentModelId: integer("equipment_model_id").references(() => equipmentModels.id),
+  // Marca linhas que vieram incompletas da importação (sem preço, sem referência, aplicação
+  // genérica ainda sem modelo definido, TAG provisória, etc.) para revisão manual posterior.
+  needsReview: boolean("needs_review").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("products_tag_unique").on(table.tag),
+  index("products_name_idx").on(table.name),
+  index("products_equipment_model_idx").on(table.equipmentModelId),
+  index("products_supplier_idx").on(table.supplierId),
+  index("products_needs_review_idx").on(table.needsReview),
+]);
+
+// Preparado para uma futura tabela de estoque (product_stock: productId, unitId/serviceFrontId,
+// quantity) — não implementada agora por pedido explícito da especificação do módulo.

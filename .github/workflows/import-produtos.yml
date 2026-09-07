@@ -1,0 +1,44 @@
+name: Importar produtos (módulo Produtos)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Marque para rodar de verdade (semeia modelos, vincula equipamentos e importa os produtos). Sem isso, o workflow só confere o ambiente e não grava nada."
+        type: boolean
+        default: false
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Nada a fazer (marque "confirmar" para rodar de verdade)
+        if: ${{ github.event.inputs.confirmar != 'true' }}
+        run: echo "confirmar=false — nenhum comando de gravação foi executado."
+
+      - name: Semear modelos de equipamento
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/seed-equipment-models.ts
+
+      - name: Vincular equipamentos já cadastrados aos modelos
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/link-equipment-models.ts
+
+      - name: Importar produtos do CSV tratado
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/import-produtos.ts

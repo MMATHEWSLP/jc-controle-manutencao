@@ -23,7 +23,7 @@ export async function GET(request:Request){
     await recalculateMaintenanceCycles(d1,{notify:false});
     const [equipmentResult,applicableResult,typeResult,planResult,readingResult,rawHistory,thresholds,allowedIds]=await Promise.all([
       d1.prepare(`SELECT e.id,e.code,e.prefix,e.type,e.brand,e.model,e.year,e.serial_number,e.chassis,e.identification_type,e.plate,e.qr_token,e.photo_key,
-        e.service_front_id,e.oil_change_enabled,e.current_hours,e.current_km,e.control_type,e.status,e.notes,e.created_at,e.updated_at,sf.name AS front
+        e.service_front_id,e.oil_change_enabled,e.current_hours,e.current_km,e.control_type,e.status,e.notes,e.equipment_model_id,e.created_at,e.updated_at,sf.name AS front
         FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id WHERE e.oil_change_enabled=1 ORDER BY e.prefix`).all() as Promise<{results:Row[]}>,
       d1.prepare(`SELECT emt.equipment_id,t.id AS type_id,t.name,t.category FROM equipment_maintenance_types emt
         INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.applicable=1 AND t.active=1 AND t.category='OIL' ORDER BY t.name`).all() as Promise<{results:Row[]}>,
@@ -78,7 +78,7 @@ export async function GET(request:Request){
       const health=summarizeEquipmentHealth(plans.map((plan)=>({name:plan.name,state:plan.state})));
       const statusMap:Record<string,string>={ACTIVE:"Ativo",STOPPED:"Parado",MAINTENANCE:"Em manutenção",INACTIVE:"Inativo"};
       return {id,code:String(row.code),prefix:String(row.prefix),type:String(row.type),brand:String(row.brand),model:String(row.model),year:n(row.year),
-        qrToken:text(row.qr_token),photoKey:text(row.photo_key),serviceFrontId:n(row.service_front_id),oilChangeEnabled:Number(row.oil_change_enabled)===1,notes:text(row.notes),
+        qrToken:text(row.qr_token),photoKey:text(row.photo_key),serviceFrontId:n(row.service_front_id),oilChangeEnabled:Number(row.oil_change_enabled)===1,notes:text(row.notes),equipmentModelId:n(row.equipment_model_id),
         serial:text(row.serial_number)??"",chassis:text(row.chassis),identificationType:String(row.identification_type),identificationValue:String(row.identification_type)==="CHASSIS"?text(row.chassis):text(row.serial_number),
         plate:text(row.plate),front:text(row.front)??"Sem frente",hours:currentHours,km:currentKm,control:controlType,status:statusMap[String(row.status)]??String(row.status),
         reading:formatReading(currentHours,currentKm,controlType),health:health.health,situation:health.situation,tone:health.tone,

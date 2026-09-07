@@ -311,4 +311,35 @@ export function createMaterialShipmentPdf(input:MaterialShipmentPdfInput){
 }
 
 export function formatPdfDate(value:string){if(!value)return "Sem data";const date=new Date(value);return Number.isNaN(date.getTime())?value:ptFormatter.format(date);}
+
+export type ProductPdfItem={tag:string;name:string;reference:string;price:number;supplier:string;application:string;needsReview:boolean};
+type ProductsListPdfInput={items:ProductPdfItem[];generatedAt:string;filters:string;total:number};
+const productPriceFormat=new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
+
+export function createProductsListPdf(input:ProductsListPdfInput){
+  const perPage=18;const pageCount=Math.max(1,Math.ceil(input.items.length/perPage));
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const items=input.items.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    content+="1 1 1 rg 0 752 595 90 re f\n";content+="0.16 0.48 0.66 rg 0 746 595 6 re f\n";content+=logo(36,774,88);
+    content+=text(136,810,9,"MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(136,787,16,"PRODUTOS",true,"0.08 0.25 0.36");content+=text(136,770,8,truncate(input.filters,72),false,"0.31 0.46 0.55");
+    content+=text(430,810,8,"GERADO EM",true,"0.31 0.46 0.55");content+=text(430,793,9,input.generatedAt,false,"0.08 0.25 0.36");
+    content+="0.96 0.97 0.98 rg 36 704 523 28 re f\n";
+    content+=text(46,715,8,`RESULTADOS: ${input.total}`,true,"0.15 0.27 0.36");content+=text(444,715,8,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.15 0.27 0.36");
+    content+="0.11 0.35 0.49 rg 36 666 523 25 re f\n";
+    content+=text(43,675,7,"TAG",true,"1 1 1");content+=text(90,675,7,"NOME / REFERÊNCIA",true,"1 1 1");content+=text(330,675,7,"PREÇO",true,"1 1 1");content+=text(390,675,7,"FORNECEDOR",true,"1 1 1");content+=text(475,675,7,"APLICAÇÃO",true,"1 1 1");
+    if(items.length===0){content+=text(200,615,12,"Nenhum produto corresponde aos filtros.",true,"0.33 0.47 0.55");}
+    items.forEach((item,index)=>{
+      const top=641-(index*31);if(index%2===0)content+=`0.965 0.975 0.98 rg 36 ${top-16} 523 30 re f\n`;
+      content+=text(43,top,8,truncate(item.tag,10),true);
+      content+=text(90,top+2,7,truncate(item.name,42),true);content+=text(90,top-10,6,truncate(item.reference||"Sem referência",42),false,"0.39 0.49 0.56");
+      content+=text(330,top,7,productPriceFormat.format(item.price),false);
+      content+=text(390,top,7,truncate(item.supplier||"—",16),false);
+      content+=text(475,top,7,truncate(item.application||"Uso geral",16),false,item.needsReview?"0.72 0.13 0.18":"0.15 0.27 0.36");
+      content+=`0.88 0.91 0.93 RG 0.35 w 36 ${top-16} m 559 ${top-16} l S\n`;
+    });
+    content+="0.86 0.90 0.92 RG 0.6 w 36 55 m 559 55 l S\n";content+=text(42,36,8,"Relatório gerado com os dados atuais do módulo Produtos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages);
+}
 import { PDF_LOGO_HEIGHT,PDF_LOGO_JPEG_BASE64,PDF_LOGO_WIDTH } from "./pdf-logo";
