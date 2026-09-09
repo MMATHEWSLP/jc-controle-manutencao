@@ -33,7 +33,7 @@ async function main() {
     }
 
     const sample = await client.query(
-      "SELECT id, code, name, category, brand, active FROM products ORDER BY id LIMIT 5",
+      "SELECT id, tag, name, reference, brand, active, needs_review FROM products ORDER BY id LIMIT 5",
     );
     console.log("\nAmostra de até 5 produtos:");
     for (const row of sample.rows) {
