@@ -1,0 +1,22 @@
+name: Diagnóstico — Módulo Produtos (somente leitura)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Rodar diagnóstico (não altera nenhum dado)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node diagnosticar-produtos.mjs
