@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getD1, getDb } from "../../../db";
 import { alerts, equipment, equipmentMaintenanceTypes, maintenancePlans, maintenanceTypes, serviceFronts } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
+import { naturalSortKey } from "../../../lib/equipment-sort";
 import { activeServiceFronts, allowedEquipmentIds, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
 import { canonicalEquipmentPrefix, reconcileEquipmentMeasurement } from "../../../lib/maintenance-history";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
@@ -53,7 +54,7 @@ async function getEquipmentRows() {
     model:equipment.model, year:equipment.year, serialNumber:equipment.serialNumber, chassis:equipment.chassis,
     identificationType:equipment.identificationType, plate:equipment.plate, serviceFrontId:equipment.serviceFrontId, front:serviceFronts.name,
     currentHours:equipment.currentHours, currentKm:equipment.currentKm, controlType:equipment.controlType, status:equipment.status, qrToken:equipment.qrToken,oilChangeEnabled:equipment.oilChangeEnabled,notes:equipment.notes,
-  }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id)).orderBy(desc(equipment.id));
+  }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id)).orderBy(asc(equipment.sortKey));
 }
 
 async function getApplicableMap() {
@@ -146,7 +147,7 @@ async function saveEquipment(request:Request, editing:boolean) {
 
     const now = new Date().toISOString();
     const values = {
-      code, prefix, type, brand, model, year:Number(body.year) || null,
+      code, prefix, sortKey:naturalSortKey(prefix), type, brand, model, year:Number(body.year) || null,
       serialNumber:identificationType === "SERIAL_NUMBER" ? identificationValue : existing?.serialNumber ?? (clean(body.preservedSerialNumber) || null),
       chassis:identificationType === "CHASSIS" ? identificationValue : existing?.chassis ?? (clean(body.preservedChassis) || null),
       identificationType, plate:clean(body.plate).toUpperCase() || null, serviceFrontId:frontId,

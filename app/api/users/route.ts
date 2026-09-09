@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { serviceFronts, taskRoles, userPermissions, userSessions, users } from "../../../db/schema";
+import { serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../../../db/schema";
 import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel } from "../../../lib/auth";
 import { canChangeTaskRole } from "../../../lib/task-authorization";
 
@@ -32,11 +32,46 @@ async function replaceOverrides(userId:number,profile:Profile,permissions:Permis
   }
 }
 
+// Resolve a lista de frentes múltiplas do formulário contra o banco — rejeita qualquer id que
+// não corresponda a uma frente existente, em vez de gravar um vínculo quebrado.
+async function resolveServiceFronts(value:unknown):Promise<number[]>{
+  if(!Array.isArray(value))return [];
+  const ids=[...new Set(value.map((item)=>Number(item)).filter((id)=>Number.isInteger(id)&&id>0))];
+  if(ids.length===0)return [];
+  const db=await getDb();
+  const rows=await db.select({id:serviceFronts.id}).from(serviceFronts).where(inArray(serviceFronts.id,ids));
+  const validIds=new Set(rows.map((row)=>row.id));
+  if(ids.some((id)=>!validIds.has(id)))throw new Error("SERVICE_FRONT_INVALID");
+  return ids;
+}
+
+async function replaceServiceFronts(userId:number,frontIds:number[]){
+  const db=await getDb();const now=new Date().toISOString();
+  await db.delete(userServiceFronts).where(eq(userServiceFronts.userId,userId));
+  for(const serviceFrontId of frontIds){
+    await db.insert(userServiceFronts).values({userId,serviceFrontId,updatedAt:now});
+  }
+}
+
+async function loadServiceFrontLinks(userId:number){
+  const db=await getDb();
+  return db.select({id:userServiceFronts.serviceFrontId,name:serviceFronts.name})
+    .from(userServiceFronts).innerJoin(serviceFronts,eq(userServiceFronts.serviceFrontId,serviceFronts.id))
+    .where(eq(userServiceFronts.userId,userId)).orderBy(asc(serviceFronts.name));
+}
+
 async function serialize(row:typeof users.$inferSelect){
   const profile=(row.role==="ALMOXARIFADO"?"OPERADOR":row.role) as Profile;
   const db=await getDb();const front=row.serviceFrontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,row.serviceFrontId)).limit(1))[0]:null;
   const taskRole=row.taskRoleId?(await db.select({name:taskRoles.name}).from(taskRoles).where(eq(taskRoles.id,row.taskRoleId)).limit(1))[0]:null;
-  return {id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),taskRoleId:row.taskRoleId,taskRoleName:taskRole?.name??null,status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null};
+  const frontLinks=row.allServiceFronts?[]:await loadServiceFrontLinks(row.id);
+  return {
+    id:row.id,name:row.name,username:row.username??"",email:row.email,profile,profileLabel:profileLabel(profile),taskRoleId:row.taskRoleId,taskRoleName:taskRole?.name??null,
+    status:row.status,lastAccessAt:row.lastAccessAt,createdAt:row.createdAt,isPrimaryAdmin:row.isPrimaryAdmin,permissions:await effectivePermissions(row.id,row.role),
+    serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null,
+    allServiceFronts:row.allServiceFronts,canExport:row.canExport,
+    serviceFrontIds:frontLinks.map((link)=>link.id),serviceFrontNames:frontLinks.map((link)=>link.name),
+  };
 }
 
 async function serviceFrontId(value:unknown,required:boolean){
@@ -67,6 +102,13 @@ export async function POST(request:Request){
     if(!editableProfiles.includes(profile))profile="OPERADOR";
     const canAssign=auth.user!.permissions.includes("users.permissions");if(!canAssign)profile="OPERADOR";
     const frontId=await serviceFrontId(body.serviceFrontId,profile!=="ADMIN");
+    const allServiceFronts=profile==="ADMIN"?false:Boolean(body.allServiceFronts);
+    const canExport=Boolean(body.canExport);
+    let serviceFrontIds=await resolveServiceFronts(body.serviceFrontIds);
+    if(frontId!==null&&!serviceFrontIds.includes(frontId))serviceFrontIds=[...serviceFrontIds,frontId];
+    if(profile!=="ADMIN"&&!allServiceFronts&&serviceFrontIds.length===0){
+      return Response.json({error:"Selecione ao menos uma frente de serviço, ou marque acesso a todas as frentes."},{status:400});
+    }
     const requestedTaskRoleId=Number(body.taskRoleId);
     let taskRoleId:number|null=null;
     if(auth.user!.profile==="ADMIN"&&Number.isInteger(requestedTaskRoleId)&&requestedTaskRoleId>0){
@@ -74,16 +116,17 @@ export async function POST(request:Request){
       taskRoleId=requestedTaskRoleId;
     }
     const salt=newSalt();const now=new Date().toISOString();const db=await getDb();
-    const saved=(await db.insert(users).values({name,username,email,passwordSalt:salt,passwordHash:await passwordHash(password,salt),role:profile,taskRoleId,status,theme:"LIGHT",isPrimaryAdmin:false,passwordUpdatedAt:now,serviceFrontId:frontId,updatedAt:now}).returning())[0];
+    const saved=(await db.insert(users).values({name,username,email,passwordSalt:salt,passwordHash:await passwordHash(password,salt),role:profile,taskRoleId,status,theme:"LIGHT",isPrimaryAdmin:false,passwordUpdatedAt:now,serviceFrontId:frontId,allServiceFronts,canExport,updatedAt:now}).returning())[0];
+    if(!allServiceFronts)await replaceServiceFronts(saved.id,serviceFrontIds);
     const permissions=canAssign?validPermissions(body.permissions):PROFILE_DEFAULTS.OPERADOR;
     await replaceOverrides(saved.id,profile,permissions);
-    await audit(auth.user!.id,saved.id,"USER_CREATED",undefined,{name,username,email,profile,status,serviceFrontId:frontId});
+    await audit(auth.user!.id,saved.id,"USER_CREATED",undefined,{name,username,email,profile,status,serviceFrontId:frontId,allServiceFronts,serviceFrontIds});
     if(canAssign)await audit(auth.user!.id,saved.id,"PERMISSIONS_CHANGED",undefined,{permissions});
     return Response.json({user:await serialize(saved)},{status:201});
   }catch(error){
     const message=error instanceof Error?error.message:"";
     if(message.includes("SERVICE_FRONT_REQUIRED"))return Response.json({error:"Selecione a frente de serviço do usuário."},{status:400});
-    if(message.includes("SERVICE_FRONT_INVALID"))return Response.json({error:"A frente de serviço selecionada não existe."},{status:400});
+    if(message.includes("SERVICE_FRONT_INVALID"))return Response.json({error:"Uma das frentes de serviço selecionadas não existe."},{status:400});
     if(message.includes("UNIQUE constraint"))return Response.json({error:"Usuário ou e-mail já cadastrado."},{status:409});
     return Response.json({error:"Não foi possível criar o usuário agora."},{status:500});
   }
@@ -115,8 +158,20 @@ export async function PUT(request:Request){
     const editingSelf=auth.user!.id===id;
     const nextProfile=current.isPrimaryAdmin?"ADMIN":editingSelf||!canPermissions?current.role:requestedProfile;
     const nextStatus=current.isPrimaryAdmin||editingSelf||!canStatus?current.status:requestedStatus;
+    // Mudar a frente de acesso (principal, múltiplas, "todas" ou permissão de exportar) é tratado
+    // como uma mudança de acesso — mesma trava de quem pode reatribuir permissões, nunca a própria
+    // pessoa nem o administrador principal (que não tem frente).
     const canChangeFront=!current.isPrimaryAdmin&&!editingSelf&&canPermissions;
     const nextFrontId=canChangeFront?await serviceFrontId(body.serviceFrontId,nextProfile!=="ADMIN"):current.serviceFrontId;
+    const nextAllServiceFronts=canChangeFront?(nextProfile==="ADMIN"?false:Boolean(body.allServiceFronts)):current.allServiceFronts;
+    const nextCanExport=canChangeFront?Boolean(body.canExport):current.canExport;
+    let nextServiceFrontIds=canChangeFront?await resolveServiceFronts(body.serviceFrontIds):null;
+    if(canChangeFront){
+      if(nextFrontId!==null&&nextServiceFrontIds&&!nextServiceFrontIds.includes(nextFrontId))nextServiceFrontIds=[...nextServiceFrontIds,nextFrontId];
+      if(nextProfile!=="ADMIN"&&!nextAllServiceFronts&&(nextServiceFrontIds?.length??0)===0){
+        return Response.json({error:"Selecione ao menos uma frente de serviço, ou marque acesso a todas as frentes."},{status:400});
+      }
+    }
     const requestedTaskRoleIdRaw=body.taskRoleId;
     const allowTaskRoleChange=canChangeTaskRole(auth.user!,id);
     let nextTaskRoleId=current.taskRoleId;
@@ -128,10 +183,11 @@ export async function PUT(request:Request){
         nextTaskRoleId=requestedTaskRoleId;
       }
     }
-    const before={name:current.name,username:current.username,email:current.email,profile:current.role,taskRoleId:current.taskRoleId,status:current.status,serviceFrontId:current.serviceFrontId};
+    const before={name:current.name,username:current.username,email:current.email,profile:current.role,taskRoleId:current.taskRoleId,status:current.status,serviceFrontId:current.serviceFrontId,allServiceFronts:current.allServiceFronts};
     const now=new Date().toISOString();
-    const saved=(await db.update(users).set({name,username,email,role:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId,updatedAt:now}).where(eq(users.id,id)).returning())[0];
-    await audit(auth.user!.id,id,"USER_EDITED",before,{name,username,email,profile:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId});
+    const saved=(await db.update(users).set({name,username,email,role:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId,allServiceFronts:nextAllServiceFronts,canExport:nextCanExport,updatedAt:now}).where(eq(users.id,id)).returning())[0];
+    if(canChangeFront&&nextServiceFrontIds)await replaceServiceFronts(id,nextAllServiceFronts?[]:nextServiceFrontIds);
+    await audit(auth.user!.id,id,"USER_EDITED",before,{name,username,email,profile:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId,allServiceFronts:nextAllServiceFronts,serviceFrontIds:nextServiceFrontIds});
     if(nextTaskRoleId!==current.taskRoleId)await audit(auth.user!.id,id,"TASK_ROLE_CHANGED",{taskRoleId:current.taskRoleId},{taskRoleId:nextTaskRoleId});
     if(nextStatus!==current.status){await db.delete(userSessions).where(eq(userSessions.userId,id));await audit(auth.user!.id,id,nextStatus==="ACTIVE"?"USER_ACTIVATED":"USER_DEACTIVATED",{status:current.status},{status:nextStatus});}
     if(canPermissions&&!editingSelf&&!current.isPrimaryAdmin&&Array.isArray(body.permissions)){
@@ -141,7 +197,7 @@ export async function PUT(request:Request){
   }catch(error){
     const message=error instanceof Error?error.message:"";
     if(message.includes("SERVICE_FRONT_REQUIRED"))return Response.json({error:"Selecione a frente de serviço do usuário."},{status:400});
-    if(message.includes("SERVICE_FRONT_INVALID"))return Response.json({error:"A frente de serviço selecionada não existe."},{status:400});
+    if(message.includes("SERVICE_FRONT_INVALID"))return Response.json({error:"Uma das frentes de serviço selecionadas não existe."},{status:400});
     if(message.includes("UNIQUE constraint"))return Response.json({error:"Usuário ou e-mail já cadastrado."},{status:409});
     return Response.json({error:"Não foi possível atualizar o usuário agora."},{status:500});
   }

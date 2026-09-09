@@ -139,7 +139,7 @@ export async function GET(request: Request) {
         COALESCE(u.name,'Não informado') AS updated_by
         FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id
         LEFT JOIN fleet_current_status cs ON cs.equipment_id=e.id LEFT JOIN fleet_status_events ev ON ev.id=cs.latest_event_id
-        LEFT JOIN fleet_occurrences o ON o.id=cs.active_occurrence_id LEFT JOIN users u ON u.id=cs.updated_by ORDER BY e.prefix`).all<Row>(),
+        LEFT JOIN fleet_occurrences o ON o.id=cs.active_occurrence_id LEFT JOIN users u ON u.id=cs.updated_by ORDER BY e.sort_key`).all<Row>(),
       d1.prepare(`SELECT ev.*,e.prefix,e.brand,e.model,e.type AS category,COALESCE(sf.name,'Frente não registrada') AS front,u.name AS updated_by,
         COALESCE(STRING_AGG(em.mechanic_name,'||'),'') AS mechanic_names
         FROM fleet_status_events ev INNER JOIN equipment e ON e.id=ev.equipment_id LEFT JOIN service_fronts sf ON sf.id=ev.service_front_id

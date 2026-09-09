@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, index, integer, pgTable, serial, text, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, pgTable, primaryKey, serial, text, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // Gera texto no mesmo formato de `new Date().toISOString()` (usado pelo app em JS),
 // para que colunas de data continuem sendo strings ISO-8601 mesmo vindas de um DEFAULT do banco.
@@ -43,7 +43,16 @@ export const users = pgTable("users", {
   isPrimaryAdmin: boolean("is_primary_admin").notNull().default(false),
   lastAccessAt: text("last_access_at"),
   passwordUpdatedAt: text("password_updated_at"),
+  // Frente principal: padrão em formulários e relatórios. Quem enxerga MAIS de uma frente tem
+  // isso registrado em `userServiceFronts` (abaixo) — este campo nunca é a fonte de verdade de
+  // visibilidade sozinho, só o valor padrão pré-selecionado.
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  // TRUE = enxerga todas as frentes, inclusive as cadastradas no futuro, sem precisar editar o
+  // usuário de novo. Independente do perfil (ADMIN/GESTOR/USUÁRIO) — perfil define o que a pessoa
+  // PODE FAZER, frente define o que ela ENXERGA.
+  allServiceFronts: boolean("all_service_fronts").notNull().default(false),
+  // Libera a exportação de trocas de óleo em Excel para quem não é ADMIN/GESTOR, caso a caso.
+  canExport: boolean("can_export").notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
@@ -51,6 +60,19 @@ export const users = pgTable("users", {
   index("users_status_role_idx").on(table.status, table.role),
   index("users_service_front_idx").on(table.serviceFrontId),
   index("users_task_role_idx").on(table.taskRoleId),
+]);
+
+// Frentes visíveis por usuário (além da frente principal acima) — um usuário pode enxergar várias.
+// Ignorada quando `users.allServiceFronts` é TRUE ou o perfil é ADMIN (esses dois casos enxergam
+// tudo sem precisar de linha aqui). Ver lib/access.ts:frentesVisiveis, o único ponto que decide
+// "quais frentes esta pessoa vê" — toda query que filtra por frente passa por ele.
+export const userServiceFronts = pgTable("user_service_fronts", {
+  userId: integer("user_id").notNull().references(() => users.id),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.serviceFrontId] }),
+  index("user_service_fronts_front_idx").on(table.serviceFrontId),
 ]);
 
 // Cargos de Tarefas: papel usado exclusivamente para definir quem pode enviar, receber,
@@ -146,6 +168,11 @@ export const equipment = pgTable("equipment", {
   // com o `model` acima. Convive com `model`/`brand` (texto livre, nunca sobrescritos) durante a
   // transição: fica NULL sempre que a rotina não tiver certeza do casamento.
   equipmentModelId: integer("equipment_model_id").references((): AnyPgColumn => equipmentModels.id),
+  // Chave de ordenação alfanumérica natural derivada do prefixo (ver lib/equipment-sort.ts):
+  // maiúsculas, sem acento, cada sequência de dígitos preenchida com zeros à esquerda — assim
+  // "EQ-2" ordena antes de "EQ-10". Calculada em toda gravação de equipamento; nunca editada
+  // manualmente. Índice permite `ORDER BY sort_key` direto no banco, inclusive paginado.
+  sortKey: text("sort_key").notNull().default(""),
   ...timestamps,
 }, (table) => [
   uniqueIndex("equipment_code_unique").on(table.code),
@@ -154,6 +181,7 @@ export const equipment = pgTable("equipment", {
   uniqueIndex("equipment_qr_token_unique").on(table.qrToken),
   index("equipment_front_idx").on(table.serviceFrontId),
   index("equipment_oil_front_idx").on(table.oilChangeEnabled, table.serviceFrontId),
+  index("equipment_sort_key_idx").on(table.sortKey),
   index("equipment_model_idx").on(table.equipmentModelId),
 ]);
 

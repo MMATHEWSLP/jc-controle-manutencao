@@ -1,6 +1,6 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, userSessions, users } from "../db/schema";
+import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../db/schema";
 
 export const SESSION_COOKIE = "maintenance_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
@@ -79,6 +79,9 @@ export const PERMISSION_GROUPS = [
     ["users.permissions","Alterar permissões"],
     ["users.status","Ativar/desativar usuários"],
   ]},
+  { label:"Frentes de Serviço", items:[
+    ["service_fronts.manage","Cadastrar, renomear e ativar/desativar frentes de serviço"],
+  ]},
 ] as const;
 
 export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((group) => group.items.map(([key]) => key));
@@ -113,8 +116,16 @@ export type SessionUser = {
   lastAccessAt:string|null;
   createdAt:string;
   permissions:Permission[];
+  // Frente principal: padrão em formulários/relatórios, não a fonte de verdade de visibilidade.
   serviceFrontId:number|null;
   serviceFrontName:string|null;
+  // TRUE = enxerga todas as frentes (ver lib/access.ts:frentesVisiveis, o único ponto que combina
+  // estes três campos numa decisão de acesso — nunca decida visibilidade de frente fora dele).
+  allServiceFronts:boolean;
+  // Frentes vinculadas em user_service_fronts, além da principal. Lista crua — já pode incluir ou
+  // não a `serviceFrontId`, conforme o que foi salvo; frentesVisiveis() é quem decide o resultado.
+  serviceFrontIds:number[];
+  canExport:boolean;
 };
 
 function bytesToBase64Url(bytes:Uint8Array) {
@@ -225,6 +236,12 @@ export async function effectivePermissions(userId:number,profile:Profile) {
   return [...values];
 }
 
+export async function userServiceFrontIds(userId:number) {
+  const db=await getDb();
+  const rows=await db.select({serviceFrontId:userServiceFronts.serviceFrontId}).from(userServiceFronts).where(eq(userServiceFronts.userId,userId));
+  return rows.map((row)=>row.serviceFrontId);
+}
+
 export async function getSessionUser(request:Request):Promise<SessionUser|null> {
   const token=readCookie(request,SESSION_COOKIE);
   if(!token)return null;
@@ -233,10 +250,12 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
     id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,taskRoleId:users.taskRoleId,status:users.status,
     theme:users.theme,isPrimaryAdmin:users.isPrimaryAdmin,lastAccessAt:users.lastAccessAt,createdAt:users.createdAt,
     serviceFrontId:users.serviceFrontId,serviceFrontName:serviceFronts.name,
+    allServiceFronts:users.allServiceFronts,canExport:users.canExport,
   }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(and(eq(userSessions.tokenHash,await tokenHash(token)),gt(userSessions.expiresAt,new Date().toISOString()))).limit(1);
   const row=rows[0];
   if(!row||row.status!=="ACTIVE"||!row.username)return null;
-  return {...row,username:row.username,permissions:await effectivePermissions(row.id,row.profile)};
+  const serviceFrontIds=row.allServiceFronts||row.profile==="ADMIN"?[]:await userServiceFrontIds(row.id);
+  return {...row,username:row.username,permissions:await effectivePermissions(row.id,row.profile),serviceFrontIds};
 }
 
 export async function authorize(request:Request,permission?:Permission) {

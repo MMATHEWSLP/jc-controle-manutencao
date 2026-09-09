@@ -64,6 +64,13 @@
       "when": 1788809712069,
       "tag": "0008_daffy_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788991161922,
+      "tag": "0009_petite_baron_strucker",
+      "breakpoints": true
     }
   ]
 }
