@@ -486,3 +486,37 @@ html[data-theme="dark"] .pagination-bar button,html[data-theme="dark"] .combo-wi
 html[data-theme="dark"] .equipment-model-manager{background:#1c1b19;border-color:#363431}
 html[data-theme="dark"] .equipment-model-manager summary{color:#f7f7f6}
 html[data-theme="dark"] .equipment-model-manager-row{border-color:#363431}
+
+/* Frentes de serviço: seletor multi-frente no cadastro de usuário e painel de gerenciamento */
+.service-fronts-selector{margin-top:14px;padding:11px;border:1px solid #dfe5e9;border-radius:8px}
+.service-fronts-selector legend{padding:0 6px;color:#1d658c;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.service-fronts-selector>small{display:block;margin:4px 0;color:#8a969f;font-size:8px}
+.service-fronts-all,.can-export-toggle{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px;border:1px solid #e6ebee;border-radius:7px;background:#fafbfc;cursor:pointer}
+.service-fronts-all input,.can-export-toggle input{width:14px;height:14px;min-height:0;margin:0}
+.service-fronts-all b,.can-export-toggle b{display:block;font-size:8px}
+.service-fronts-all small,.can-export-toggle small{display:block;margin-top:2px;color:#8a969f;font-size:6px}
+.service-fronts-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin:6px 0}
+.service-fronts-list label{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid #e6ebee;border-radius:7px;background:#fafbfc;font-size:8px;cursor:pointer}
+.service-fronts-list label.checked{border-color:#b9dccd;background:#eff8f4}
+.service-fronts-list input{width:13px;height:13px;min-height:0;margin:0}
+.primary-front-field{display:block;margin-top:8px;font-size:9px;color:#4a6272;font-weight:800}
+.primary-front-field select{margin-top:5px}
+.user-front-badge{display:inline-flex;padding:4px 8px;border-radius:11px;background:#e5f1fb;color:#1f6b9c;font-size:7px;font-weight:800}
+.service-front-manager{margin-top:16px;padding:14px 15px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.service-front-manager summary{cursor:pointer;font-size:11px;font-weight:800;color:#29465a}
+.service-front-manager-list{display:grid;gap:6px;margin-top:12px}
+.service-front-manager-row{display:grid;grid-template-columns:2fr 1fr auto;gap:8px;align-items:center;padding:8px;border:1px solid #e5ebee;border-radius:7px}
+.service-front-manager-row input{margin:0}
+@media(max-width:900px){.service-front-manager-row{grid-template-columns:1fr}}
+html[data-theme="dark"] .service-fronts-selector{border-color:#44413c}
+html[data-theme="dark"] .service-fronts-all,html[data-theme="dark"] .can-export-toggle,html[data-theme="dark"] .service-fronts-list label{background:#1e1c19;border-color:#3c3a35;color:#d8d7d4}
+html[data-theme="dark"] .service-fronts-list label.checked{background:#14372f;border-color:#286d57}
+html[data-theme="dark"] .user-front-badge{background:#262420;color:#9FD8C4}
+html[data-theme="dark"] .service-front-manager{background:#1c1b19;border-color:#363431}
+html[data-theme="dark"] .service-front-manager summary{color:#f7f7f6}
+html[data-theme="dark"] .service-front-manager-row{border-color:#363431}
+.front-selector{height:34px;margin:0;padding:0 11px;border:1px solid #dfe6ea;border-radius:8px;background:#fff;color:#42576a;font-size:9px;font-weight:800}
+html[data-theme="dark"] .front-selector{background:#1f1d19;border-color:#45423d;color:#e7e5e2}
+.report-shortcut-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.report-shortcut-row button{padding:6px 10px;border:1px solid #d9e3e8;border-radius:6px;background:#f7fafb;color:#3f6175;font-size:8px;font-weight:800}
+html[data-theme="dark"] .report-shortcut-row button{background:#252421;border-color:#47443e;color:#d3d1cd}

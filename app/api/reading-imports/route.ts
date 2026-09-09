@@ -17,7 +17,7 @@ function invalid(base:Partial<PreviewRow>,status:PreviewStatus,code:string,messa
 
 async function analyzeRows(d1:D1DatabaseLike,rawRows:RawImportRow[],allowed:Set<number>){
   const [equipmentResult,userResult,frontResult]=await Promise.all([
-    d1.prepare(`SELECT id,prefix,type,brand,model,current_hours,current_km,control_type,status,service_front_id FROM equipment ORDER BY prefix`).all<Row>(),
+    d1.prepare(`SELECT id,prefix,type,brand,model,current_hours,current_km,control_type,status,service_front_id FROM equipment ORDER BY sort_key`).all<Row>(),
     d1.prepare(`SELECT name,username FROM users WHERE status='ACTIVE'`).all<Row>(),
     d1.prepare(`SELECT id,name FROM service_fronts WHERE active=1`).all<Row>(),
   ]);

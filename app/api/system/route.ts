@@ -24,7 +24,7 @@ export async function GET(request:Request){
     const [equipmentResult,applicableResult,typeResult,planResult,readingResult,rawHistory,thresholds,allowedIds]=await Promise.all([
       d1.prepare(`SELECT e.id,e.code,e.prefix,e.type,e.brand,e.model,e.year,e.serial_number,e.chassis,e.identification_type,e.plate,e.qr_token,e.photo_key,
         e.service_front_id,e.oil_change_enabled,e.current_hours,e.current_km,e.control_type,e.status,e.notes,e.equipment_model_id,e.created_at,e.updated_at,sf.name AS front
-        FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id WHERE e.oil_change_enabled=1 ORDER BY e.prefix`).all() as Promise<{results:Row[]}>,
+        FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id WHERE e.oil_change_enabled=1 ORDER BY e.sort_key`).all() as Promise<{results:Row[]}>,
       d1.prepare(`SELECT emt.equipment_id,t.id AS type_id,t.name,t.category FROM equipment_maintenance_types emt
         INNER JOIN maintenance_types t ON t.id=emt.maintenance_type_id WHERE emt.applicable=1 AND t.active=1 AND t.category='OIL' ORDER BY t.name`).all() as Promise<{results:Row[]}>,
       d1.prepare(`SELECT id,name,category FROM maintenance_types WHERE active=1 AND category='OIL' ORDER BY name`).all() as Promise<{results:Row[]}>,

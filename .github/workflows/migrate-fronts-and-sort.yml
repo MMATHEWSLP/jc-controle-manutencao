@@ -1,0 +1,44 @@
+name: Migrar frentes multi-usuário e ordenação de equipamentos
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Marque para rodar de verdade (semeia frentes, migra vínculos de usuário e recalcula a chave de ordenação). Sem isso, o workflow só confere o ambiente e não grava nada."
+        type: boolean
+        default: false
+
+jobs:
+  migrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Nada a fazer (marque "confirmar" para rodar de verdade)
+        if: ${{ github.event.inputs.confirmar != 'true' }}
+        run: echo "confirmar=false — nenhum comando de gravação foi executado."
+
+      - name: Semear frentes de serviço (Mamuru, Flexal, Arapiuns, MRN, Belém)
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/seed-service-fronts.ts
+
+      - name: Copiar a frente atual de cada usuário para user_service_fronts
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/migrate-user-service-fronts.ts
+
+      - name: Calcular a chave de ordenação natural de todo equipamento já cadastrado
+        if: ${{ github.event.inputs.confirmar == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/backfill-equipment-sort-key.ts
