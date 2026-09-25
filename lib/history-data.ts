@@ -106,8 +106,8 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       action:"TROCA DE ÓLEO",category:String(row.interval_category??String(row.prefix).split("-")[0]).toUpperCase(),service:String(row.service),
       previousReading:null,newReading:reading,hours:String(row.control_type)==="KM"?null:reading,km:String(row.control_type)==="KM"?reading:null,interval,nextReading:reading!==null&&interval!==null?reading+interval:null,
       unit:String(row.control_type)==="KM"?"KM":"HOURS",
-      method:String(row.source)==="CONTROLE_DA_JANETE"?"IMPORTAÇÃO HISTÓRICA · CONTROLE DA JANETE":"IMPORTAÇÃO HISTÓRICA",
-      responsible:String(row.source)==="CONTROLE_DA_JANETE"?"Controle da Janete":"Importado da planilha",
+      method:String(row.source)==="CONTROLE_DA_JANETE"?"IMPORTAÇÃO HISTÓRICA · CONTROLE DA JANETE":String(row.source).startsWith("PLANILHA_FLEXAL")?"IMPORTAÇÃO HISTÓRICA · FLEXAL":"IMPORTAÇÃO HISTÓRICA",
+      responsible:String(row.source)==="CONTROLE_DA_JANETE"?"Controle da Janete":String(row.source).startsWith("PLANILHA_FLEXAL")?"Planilha Flexal":"Importado da planilha",
       workOrder:"—",notes:textOrNull(row.notes),cost:0,isGenericDate:Boolean(row.is_generic_date),
     };
   });
