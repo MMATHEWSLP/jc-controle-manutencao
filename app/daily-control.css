@@ -1,0 +1,86 @@
+/* Controle Diário — segue os tokens e componentes já usados (panel, fleet-form-grid, fleet-order-editor). */
+.daily-form{display:grid;gap:14px;max-width:980px}
+.daily-card{display:grid;gap:12px;padding:16px 18px;overflow:visible}
+.daily-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.daily-card-head h3{margin:0;color:#265067;font-size:12px;font-weight:900;letter-spacing:.02em}
+.daily-card-head span{color:var(--muted);font-size:9px}
+.daily-field{display:grid;align-content:start;gap:0;color:#4a6272;font-size:9px;font-weight:800}
+.daily-field>span{letter-spacing:.02em}
+.daily-field.has-error input,.daily-field.has-error select,.daily-field.has-error textarea,.daily-photo.has-error .daily-photo-empty{border-color:#e0939a;background:#fff8f8}
+.daily-hint{margin-top:5px;color:#5f7d6f;font-size:9px;font-weight:600}
+.daily-error{margin-top:5px;color:#b3313b;font-size:9px;font-weight:700}
+/* Expansão suave dos campos condicionais */
+.daily-reveal{display:grid;gap:12px;animation:daily-reveal .22s ease-out}
+@keyframes daily-reveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.daily-reveal{animation:none}}
+/* Toggle "trabalhou hoje?" */
+.daily-toggle{position:relative;display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#f6faf8;cursor:pointer}
+.daily-toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0;min-height:0}
+.daily-switch{flex:none;position:relative;width:46px;height:26px;border-radius:13px;background:#c7d2d8;transition:background .18s}
+.daily-switch:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s}
+.daily-toggle input:checked+.daily-switch{background:var(--green)}
+.daily-toggle input:checked+.daily-switch:after{transform:translateX(20px)}
+.daily-toggle input:focus-visible+.daily-switch{outline:3px solid rgba(74,145,183,.35);outline-offset:2px}
+.daily-toggle strong{display:block;color:#1e394e;font-size:11px}
+.daily-toggle small{color:var(--muted);font-size:9px}
+/* Sim/Não e Baldeio/Porto */
+.daily-yesno{display:grid;gap:4px}
+.daily-segmented{display:inline-flex;width:max-content;max-width:100%;margin-top:6px;padding:3px;gap:3px;border:1px solid #dce3e7;border-radius:9px;background:#f4f7f8}
+.daily-segmented button{min-width:92px;min-height:36px;padding:7px 16px;border:0;border-radius:7px;background:transparent;color:#4c6574;font-size:10px;font-weight:900;cursor:pointer}
+.daily-segmented button.active{background:#16835f;color:#fff;box-shadow:0 2px 6px rgba(22,131,95,.25)}
+/* Viagens */
+.daily-trip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.daily-trip{display:grid;gap:8px;padding:11px;border:1px solid #dbe5e9;border-radius:8px;background:var(--surface)}
+.daily-trip>b{color:#315469;font-size:10px}
+/* Busca de equipamento */
+.daily-picker{position:relative}
+.daily-picker ul{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);max-height:300px;overflow:auto;margin:0;padding:4px;list-style:none;border:1px solid #dce3e7;border-radius:9px;background:var(--surface);box-shadow:0 14px 34px rgba(8,27,40,.16)}
+.daily-picker li button{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer;color:#304657;font-size:10px}
+.daily-picker li button:hover,.daily-picker li button.active{background:#eaf5f0}
+.daily-picker li small{color:var(--muted);font-size:8px}
+.daily-picker-empty{padding:10px;color:var(--muted);font-size:10px}
+/* Fotos */
+.daily-photo{display:grid;gap:6px;color:#4a6272;font-size:9px;font-weight:800}
+.daily-photo-empty{min-height:74px;border:1.5px dashed #b9cbd4;border-radius:9px;background:#f8fbfc;color:#4c6574;font-size:11px;font-weight:800;cursor:pointer}
+.daily-photo-preview{display:flex;align-items:center;gap:12px}
+.daily-photo-preview img{width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.daily-photo-preview div{display:flex;flex-wrap:wrap;gap:8px}
+/* Envio */
+.daily-submit{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.daily-submit .primary{min-height:44px;padding:10px 22px;border-radius:8px;font-size:11px;font-weight:900}
+.daily-submit .primary:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.daily-pending{border:0;background:transparent;color:#a0561b;font-size:10px;font-weight:800;text-align:left;cursor:pointer}
+.daily-ready{color:#16835f;font-size:10px;font-weight:900}
+.daily-review{width:min(640px,96vw)}
+.daily-review-list{display:grid;gap:0;margin:0}
+.daily-review-list>div{display:grid;grid-template-columns:190px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #edf1f3}
+.daily-review-list dt{color:var(--muted);font-size:9px;font-weight:800}
+.daily-review-list dd{margin:0;color:#1e394e;font-size:10px;font-weight:700}
+.daily-review-photo{width:100%;max-height:260px;object-fit:contain;margin-top:12px;border-radius:8px;border:1px solid var(--line)}
+/* Lista de registros */
+.daily-records{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:14px 16px}
+.daily-record{padding:12px 14px;border:1px solid var(--line);border-left:3px solid #16835f;border-radius:9px;background:var(--surface)}
+.daily-record.warn{border-left-color:var(--orange)}.daily-record.off{border-left-color:#a8b2b9}
+.daily-record header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.daily-record header strong{color:#1e394e;font-size:13px}.daily-record header>span:nth-child(2){flex:1;color:var(--muted);font-size:10px}
+.daily-record dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0}
+.daily-record dl>div.wide{grid-column:1/-1}
+.daily-record dt{color:var(--muted);font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.daily-record dd{margin:2px 0 0;color:#304657;font-size:10px}
+.daily-record a{color:#0878bd;font-weight:800}
+@media(max-width:760px){
+  .daily-card{padding:14px}
+  .daily-segmented{width:100%}.daily-segmented button{flex:1}
+  .daily-review-list>div{grid-template-columns:1fr;gap:2px}
+  .daily-submit{flex-direction:column;align-items:stretch}.daily-submit .primary{width:100%}
+  .daily-records{grid-template-columns:1fr;padding:12px}
+}
+html[data-theme="dark"] .daily-card-head h3,html[data-theme="dark"] .daily-toggle strong,html[data-theme="dark"] .daily-record header strong,html[data-theme="dark"] .daily-review-list dd{color:var(--ink)}
+html[data-theme="dark"] .daily-field,html[data-theme="dark"] .daily-photo,html[data-theme="dark"] .daily-record dd,html[data-theme="dark"] .daily-picker li button,html[data-theme="dark"] .daily-trip>b{color:#d8d5cf}
+html[data-theme="dark"] .daily-toggle,html[data-theme="dark"] .daily-segmented,html[data-theme="dark"] .daily-photo-empty{background:#25231f;border-color:#45423d;color:#d8d5cf}
+html[data-theme="dark"] .daily-segmented button{color:#c6c4c1}html[data-theme="dark"] .daily-segmented button.active{background:#16835f;color:#fff}
+html[data-theme="dark"] .daily-trip,html[data-theme="dark"] .daily-picker ul{border-color:#45423d}
+html[data-theme="dark"] .daily-picker li button:hover,html[data-theme="dark"] .daily-picker li button.active{background:#0E2A1C}
+html[data-theme="dark"] .daily-hint{color:#7fcfa9}html[data-theme="dark"] .daily-error,html[data-theme="dark"] .daily-pending{color:#FF8A8A}
+html[data-theme="dark"] .daily-field.has-error input,html[data-theme="dark"] .daily-field.has-error select,html[data-theme="dark"] .daily-field.has-error textarea{background:#3A1116}
+html[data-theme="dark"] .daily-review-list>div{border-color:#3a3833}

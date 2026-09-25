@@ -5,6 +5,7 @@ import "./qr-admin.css";
 import "./fleet-status.css";
 import "./materials-tasks.css";
 import "./task-roles.css";
+import "./daily-control.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
