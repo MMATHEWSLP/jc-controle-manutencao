@@ -81,3 +81,21 @@ test("leituras e unidade", () => {
   assert.equal(readingUnitFor("HOURS_KM", "CM-05"), "KM");
   assert.equal(readingUnitFor("HOURS_KM", "PC-10"), "HOURS");
 });
+
+test("leitura plausível: normal, zero, acima do limite, salto de 10x e menor que a inicial", async () => {
+  const { checkReading, daysBetween, MAX_HOURS_PER_DAY, MAX_KM_PER_DAY } = await import("../lib/daily-record-rules.ts");
+  assert.equal(MAX_HOURS_PER_DAY, 24); assert.equal(MAX_KM_PER_DAY, 800);
+  const base = { unit: "HOURS", lastDate: "2026-09-24", recordDate: "2026-09-26" };
+  const normal = checkReading({ ...base, start: 1250, end: 1259.5 });
+  assert.equal(normal.level, "OK"); assert.equal(normal.days, 2); assert.equal(normal.perDay, 4.75);
+  assert.equal(checkReading({ ...base, start: 1250, end: 1250 }).level, "ZERO");
+  const high = checkReading({ unit: "HOURS", lastDate: "2026-09-25", recordDate: "2026-09-26", start: 1250, end: 1297 });
+  assert.equal(high.level, "HIGH"); assert.match(high.message, /47 h trabalhados em 1 dia/);
+  assert.equal(checkReading({ ...base, start: 1250, end: 1290 }).level, "OK", "40 h em 2 dias está dentro de 48 h");
+  const km = checkReading({ unit: "KM", lastDate: null, recordDate: "2026-09-26", start: 132678, end: 1584548 });
+  assert.equal(km.level, "HIGH", "zero a mais no odômetro");
+  assert.equal(checkReading({ unit: "KM", lastDate: null, recordDate: "2026-09-26", start: 100, end: 1500 }).level, "HIGH", "salto de mais de 10x");
+  const invalid = checkReading({ ...base, start: 1250, end: 1200 });
+  assert.equal(invalid.level, "INVALID"); assert.match(invalid.message, /menor que a inicial/);
+  assert.equal(daysBetween(null, "2026-09-26"), 1); assert.equal(daysBetween("2026-09-26", "2026-09-26"), 1);
+});

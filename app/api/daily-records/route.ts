@@ -1,6 +1,6 @@
 import { assertSameOrigin, authorize } from "../../../lib/auth";
-import { validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
-import { canRegister, canViewAll, createDailyRecord, DailyRecordError, listDailyRecords } from "../../../lib/daily-records";
+import { checkReading, validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
+import { canRegister, canViewAll, createDailyRecord, DailyRecordError, lastReadingDateBefore, listDailyRecords, requireEquipment } from "../../../lib/daily-records";
 
 const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
 
@@ -36,6 +36,15 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().slice(0, 10);
     const { errors, value } = validateDailyRecord({ ...draft, hasProblemPhoto: Boolean(photos.problem), hasProductionPhoto: Boolean(photos.production) }, today);
     if (!value) return Response.json({ error: Object.values(errors)[0] ?? "Revise os campos do formulário.", fields: errors }, { status: 400 });
+    if (value.workedToday) {
+      // Mesma regra de leitura plausível da tela: acima do limite só grava com a confirmação
+      // explícita do operador (segundo toque em "Confirmar mesmo assim").
+      const item = await requireEquipment(auth.user!, value.equipmentId);
+      const check = checkReading({ unit: item.readingUnit, start: value.startReading, end: value.endReading,
+        lastDate: await lastReadingDateBefore(value.equipmentId, item.readingUnit, value.recordDate), recordDate: value.recordDate });
+      if (check.level === "INVALID") return Response.json({ error: check.message, fields: { endReading: check.message } }, { status: 400 });
+      if (check.level === "HIGH" && draft.confirmUnusualReading !== true) return Response.json({ error: check.message, fields: { endReading: check.message }, requiresConfirmation: true }, { status: 400 });
+    }
     const result = await createDailyRecord(auth.user!, value, photos);
     return Response.json({ ok: true, id: result.id, message: `Controle Diário do ${result.prefix} enviado.` }, { status: 201 });
   } catch (error) {

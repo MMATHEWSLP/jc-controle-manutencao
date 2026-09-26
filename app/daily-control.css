@@ -94,3 +94,24 @@ html[data-theme="dark"] .daily-review-list>div{border-color:#3a3833}
 html[data-theme="dark"] .daily-queue{background:#2a2213;border-color:#5a4520}html[data-theme="dark"] .daily-queue li{background:#201e1a;border-color:#4a3d25}
 html[data-theme="dark"] .daily-queue header strong{color:#ffd166}html[data-theme="dark"] .daily-queue header span,html[data-theme="dark"] .daily-queue li small{color:#d9c59a}
 .daily-queue-note{margin:0;color:#8a4b06;font-size:10px;font-weight:700}
+/* Cálculo do trabalhado + aviso de leitura fora do plausível */
+.daily-reading-check{display:grid;gap:8px;padding:12px 14px;border:1.5px solid #9fd8c0;border-radius:10px;background:#effaf5;color:#0d5c42}
+.daily-reading-check dl{display:grid;gap:4px;margin:0}
+.daily-reading-check dl>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.daily-reading-check dt{font-size:10px;font-weight:800;opacity:.8}
+.daily-reading-check dd{margin:0;font-size:12px;font-weight:800;text-align:right}
+.daily-reading-check dd small{font-size:9px;font-weight:700;opacity:.8}
+.daily-reading-check .total{margin-top:4px;padding-top:6px;border-top:1px dashed currentColor}
+.daily-reading-check .total dt{font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:1}
+.daily-reading-check .total dd{font-size:16px}
+.daily-reading-check p{margin:0;font-size:11px;font-weight:800;line-height:1.35}
+.daily-reading-check.big .total dd{font-size:22px}.daily-reading-check.big dd{font-size:14px}
+.daily-reading-check.zero{border-color:#f0d49a;background:#fffaf0;color:#7a4b06}
+.daily-reading-check.high{border-color:#f08a3b;background:#fff1e5;color:#9a3b00}
+.daily-reading-check.invalid{border-color:#e0939a;background:#fff1f2;color:#ad2834}
+.daily-confirm-unusual{background:linear-gradient(135deg,#f08a3b,#d9620f)!important;border-color:#c55408!important}
+.daily-confirm-unusual.armed{background:linear-gradient(135deg,#d9620f,#b44700)!important;box-shadow:0 0 0 3px rgba(240,138,59,.35)}
+html[data-theme="dark"] .daily-reading-check{background:#0e2a1c;border-color:#1f6b4b;color:#8fe3bd}
+html[data-theme="dark"] .daily-reading-check.zero{background:#2a2213;border-color:#5a4520;color:#ffd166}
+html[data-theme="dark"] .daily-reading-check.high{background:#2e1a0c;border-color:#8a4a18;color:#ffb070}
+html[data-theme="dark"] .daily-reading-check.invalid{background:#3A1116;border-color:#7a2a33;color:#FF8A8A}

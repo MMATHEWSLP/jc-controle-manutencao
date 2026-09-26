@@ -29,6 +29,8 @@ export type DailyRecordDraft = {
   notes: string;
   hasProblemPhoto: boolean;
   hasProductionPhoto: boolean;
+  // Operador confirmou (segundo toque) uma leitura fora do plausível — ver checkReading().
+  confirmUnusualReading?: boolean;
 };
 
 export type DailyRecordValue = {
@@ -180,4 +182,51 @@ export function validateDailyRecord(draft: DailyRecordDraft, today: string): { e
       notes: clean(draft.notes) || null,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Leitura plausível: pega erro de digitação (ex.: um zero a mais) antes de gravar.
+// Ajuste os limites aqui — a mesma regra roda na tela e na API (app/api/daily-records).
+// ---------------------------------------------------------------------------
+export const MAX_HOURS_PER_DAY = 24;
+export const MAX_KM_PER_DAY = 800;
+// Leitura final maior que N vezes a inicial também é suspeita (dígito a mais).
+export const ABSURD_JUMP_FACTOR = 10;
+
+export type ReadingCheck = {
+  level: "OK" | "ZERO" | "HIGH" | "INVALID";
+  worked: number | null;
+  days: number;
+  perDay: number | null;
+  message: string | null;
+};
+
+const readingNumber = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+const suffix = (unit: ReadingUnit) => (unit === "KM" ? "km" : "h");
+const brDate = (iso: string) => iso.split("-").reverse().join("/");
+
+// Dias entre a última leitura conhecida e a data do registro (mínimo 1).
+export function daysBetween(from: string | null, to: string) {
+  if (!from || !isIsoDate(from.slice(0, 10)) || !isIsoDate(to)) return 1;
+  const diff = Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from.slice(0, 10)}T12:00:00Z`)) / 86_400_000);
+  return Math.max(1, diff);
+}
+
+export function checkReading(input: { unit: ReadingUnit; start: number | null; end: number | null; lastDate: string | null; recordDate: string }): ReadingCheck {
+  const days = daysBetween(input.lastDate, input.recordDate);
+  const { start, end, unit } = input;
+  if (start === null || end === null) return { level: "OK", worked: null, days, perDay: null, message: null };
+  const worked = end - start;
+  const perDay = worked / days;
+  if (worked < 0) {
+    return { level: "INVALID", worked, days, perDay, message: `A leitura final (${readingNumber.format(end)} ${suffix(unit)}) é menor que a inicial (${readingNumber.format(start)} ${suffix(unit)}). Confira ${unit === "KM" ? "o odômetro" : "o horímetro"}.` };
+  }
+  if (worked === 0) return { level: "ZERO", worked, days, perDay, message: "Nenhuma hora/KM trabalhado no período. Confirme se o equipamento ficou parado." };
+  const limit = (unit === "KM" ? MAX_KM_PER_DAY : MAX_HOURS_PER_DAY) * days;
+  const jump = start > 0 && end > start * ABSURD_JUMP_FACTOR;
+  if (worked > limit || jump) {
+    const period = days === 1 ? "1 dia" : `${days} dias (desde ${input.lastDate ? brDate(input.lastDate.slice(0, 10)) : "a última leitura"})`;
+    return { level: "HIGH", worked, days, perDay, message: `Isso dá ${readingNumber.format(worked)} ${suffix(unit)} trabalhados em ${period}. Confira se digitou o valor certo.` };
+  }
+  return { level: "OK", worked, days, perDay, message: null };
 }
