@@ -1,6 +1,6 @@
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { checkReading, validateDailyRecord, type DailyRecordDraft } from "../../../../lib/daily-record-rules";
-import { DailyRecordError, deleteDailyRecord, lastReadingDateBefore, loadReadingHistory, requireEquipment, requireManagedRecord, updateDailyRecord } from "../../../../lib/daily-records";
+import { canViewAll, DailyRecordError, deleteDailyRecord, listDailyRecords, lastReadingDateBefore, loadReadingHistory, requireEquipment, requireManagedRecord, updateDailyRecord } from "../../../../lib/daily-records";
 
 // Editar e excluir registros do Controle Diário: somente quem tem "daily.manage"
 // (o ADMIN libera por usuário em Usuários → Permissões), nas frentes que enxerga.
@@ -9,6 +9,23 @@ type Context = { params: Promise<{ id: string }> };
 async function recordId(params: Context["params"]) {
   const id = Number((await params).id);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+// Registro completo (abastecimentos, viagens, fotos) para abrir a edição a partir do Histórico.
+export async function GET(request: Request, { params }: Context) {
+  const auth = await authorize(request, "daily.manage"); if (auth.response) return auth.response;
+  try {
+    const id = await recordId(params);
+    if (!id) return Response.json({ error: "Registro inválido." }, { status: 400 });
+    await requireManagedRecord(auth.user!, id);
+    const [record] = await listDailyRecords(auth.user!, { id, onlyMine: !canViewAll(auth.user!) });
+    if (!record) return Response.json({ error: "Registro não encontrado." }, { status: 404 });
+    return Response.json({ record });
+  } catch (error) {
+    if (error instanceof DailyRecordError) return Response.json({ error: error.message }, { status: error.status });
+    console.error("[daily-records.id.get]", error);
+    return Response.json({ error: "Não foi possível abrir o registro agora." }, { status: 500 });
+  }
 }
 
 // Multipart igual ao envio: "payload" + fotos novas (opcionais). Fotos já existentes são
@@ -32,7 +49,7 @@ export async function PUT(request: Request, { params }: Context) {
     const { errors, value } = validateDailyRecord({ ...draft,
       hasProblemPhoto: Boolean(photos.problem) || (photos.keepProblem && Boolean(current.record.problemPhotoKey)),
       hasProductionPhoto: Boolean(photos.production) || (photos.keepProduction && Boolean(current.record.productionPhotoKey)),
-    }, new Date().toISOString().slice(0, 10));
+    }, new Date().toISOString().slice(0, 10), { manualOperator: current.record.manualEntry });
     if (!value) return Response.json({ error: Object.values(errors)[0] ?? "Revise os campos do formulário.", fields: errors }, { status: 400 });
     if (value.workedToday) {
       const item = await requireEquipment(auth.user!, value.equipmentId);

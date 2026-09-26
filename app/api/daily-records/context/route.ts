@@ -3,6 +3,7 @@ import { serviceFronts } from "../../../../db/schema";
 import { eq } from "drizzle-orm";
 import { authorize } from "../../../../lib/auth";
 import { canManage, canRegister, canViewAll, loadAssignment, loadEquipmentOptions } from "../../../../lib/daily-records";
+import { requiresManualOperator } from "../../../../lib/daily-record-rules";
 
 // Tudo o que o formulário precisa ao abrir: equipamentos que o operador pode escolher,
 // frentes ativas, a "memória" do último equipamento e a frente padrão do usuário.
@@ -24,6 +25,8 @@ export async function GET(request: Request) {
       assignedEquipmentId: equipment.some((item) => item.id === assignedEquipmentId) ? assignedEquipmentId : null,
       defaultServiceFrontId: user.serviceFrontId,
       userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user), canManage: canManage(user), canFieldOperators, canFrontRequests,
+      // Login que não é de campo: o formulário pede o nome do operador (lançamento manual).
+      manualOperator: requiresManualOperator(user.profile),
     });
   } catch (error) {
     console.error("[daily-records.context]", error);

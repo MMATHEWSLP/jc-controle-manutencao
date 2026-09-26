@@ -343,3 +343,38 @@ export function createProductsListPdf(input:ProductsListPdfInput){
   return buildPdf(pages);
 }
 import { PDF_LOGO_HEIGHT,PDF_LOGO_JPEG_BASE64,PDF_LOGO_WIDTH } from "./pdf-logo";
+
+export type DailyHistoryPdfItem={date:string;prefix:string;equipment:string;operator:string;operatorNote:string;front:string;location:string;worked:string;status:string;attention:boolean};
+type DailyHistoryPdfInput={items:DailyHistoryPdfItem[];generatedAt:string;total:number;truncated:boolean;filters:{period:string;front:string;operators:string;search:string}};
+
+// Histórico de Registros Diários (Controle Diário): paisagem, mesmas colunas da listagem da tela.
+export function createDailyHistoryPdf(input:DailyHistoryPdfInput){
+  const perPage=15;const pageCount=Math.max(1,Math.ceil(input.items.length/perPage));
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const items=input.items.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,"HISTÓRICO DE REGISTROS DIÁRIOS",true,"0.08 0.25 0.36");content+=text(130,531,7.5,"CONTROLE DIÁRIO · ORDENADO POR DATA (MAIS RECENTE PRIMEIRO)",false,"0.31 0.46 0.55");
+    content+=text(674,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(674,553,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");content+=text(674,536,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+    const cards=[{x:28,width:170,label:"PERÍODO",value:input.filters.period},{x:204,width:150,label:"FRENTE DE SERVIÇO",value:input.filters.front},{x:360,width:250,label:"COLABORADORES",value:input.filters.operators},{x:616,width:198,label:"BUSCA (EQUIPAMENTO / OPERADOR)",value:input.filters.search}];
+    for(const card of cards){content+=`0.96 0.975 0.98 rg ${card.x} 455 ${card.width} 48 re f\n`;content+=text(card.x+10,487,6.5,card.label,true,"0.34 0.47 0.56");content+=text(card.x+10,469,8,truncate(card.value,Math.floor(card.width/4.7)),true,"0.11 0.24 0.32");}
+    content+="0.91 0.97 0.95 rg 28 419 786 26 re f\n";
+    content+=text(39,429,7.5,`REGISTROS: ${input.total}`,true,"0.08 0.38 0.29");
+    if(input.truncated)content+=text(200,429,7,`Exibindo os primeiros ${input.items.length} registros — refine os filtros para exportar o restante.`,true,"0.64 0.40 0.05");
+    content+="0.06 0.25 0.36 rg 28 383 786 25 re f\n";
+    content+=text(35,393,6.5,"DATA",true,"1 1 1");content+=text(92,393,6.5,"EQUIPAMENTO",true,"1 1 1");content+=text(232,393,6.5,"OPERADOR",true,"1 1 1");content+=text(420,393,6.5,"FRENTE / LOCAL",true,"1 1 1");content+=text(560,393,6.5,"HORAS/KM TRAB.",true,"1 1 1");content+=text(640,393,6.5,"STATUS",true,"1 1 1");
+    if(items.length===0)content+=text(260,330,12,"Nenhum registro encontrado para o período e filtros selecionados.",true,"0.33 0.47 0.55");
+    items.forEach((item,index)=>{
+      const top=364-(index*22);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-12} 786 22 re f\n`;
+      content+=text(35,top,7.5,item.date,true);
+      content+=text(92,top+2,7.5,truncate(item.prefix,14),true);content+=text(92,top-7,5.5,truncate(item.equipment,34),false,"0.39 0.49 0.56");
+      content+=text(232,top+2,7,truncate(item.operator,42),true);if(item.operatorNote)content+=text(232,top-7,5.5,truncate(item.operatorNote,52),false,"0.64 0.40 0.05");
+      content+=text(420,top+2,7,truncate(item.front,30),false);if(item.location)content+=text(420,top-7,5.5,truncate(item.location,36),false,"0.39 0.49 0.56");
+      content+=text(560,top,7.5,item.worked,true);
+      content+=text(640,top,6.5,truncate(item.status,48),true,item.attention?"0.64 0.30 0.05":"0.08 0.42 0.31");
+      content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-12} m 814 ${top-12} l S\n`;
+    });
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Relatório gerado com os registros atuais do Controle Diário, respeitando os filtros ativos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages,{width:842,height:595});
+}

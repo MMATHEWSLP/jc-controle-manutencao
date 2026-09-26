@@ -3,28 +3,31 @@
 /* eslint-disable @next/next/no-img-element -- pré-visualização local (blob:) e fotos servidas por rota própria */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  checkReading, emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
+  checkReading, emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, OPERATOR_NAME_MAX, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
   type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingHistory, type ReadingUnit,
 } from "../lib/daily-record-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
 import { FieldOperatorsPanel, FrontRequestsPanel } from "./DailyAdminPanels";
+import DailyHistoryPanel, { clearHistoryUrl, isHistoryUrl } from "./DailyHistoryPanel";
 
 type EquipmentOption = { id:number; prefix:string; code:string; plate:string|null; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
 export type CurrentUser = { name:string; jobTitle:string|null; profileLabel:string; frontName:string|null };
 type Front = { id:number; name:string };
-type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean; canFieldOperators:boolean; canFrontRequests:boolean };
+type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean; canFieldOperators:boolean; canFrontRequests:boolean; manualOperator:boolean };
 type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null; history?:ReadingHistory|null };
 type RecordItem = {
-  id:number; recordDate:string; equipmentId:number; serviceFrontId:number|null; userId:number; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
+  id:number; recordDate:string; equipmentId:number; serviceFrontId:number|null; userId:number; prefix:string; operator:string;
+  // Lançamento manual: operator = nome digitado; launchedBy = conta que lançou (auditoria).
+  manualEntry:boolean; operatorName:string|null; launchedBy:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
   hadProduction:boolean; productionType:ProductionType|null; hasProductionPhoto:boolean; notes:string|null;
   officialServiceFrontId:number|null; frontRequestStatus:"PENDING"|"APPROVED"|"REJECTED"|null;
   fuelings:Array<{number:number;liters:number;location:string}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
-type Tab = "new" | "mine" | "all" | "fronts" | "operators";
+type Tab = "new" | "mine" | "history" | "fronts" | "operators";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
@@ -35,39 +38,44 @@ function localToday() { const now=new Date(); return `${now.getFullYear()}-${Str
 function blankDraft(recordDate:string, equipmentId:number|null, serviceFrontId:number|null):DailyRecordDraft {
   return { recordDate, equipmentId, workedToday:true, noWorkReason:"", serviceFrontId, location:"", startReading:"", endReading:"",
     fuelingCount:"", fuelings:[], inactiveOrProblem:null, problemReason:"", hadProduction:null, productionType:null, tripCount:"", trips:[], notes:"",
-    hasProblemPhoto:false, hasProductionPhoto:false };
+    hasProblemPhoto:false, hasProductionPhoto:false, operatorName:"" };
 }
 
 export default function DailyControlView({ flash, currentUser }:{ flash:(message:string)=>void; currentUser:CurrentUser }) {
   const [context,setContext]=useState<Context|null>(null);
   const [error,setError]=useState("");
-  const [tab,setTab]=useState<Tab>("new");
+  // Link/recarga com os filtros do Histórico na URL abre direto nele.
+  const [tab,setTab]=useState<Tab>(()=>isHistoryUrl()?"history":"new");
   // Registro aberto para edição (somente com a permissão "daily.manage").
   const [editing,setEditing]=useState<RecordItem|null>(null);
-  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canRegister)setTab(result.canViewAll?"all":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"mine"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
+  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canViewAll)clearHistoryUrl(); if(result.canViewAll&&isHistoryUrl())setTab("history"); else if(!result.canRegister)setTab(result.canViewAll?"history":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"mine"); else setTab((current)=>current==="history"?"new":current); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
   useEffect(()=>{ load(); },[load]);
   // Contador de solicitações de frente pendentes (para quem aprova).
   const [pendingFronts,setPendingFronts]=useState(0);
   const loadPendingFronts=useCallback(()=>{ api<{pending:number}>("/api/daily-records/front-requests?count=1").then((result)=>setPendingFronts(result.pending)).catch(()=>undefined); },[]);
   useEffect(()=>{ if(context?.canFrontRequests)loadPendingFronts(); },[context,loadPendingFronts]);
+  const go=(next:Tab)=>{ setEditing(null); setTab(next); if(next!=="history")clearHistoryUrl(); };
+  // Editar a partir do Histórico: busca o registro completo (abastecimentos, viagens, fotos).
+  const editFromHistory=useCallback(async(recordId:number)=>{ const result=await api<{record:RecordItem}>(`/api/daily-records/${recordId}`); setEditing(result.record); window.scrollTo({ top:0, behavior:"smooth" }); },[]);
 
   if(error) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o Controle Diário</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>;
   if(!context) return <div className="page-loading"><span/><p>Carregando o Controle Diário...</p></div>;
   return <>
     <div className="page-heading module-heading"><div><p className="eyebrow">OPERAÇÃO · REGISTRO DO DIA</p><h1>Controle Diário</h1><span>Registro diário do equipamento: leituras, abastecimentos, problemas e produção.</span></div></div>
     <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do Controle Diário">
-      {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>{ setEditing(null); setTab("new"); }}>Novo registro</button>}
-      {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>{ setEditing(null); setTab("mine"); }}>Meus registros</button>}
-      {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>{ setEditing(null); setTab("all"); }}>Todos os registros</button>}
-      {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>{ setEditing(null); setTab("fronts"); }}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
-      {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>{ setEditing(null); setTab("operators"); }}>Funcionários de campo</button>}
+      {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>go("new")}>Novo registro</button>}
+      {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>go("mine")}>Meus registros</button>}
+      {context.canViewAll && <button className={tab==="history"?"active":""} onClick={()=>go("history")}>Histórico de registros</button>}
+      {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>go("fronts")}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
+      {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>go("operators")}>Funcionários de campo</button>}
     </div>
     {context.canRegister && <PendingQueue userId={context.userId}/>}
     {editing ? <DailyForm key={`edit-${editing.id}`} context={context} currentUser={currentUser} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
       : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("mine")}/>
       : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
       : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
-      : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
+      : tab==="history" && context.canViewAll ? <DailyHistoryPanel fronts={context.fronts} onEdit={editFromHistory}/>
+      : <RecordsPanel equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
   </>;
 }
 
@@ -83,7 +91,7 @@ function draftFromRecord(record:RecordItem):DailyRecordDraft {
     inactiveOrProblem:record.workedToday?record.inactiveOrProblem:null, problemReason:record.problemReason??"",
     hadProduction:record.workedToday?record.hadProduction:null, productionType:record.productionType,
     tripCount:record.trips.length?String(record.trips.length):"", trips:record.trips.map((trip)=>({ logs:String(trip.logs), meters:decimal(trip.meters) })),
-    notes:record.notes??"", hasProblemPhoto:record.hasProblemPhoto, hasProductionPhoto:record.hasProductionPhoto,
+    notes:record.notes??"", hasProblemPhoto:record.hasProblemPhoto, hasProductionPhoto:record.hasProductionPhoto, operatorName:record.operatorName??"",
   };
 }
 
@@ -154,7 +162,10 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
     setter(photo);
   };
 
-  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto)||keepProblemPhoto, hasProductionPhoto:Boolean(productionPhoto)||keepProductionPhoto },localToday()),[draft,problemPhoto,productionPhoto,keepProblemPhoto,keepProductionPhoto]);
+  // Lançamento manual (login que não é de campo): o nome do operador é obrigatório. Na edição,
+  // vale a marcação do próprio registro.
+  const manualOperator=editing?editing.manualEntry:context.manualOperator;
+  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto)||keepProblemPhoto, hasProductionPhoto:Boolean(productionPhoto)||keepProductionPhoto },localToday(),{ manualOperator }),[draft,problemPhoto,productionPhoto,keepProblemPhoto,keepProductionPhoto,manualOperator]);
   const errorFor=(field:string)=>(showAll||touched.has(field))?validation.errors[field]:undefined;
   const pending=Object.values(validation.errors);
   const readingCheck=useMemo<ReadingCheck|null>(()=>{
@@ -236,8 +247,12 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
   return <div className="daily-form">
     <section className="panel daily-card">
       {editing
-        ? <header className="daily-card-head daily-editing-head"><div><h3>Editando registro</h3><span>{editing.prefix} · {formatDay(editing.recordDate)} · lançado por {editing.operator}</span></div>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}</header>
-        : <IdentityCard user={currentUser}/>}
+        ? <header className="daily-card-head daily-editing-head"><div><h3>Editando registro</h3><span>{editing.prefix} · {formatDay(editing.recordDate)} · {editing.manualEntry?`operador ${editing.operator} · lançado por ${editing.launchedBy}`:`lançado por ${editing.operator}`}</span></div>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}</header>
+        : manualOperator ? null : <IdentityCard user={currentUser}/>}
+      {manualOperator && <div className="daily-manual-operator">
+        <div className="daily-manual-operator-head"><em className="daily-manual-tag">Lançamento manual</em><span>{editing?`Lançado pela conta ${editing.launchedBy}.`:`Você (${currentUser.name}) está lançando em nome de outra pessoa — fica registrado que esta conta fez o lançamento.`}</span></div>
+        <Field label="Nome do operador *" error={errorFor("operatorName")}><input value={draft.operatorName??""} maxLength={OPERATOR_NAME_MAX} onChange={(event)=>patch({ operatorName:event.target.value })} onBlur={()=>touch("operatorName")} placeholder="Nome completo de quem operou o equipamento" autoComplete="off"/></Field>
+      </div>}
       <div className="fleet-form-grid">
         <Field label="Data do registro *" error={errorFor("recordDate")}><input type="date" value={draft.recordDate} max={localToday()} onChange={(event)=>patch({ recordDate:event.target.value })} onBlur={()=>touch("recordDate")}/></Field>
         <Field group label="Equipamento (Frota) *" className="span-2" error={errorFor("equipmentId")} hint={fromMemory&&equipment?"Último equipamento que você usou — troque só se mudou de máquina.":undefined}>
@@ -354,7 +369,7 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
       </div>
     </section>
 
-    {reviewing && validation.value && <ReviewModal draft={draft} equipment={equipment} fronts={context.fronts} unit={unit} readingCheck={readingCheck} lastReading={lastReading} problemPhoto={problemPhoto} productionPhoto={productionPhoto} busy={busy} close={()=>setReviewing(false)} confirm={send}/>}
+    {reviewing && validation.value && <ReviewModal manualOperator={manualOperator} draft={draft} equipment={equipment} fronts={context.fronts} unit={unit} readingCheck={readingCheck} lastReading={lastReading} problemPhoto={problemPhoto} productionPhoto={productionPhoto} busy={busy} close={()=>setReviewing(false)} confirm={send}/>}
   </div>;
 }
 
@@ -463,8 +478,8 @@ function ReadingSummary({ check, unit, start, end, lastReading, big }:{ check:Re
   </div>;
 }
 
-function ReviewModal({ draft, equipment, fronts, unit, readingCheck, lastReading, problemPhoto, productionPhoto, busy, close, confirm }:{
-  draft:DailyRecordDraft; equipment:EquipmentOption|null; fronts:Front[]; unit:ReadingUnit; readingCheck:ReadingCheck|null; lastReading:LastReading|null;
+function ReviewModal({ manualOperator, draft, equipment, fronts, unit, readingCheck, lastReading, problemPhoto, productionPhoto, busy, close, confirm }:{
+  manualOperator:boolean; draft:DailyRecordDraft; equipment:EquipmentOption|null; fronts:Front[]; unit:ReadingUnit; readingCheck:ReadingCheck|null; lastReading:LastReading|null;
   problemPhoto:Photo|null; productionPhoto:Photo|null; busy:boolean; close:()=>void; confirm:(confirmUnusualReading:boolean)=>void;
 }) {
   // Leitura fora do plausível: exige um segundo toque em "Confirmar mesmo assim".
@@ -472,7 +487,7 @@ function ReviewModal({ draft, equipment, fronts, unit, readingCheck, lastReading
   const [armed,setArmed]=useState(false);
   const start=parseDecimal(draft.startReading),end=parseDecimal(draft.endReading);
   const count=Number(draft.fuelingCount||0),trips=draft.trips.slice(0,Number(draft.tripCount||0));
-  const rows:Array<[string,ReactNode]>=[["Data",formatDay(draft.recordDate)],["Equipamento",equipment?`${equipment.prefix} · ${equipment.type} ${equipment.model}`:"—"],["Trabalhou hoje?",draft.workedToday?"Sim":"Não"]];
+  const rows:Array<[string,ReactNode]>=[...(manualOperator?[["Operador",<>{(draft.operatorName??"").trim()} <em className="daily-manual-tag">Lançamento manual</em></>] as [string,ReactNode]]:[]),["Data",formatDay(draft.recordDate)],["Equipamento",equipment?`${equipment.prefix} · ${equipment.type} ${equipment.model}`:"—"],["Trabalhou hoje?",draft.workedToday?"Sim":"Não"]];
   if(!draft.workedToday)rows.push(["Motivo",draft.noWorkReason.trim()]);
   else {
     rows.push(["Frente de serviço",fronts.find((front)=>front.id===draft.serviceFrontId)?.name??"—"],["Localização",draft.location.trim()],
@@ -526,7 +541,7 @@ function PendingQueue({ userId }:{ userId:number }) {
 // ---------------------------------------------------------------------------
 // Registros enviados
 // ---------------------------------------------------------------------------
-function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mine"|"all"; equipment:EquipmentOption[]; canManage:boolean; flash:(message:string)=>void; onEdit:(record:RecordItem)=>void }) {
+function RecordsPanel({ equipment, canManage, flash, onEdit }:{ equipment:EquipmentOption[]; canManage:boolean; flash:(message:string)=>void; onEdit:(record:RecordItem)=>void }) {
   const [deleting,setDeleting]=useState<RecordItem|null>(null);
   const [records,setRecords]=useState<RecordItem[]>([]);
   const [loading,setLoading]=useState(true);
@@ -536,11 +551,11 @@ function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mi
   const [equipmentId,setEquipmentId]=useState("");
   const load=useCallback(async()=>{
     setLoading(true); setError("");
-    const params=new URLSearchParams({ scope, from, to }); if(equipmentId)params.set("equipmentId",equipmentId);
+    const params=new URLSearchParams({ scope:"mine", from, to }); if(equipmentId)params.set("equipmentId",equipmentId);
     try { setRecords((await api<{records:RecordItem[]}>(`/api/daily-records?${params.toString()}`)).records); }
     catch(problem) { setError(problem instanceof Error?problem.message:"Falha ao carregar."); }
     finally { setLoading(false); }
-  },[scope,from,to,equipmentId]);
+  },[from,to,equipmentId]);
   useEffect(()=>{ load(); },[load]);
   // Quando a fila do celular envia registros, a lista se atualiza sozinha.
   useEffect(()=>{ window.addEventListener(QUEUE_EVENT,load); return ()=>window.removeEventListener(QUEUE_EVENT,load); },[load]);
@@ -555,7 +570,7 @@ function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mi
       {records.map((record)=><article key={record.id} className={`daily-record ${record.workedToday?(record.inactiveOrProblem?"warn":"ok"):"off"}`}>
         <header><strong>{record.prefix}</strong><span>{formatDay(record.recordDate)}</span><span className={`status-pill ${record.workedToday?(record.inactiveOrProblem?"orange":"green"):"gray"}`}>{record.workedToday?(record.inactiveOrProblem?"Com problema":"Trabalhou"):"Não trabalhou"}</span></header>
         <dl>
-          {scope==="all" && <div><dt>Operador</dt><dd>{record.operator}</dd></div>}
+          {record.manualEntry && <div><dt>Operador</dt><dd>{record.operator} <em className="daily-manual-tag">Lançamento manual</em></dd></div>}
           {!record.workedToday ? <div className="wide"><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div> : <>
             <div><dt>Frente / local</dt><dd>{record.front??"—"} · {record.location}{record.frontRequestStatus==="PENDING" && <span className="daily-front-pending small">Aguardando aprovação</span>}</dd></div>
             <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div>
@@ -587,7 +602,7 @@ function DeleteRecordModal({ record, close, deleted }:{ record:RecordItem; close
     <div className="fleet-modal-body"><dl className="daily-review-list">
       <div><dt>Equipamento</dt><dd>{record.prefix}</dd></div>
       <div><dt>Data</dt><dd>{formatDay(record.recordDate)}</dd></div>
-      <div><dt>Operador</dt><dd>{record.operator}</dd></div>
+      <div><dt>Operador</dt><dd>{record.operator}{record.manualEntry && <> <em className="daily-manual-tag">Lançamento manual</em></>}</dd></div>
       {record.workedToday ? <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div> : <div><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div>}
     </dl>{error && <div className="fleet-form-error">! {error}</div>}</div>
     <footer><button type="button" onClick={close} disabled={busy}>Cancelar</button><button type="button" className="primary daily-danger" onClick={remove} disabled={busy}>{busy?"EXCLUINDO...":"EXCLUIR REGISTRO"}</button></footer>

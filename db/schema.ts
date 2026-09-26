@@ -813,8 +813,9 @@ export const products = pgTable("products", {
 // quantity) — não implementada agora por pedido explícito da especificação do módulo.
 
 // ---------------------------------------------------------------------------
-// Controle Diário do equipamento (registro feito pelo próprio operador logado).
-// O operador NÃO é um campo do formulário: user_id vem sempre da sessão.
+// Controle Diário do equipamento. user_id vem sempre da sessão = a conta que EFETIVAMENTE fez o
+// lançamento (auditoria). No login de campo (CAMPO) essa conta é o próprio operador; nos demais
+// logins (ADMIN/GESTOR/USUÁRIO) o operador é digitado em operator_name e manual_entry = TRUE.
 // ---------------------------------------------------------------------------
 export const dailyRecords = pgTable("daily_records", {
   id: serial("id").primaryKey(),
@@ -841,10 +842,16 @@ export const dailyRecords = pgTable("daily_records", {
   // informada pelo operador — difere desta quando ele pediu mudança de frente.
   officialServiceFrontId: integer("official_service_front_id").references(() => serviceFronts.id),
   frontChangeRequestId: integer("front_change_request_id"),
+  // Lançamento manual ("Lançado por terceiro"): nome digitado da pessoa a quem o registro se refere.
+  operatorName: text("operator_name"),
+  manualEntry: boolean("manual_entry").notNull().default(false),
   ...timestamps,
 }, (table) => [
   // Um operador não registra o mesmo equipamento duas vezes no mesmo dia (evita envio duplicado).
-  uniqueIndex("daily_records_user_equipment_date_unique").on(table.userId, table.equipmentId, table.recordDate),
+  // No lançamento manual a mesma conta pode lançar para operadores diferentes: o nome digitado
+  // (sem diferenciar maiúsculas) entra na chave.
+  uniqueIndex("daily_records_user_equipment_date_operator_unique").on(table.userId, table.equipmentId, table.recordDate, sql`coalesce(lower(${table.operatorName}), '')`),
+  index("daily_records_date_idx").on(table.recordDate),
   index("daily_records_equipment_date_idx").on(table.equipmentId, table.recordDate),
   index("daily_records_front_date_idx").on(table.serviceFrontId, table.recordDate),
 ]);

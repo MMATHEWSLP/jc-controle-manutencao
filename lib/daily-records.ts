@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, lt, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFrontChangeRequests, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
@@ -40,6 +40,16 @@ export async function storePhoto(file: File): Promise<string> {
   await mkdir(path.join(UPLOAD_DIR, folder), { recursive: true });
   await writeFile(path.join(UPLOAD_DIR, key), buffer);
   return key;
+}
+
+// Mesmo operador = mesma conta + mesmo nome digitado (lançamento manual), sem diferenciar maiúsculas.
+// Espelha o índice único daily_records_user_equipment_date_operator_unique.
+function sameOperator(operatorName: string | null) {
+  return sql`coalesce(lower(${dailyRecords.operatorName}), '') = lower(${operatorName ?? ""})`;
+}
+const DUPLICATE_INDEX = /daily_records_user_equipment_date_(operator_)?unique/;
+function duplicateMessage(operatorName: string | null) {
+  return operatorName ? `Já existe um Controle Diário deste equipamento nesta data lançado por você para ${operatorName}.` : "Você já enviou o Controle Diário deste equipamento nesta data.";
 }
 
 export async function removePhoto(key: string | null) {
@@ -143,8 +153,8 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
     if (!front || !front.active) throw new DailyRecordError("Frente de serviço inválida ou inativa.");
   }
   const duplicate = (await db.select({ id: dailyRecords.id }).from(dailyRecords)
-    .where(and(eq(dailyRecords.userId, user.id), eq(dailyRecords.equipmentId, value.equipmentId), eq(dailyRecords.recordDate, value.recordDate))).limit(1))[0];
-  if (duplicate) throw new DailyRecordError("Você já enviou o Controle Diário deste equipamento nesta data.", 409);
+    .where(and(eq(dailyRecords.userId, user.id), eq(dailyRecords.equipmentId, value.equipmentId), eq(dailyRecords.recordDate, value.recordDate), sameOperator(value.operatorName))).limit(1))[0];
+  if (duplicate) throw new DailyRecordError(duplicateMessage(value.operatorName), 409);
 
   const stored: string[] = [];
   try {
@@ -162,11 +172,13 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
         inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
         hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, createdAt: now, updatedAt: now,
         officialServiceFrontId: item.serviceFrontId,
+        // Lançamento manual: user_id continua sendo a conta que lançou (auditoria).
+        operatorName: value.operatorName, manualEntry: value.operatorName !== null,
       }).returning({ id: dailyRecords.id });
       // Frente informada diferente da oficial = pedido de mudança de frente. O cadastro do
       // equipamento NÃO muda aqui: só quando ADMIN/GESTOR aprovar (lib/front-requests.ts).
       if (options.frontChangeRequested && value.workedToday && value.serviceFrontId !== null && value.serviceFrontId !== item.serviceFrontId) {
-        const reasonLine = `${now.slice(0, 10).split("-").reverse().join("/")} · ${user.name}: ${options.frontChangeReason?.trim() || "informou pelo Controle Diário"}`;
+        const reasonLine = `${now.slice(0, 10).split("-").reverse().join("/")} · ${value.operatorName ? `${value.operatorName} (lançado por ${user.name})` : user.name}: ${options.frontChangeReason?.trim() || "informou pelo Controle Diário"}`;
         const pending = (await tx.select({ id: serviceFrontChangeRequests.id, reason: serviceFrontChangeRequests.reason }).from(serviceFrontChangeRequests)
           .where(and(eq(serviceFrontChangeRequests.equipmentId, value.equipmentId), eq(serviceFrontChangeRequests.status, "PENDING"))).limit(1))[0];
         let requestId: number;
@@ -191,20 +203,20 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
       await tx.insert(equipmentCurrentAssignments).values({ userId: user.id, equipmentId: value.equipmentId, createdAt: now, updatedAt: now })
         .onConflictDoUpdate({ target: equipmentCurrentAssignments.userId, set: { equipmentId: value.equipmentId, updatedAt: now } });
       await tx.insert(auditLogs).values({ userId: user.id, entityType: "DAILY_RECORD", entityId: String(record.id), action: "CONTROLE DIÁRIO REGISTRADO",
-        newValue: JSON.stringify({ equipment: item.prefix, recordDate: value.recordDate, workedToday: value.workedToday }), occurredAt: now });
+        newValue: JSON.stringify({ equipment: item.prefix, recordDate: value.recordDate, workedToday: value.workedToday, manualEntry: value.operatorName !== null, operatorName: value.operatorName }), occurredAt: now });
       return record.id;
     });
     return { id, prefix: item.prefix };
   } catch (error) {
     for (const key of stored) await removePhoto(key);
-    if (error instanceof Error && /daily_records_user_equipment_date_unique/.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
-      throw new DailyRecordError("Você já enviou o Controle Diário deste equipamento nesta data.", 409);
+    if (error instanceof Error && DUPLICATE_INDEX.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
+      throw new DailyRecordError(duplicateMessage(value.operatorName), 409);
     }
     throw error;
   }
 }
 
-export async function listDailyRecords(user: SessionUser, filters: { from?: string; to?: string; equipmentId?: number; onlyMine: boolean }) {
+export async function listDailyRecords(user: SessionUser, filters: { from?: string; to?: string; equipmentId?: number; id?: number; onlyMine: boolean }) {
   const db = await getDb();
   const conditions: SQL[] = [];
   if (filters.onlyMine || !canViewAll(user)) conditions.push(eq(dailyRecords.userId, user.id));
@@ -215,9 +227,11 @@ export async function listDailyRecords(user: SessionUser, filters: { from?: stri
   if (filters.from) conditions.push(gte(dailyRecords.recordDate, filters.from));
   if (filters.to) conditions.push(lte(dailyRecords.recordDate, filters.to));
   if (filters.equipmentId) conditions.push(eq(dailyRecords.equipmentId, filters.equipmentId));
+  if (filters.id) conditions.push(eq(dailyRecords.id, filters.id));
   const rows = await db.select({
     id: dailyRecords.id, recordDate: dailyRecords.recordDate, equipmentId: dailyRecords.equipmentId, prefix: equipment.prefix,
-    userId: dailyRecords.userId, operator: users.name, workedToday: dailyRecords.workedToday, noWorkReason: dailyRecords.noWorkReason,
+    userId: dailyRecords.userId, operator: sql<string>`coalesce(${dailyRecords.operatorName}, ${users.name})`, launchedBy: users.name,
+    manualEntry: dailyRecords.manualEntry, operatorName: dailyRecords.operatorName, workedToday: dailyRecords.workedToday, noWorkReason: dailyRecords.noWorkReason,
     serviceFrontId: dailyRecords.serviceFrontId, front: serviceFronts.name, location: dailyRecords.location, readingUnit: dailyRecords.readingUnit,
     startReading: dailyRecords.startReading, endReading: dailyRecords.endReading, inactiveOrProblem: dailyRecords.inactiveOrProblem,
     problemReason: dailyRecords.problemReason, hasProblemPhoto: dailyRecords.problemPhotoKey, hadProduction: dailyRecords.hadProduction,
@@ -283,9 +297,11 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
     const front = (await db.select({ id: serviceFronts.id, active: serviceFronts.active }).from(serviceFronts).where(eq(serviceFronts.id, value.serviceFrontId)).limit(1))[0];
     if (!front || !front.active) throw new DailyRecordError("Frente de serviço inválida ou inativa.");
   }
-  // O registro continua sendo do operador que lançou; só não pode colidir com outro dele no mesmo dia.
+  // O registro continua sendo da conta que lançou; só não pode colidir com outro dela no mesmo dia
+  // (no lançamento manual, para o mesmo operador). Só o registro manual tem o nome editável.
+  const operatorName = before.record.manualEntry ? value.operatorName ?? before.record.operatorName : before.record.operatorName;
   const duplicate = (await db.select({ id: dailyRecords.id }).from(dailyRecords)
-    .where(and(eq(dailyRecords.userId, before.record.userId), eq(dailyRecords.equipmentId, value.equipmentId), eq(dailyRecords.recordDate, value.recordDate))).limit(2))
+    .where(and(eq(dailyRecords.userId, before.record.userId), eq(dailyRecords.equipmentId, value.equipmentId), eq(dailyRecords.recordDate, value.recordDate), sameOperator(operatorName))).limit(2))
     .find((row) => row.id !== recordId);
   if (duplicate) throw new DailyRecordError("Esse operador já tem outro registro deste equipamento nesta data.", 409);
 
@@ -306,7 +322,7 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
         equipmentId: value.equipmentId, recordDate: value.recordDate, workedToday: value.workedToday, noWorkReason: value.noWorkReason,
         serviceFrontId: value.serviceFrontId, location: value.location, readingUnit: item.readingUnit, startReading: value.startReading, endReading: value.endReading,
         inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
-        hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, updatedAt: now,
+        hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, operatorName, updatedAt: now,
       }).where(eq(dailyRecords.id, recordId));
       await tx.delete(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId));
       await tx.delete(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId));
@@ -315,7 +331,7 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
       if (value.trips.length) await tx.insert(dailyRecordTrips).values(value.trips.map((trip, index) => ({
         dailyRecordId: recordId, tripNumber: index + 1, logsQuantity: trip.logs, meters: trip.meters, createdAt: now, updatedAt: now })));
       await tx.insert(auditLogs).values({ userId: user.id, entityType: "DAILY_RECORD", entityId: String(recordId), action: "CONTROLE DIÁRIO EDITADO",
-        previousValue: JSON.stringify(before), newValue: JSON.stringify({ ...value, problemPhotoKey, productionPhotoKey }), occurredAt: now });
+        previousValue: JSON.stringify(before), newValue: JSON.stringify({ ...value, operatorName, problemPhotoKey, productionPhotoKey }), occurredAt: now });
     });
     // Fotos substituídas/removidas só são apagadas depois que a gravação deu certo.
     if (oldKeys.problem && oldKeys.problem !== problemPhotoKey) await removePhoto(oldKeys.problem);
@@ -323,7 +339,7 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
     return { id: recordId, prefix: item.prefix };
   } catch (error) {
     for (const key of stored) await removePhoto(key);
-    if (error instanceof Error && /daily_records_user_equipment_date_unique/.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
+    if (error instanceof Error && DUPLICATE_INDEX.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
       throw new DailyRecordError("Esse operador já tem outro registro deste equipamento nesta data.", 409);
     }
     throw error;

@@ -1,5 +1,5 @@
 import { assertSameOrigin, authorize } from "../../../lib/auth";
-import { checkReading, validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
+import { checkReading, requiresManualOperator, validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
 import { canRegister, canViewAll, createDailyRecord, DailyRecordError, lastReadingDateBefore, loadReadingHistory, listDailyRecords, requireEquipment } from "../../../lib/daily-records";
 
 const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
@@ -34,7 +34,9 @@ export async function POST(request: Request) {
     const production = form.get("productionPhoto");
     const photos = { problem: problem instanceof File && problem.size > 0 ? problem : null, production: production instanceof File && production.size > 0 ? production : null };
     const today = new Date().toISOString().slice(0, 10);
-    const { errors, value } = validateDailyRecord({ ...draft, hasProblemPhoto: Boolean(photos.problem), hasProductionPhoto: Boolean(photos.production) }, today);
+    // Login que não é de campo: o nome do operador é obrigatório e o registro fica marcado como manual.
+    const { errors, value } = validateDailyRecord({ ...draft, hasProblemPhoto: Boolean(photos.problem), hasProductionPhoto: Boolean(photos.production) }, today,
+      { manualOperator: requiresManualOperator(auth.user!.profile) });
     if (!value) return Response.json({ error: Object.values(errors)[0] ?? "Revise os campos do formulário.", fields: errors }, { status: 400 });
     if (value.workedToday) {
       // Mesma regra de leitura plausível da tela: acima do limite só grava com a confirmação
