@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../../../db/schema";
 import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel } from "../../../lib/auth";
@@ -83,7 +83,7 @@ async function serviceFrontId(value:unknown,required:boolean){
 export async function GET(request:Request){
   const auth=await authorize(request,"users.view");if(auth.response)return auth.response;
   try{
-    const db=await getDb();const rows=await db.select().from(users).orderBy(asc(users.name));
+    const db=await getDb();const rows=await db.select().from(users).where(ne(users.role,"CAMPO")).orderBy(asc(users.name)); // funcionários de campo têm cadastro próprio (Controle Diário)
     return Response.json({users:await Promise.all(rows.map(serialize))});
   }catch{return Response.json({error:"Não foi possível carregar os usuários agora."},{status:500});}
 }
@@ -140,6 +140,7 @@ export async function PUT(request:Request){
     if(!Number.isInteger(id)||id<=0)return Response.json({error:"Usuário inválido."},{status:400});
     const db=await getDb();const current=(await db.select().from(users).where(eq(users.id,id)).limit(1))[0];
     if(!current)return Response.json({error:"Usuário não encontrado."},{status:404});
+    if(current.role==="CAMPO")return Response.json({error:"Funcionário de campo é gerenciado em Controle Diário → Funcionários de campo."},{status:400});
     if(current.isPrimaryAdmin&&auth.user!.id!==id)return Response.json({error:"Somente o próprio administrador principal pode alterar seus dados ou sua senha."},{status:403});
     if(action==="RESET_PASSWORD"){
       const password=clean(body.password);const invalidPassword=passwordError(password);if(invalidPassword)return Response.json({error:invalidPassword},{status:400});

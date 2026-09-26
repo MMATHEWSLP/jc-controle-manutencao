@@ -1,6 +1,6 @@
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { checkReading, validateDailyRecord, type DailyRecordDraft } from "../../../../lib/daily-record-rules";
-import { DailyRecordError, deleteDailyRecord, lastReadingDateBefore, requireEquipment, requireManagedRecord, updateDailyRecord } from "../../../../lib/daily-records";
+import { DailyRecordError, deleteDailyRecord, lastReadingDateBefore, loadReadingHistory, requireEquipment, requireManagedRecord, updateDailyRecord } from "../../../../lib/daily-records";
 
 // Editar e excluir registros do Controle Diário: somente quem tem "daily.manage"
 // (o ADMIN libera por usuário em Usuários → Permissões), nas frentes que enxerga.
@@ -37,9 +37,10 @@ export async function PUT(request: Request, { params }: Context) {
     if (value.workedToday) {
       const item = await requireEquipment(auth.user!, value.equipmentId);
       const check = checkReading({ unit: item.readingUnit, start: value.startReading, end: value.endReading,
-        lastDate: await lastReadingDateBefore(value.equipmentId, item.readingUnit, value.recordDate), recordDate: value.recordDate });
+        lastDate: await lastReadingDateBefore(value.equipmentId, item.readingUnit, value.recordDate), recordDate: value.recordDate,
+        history: await loadReadingHistory(value.equipmentId, item.readingUnit, id) });
       if (check.level === "INVALID") return Response.json({ error: check.message, fields: { endReading: check.message } }, { status: 400 });
-      if (check.level === "HIGH" && draft.confirmUnusualReading !== true) return Response.json({ error: check.message, fields: { endReading: check.message }, requiresConfirmation: true }, { status: 400 });
+      if ((check.level === "HIGH" || check.level === "LOW") && draft.confirmUnusualReading !== true) return Response.json({ error: check.message, fields: { endReading: check.message }, requiresConfirmation: true }, { status: 400 });
     }
     const result = await updateDailyRecord(auth.user!, id, value, photos);
     return Response.json({ ok: true, id, message: `Registro do ${result.prefix} atualizado.` });

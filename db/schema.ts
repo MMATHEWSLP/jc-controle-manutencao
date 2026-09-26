@@ -25,7 +25,9 @@ export const users = pgTable("users", {
   username: text("username"),
   passwordHash: text("password_hash"),
   passwordSalt: text("password_salt"),
-  role: text("role", { enum:["ADMIN","GESTOR","OFICINA","OPERADOR","ALMOXARIFADO"] }).notNull(),
+  // CAMPO = funcionário de campo: entra só com nome + código (sem senha) e só acessa o Controle
+  // Diário — a restrição é aplicada no backend em lib/auth.ts (authorize/FIELD_ALLOWED_API).
+  role: text("role", { enum:["ADMIN","GESTOR","OFICINA","OPERADOR","ALMOXARIFADO","CAMPO"] }).notNull(),
   // Nível hierárquico organizacional, usado exclusivamente pelas regras de visibilidade/autorização
   // do módulo Tarefas (quem é superior de quem). É independente do "role" acima, que continua
   // controlando as permissões de tela/ação em todo o restante do sistema.
@@ -53,6 +55,10 @@ export const users = pgTable("users", {
   allServiceFronts: boolean("all_service_fronts").notNull().default(false),
   // Libera a exportação de trocas de óleo em Excel para quem não é ADMIN/GESTOR, caso a caso.
   canExport: boolean("can_export").notNull().default(false),
+  // Função/cargo exibido no Controle Diário (ex.: "Operador de Baldeio").
+  jobTitle: text("job_title"),
+  // Só para perfil CAMPO: código numérico de acesso, guardado como "salt:hash" (nunca em texto).
+  accessCodeHash: text("access_code_hash"),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
@@ -831,6 +837,10 @@ export const dailyRecords = pgTable("daily_records", {
   // Foto única do registro: ficha do baldeio (BALDEIO) ou foto da produção (PORTO).
   productionPhotoKey: text("production_photo_key"),
   notes: text("notes"),
+  // Frente oficial do equipamento no momento do lançamento. `serviceFrontId` (acima) é a frente
+  // informada pelo operador — difere desta quando ele pediu mudança de frente.
+  officialServiceFrontId: integer("official_service_front_id").references(() => serviceFronts.id),
+  frontChangeRequestId: integer("front_change_request_id"),
   ...timestamps,
 }, (table) => [
   // Um operador não registra o mesmo equipamento duas vezes no mesmo dia (evita envio duplicado).
@@ -865,3 +875,37 @@ export const equipmentCurrentAssignments = pgTable("equipment_current_assignment
   equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
   ...timestamps,
 }, (table) => [index("equipment_current_assignments_equipment_idx").on(table.equipmentId)]);
+
+// Tentativas de login do funcionário de campo (nome + código): base do bloqueio contra
+// adivinhação do código (ver lib/field-auth.ts).
+export const fieldLoginAttempts = pgTable("field_login_attempts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  ip: text("ip").notNull(),
+  success: boolean("success").notNull(),
+  attemptedAt: text("attempted_at").notNull().default(isoNow),
+}, (table) => [
+  index("field_login_attempts_user_idx").on(table.userId, table.attemptedAt),
+  index("field_login_attempts_ip_idx").on(table.ip, table.attemptedAt),
+]);
+
+// Pedido de mudança de frente feito pelo operador no Controle Diário. NÃO altera o cadastro do
+// equipamento: só quem aprova (ADMIN/GESTOR com "daily.front_requests") aplica a transferência,
+// pelo mesmo fluxo de lib/equipment-transfer.ts (fica no histórico de transferências).
+export const serviceFrontChangeRequests = pgTable("service_front_change_requests", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  currentServiceFrontId: integer("current_service_front_id").references(() => serviceFronts.id),
+  requestedServiceFrontId: integer("requested_service_front_id").notNull().references(() => serviceFronts.id),
+  reason: text("reason"),
+  requestedBy: integer("requested_by").notNull().references(() => users.id),
+  requestedAt: text("requested_at").notNull(),
+  status: text("status", { enum:["PENDING","APPROVED","REJECTED"] }).notNull().default("PENDING"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: text("reviewed_at"),
+  reviewNote: text("review_note"),
+  ...timestamps,
+}, (table) => [
+  index("front_change_requests_status_idx").on(table.status, table.requestedAt),
+  index("front_change_requests_equipment_idx").on(table.equipmentId, table.status),
+]);

@@ -1,6 +1,6 @@
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { checkReading, validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
-import { canRegister, canViewAll, createDailyRecord, DailyRecordError, lastReadingDateBefore, listDailyRecords, requireEquipment } from "../../../lib/daily-records";
+import { canRegister, canViewAll, createDailyRecord, DailyRecordError, lastReadingDateBefore, loadReadingHistory, listDailyRecords, requireEquipment } from "../../../lib/daily-records";
 
 const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
 
@@ -41,11 +41,14 @@ export async function POST(request: Request) {
       // explícita do operador (segundo toque em "Confirmar mesmo assim").
       const item = await requireEquipment(auth.user!, value.equipmentId);
       const check = checkReading({ unit: item.readingUnit, start: value.startReading, end: value.endReading,
-        lastDate: await lastReadingDateBefore(value.equipmentId, item.readingUnit, value.recordDate), recordDate: value.recordDate });
+        lastDate: await lastReadingDateBefore(value.equipmentId, item.readingUnit, value.recordDate), recordDate: value.recordDate,
+        history: await loadReadingHistory(value.equipmentId, item.readingUnit) });
       if (check.level === "INVALID") return Response.json({ error: check.message, fields: { endReading: check.message } }, { status: 400 });
-      if (check.level === "HIGH" && draft.confirmUnusualReading !== true) return Response.json({ error: check.message, fields: { endReading: check.message }, requiresConfirmation: true }, { status: 400 });
+      if ((check.level === "HIGH" || check.level === "LOW") && draft.confirmUnusualReading !== true) return Response.json({ error: check.message, fields: { endReading: check.message }, requiresConfirmation: true }, { status: 400 });
     }
-    const result = await createDailyRecord(auth.user!, value, photos);
+    const frontChangeReason = typeof (draft as { frontChangeReason?: unknown }).frontChangeReason === "string" ? String((draft as { frontChangeReason?: unknown }).frontChangeReason).slice(0, 500) : null;
+    const frontChangeRequested = (draft as { frontChangeRequested?: unknown }).frontChangeRequested === true;
+    const result = await createDailyRecord(auth.user!, value, photos, { frontChangeRequested, frontChangeReason });
     return Response.json({ ok: true, id: result.id, message: `Controle Diário do ${result.prefix} enviado.` }, { status: 201 });
   } catch (error) {
     if (error instanceof DailyRecordError) return Response.json({ error: error.message }, { status: error.status });

@@ -192,9 +192,17 @@ export const MAX_HOURS_PER_DAY = 24;
 export const MAX_KM_PER_DAY = 800;
 // Leitura final maior que N vezes a inicial também é suspeita (dígito a mais).
 export const ABSURD_JUMP_FACTOR = 10;
+// Comparação com a média histórica do próprio equipamento (registros anteriores do Controle
+// Diário). Só vale com pelo menos HISTORY_MIN_SAMPLES dias registrados.
+export const HISTORY_MIN_SAMPLES = 5;
+export const HISTORY_HIGH_FACTOR = 2.5; // média por dia acima de 2,5× a média histórica
+export const HISTORY_LOW_FACTOR = 0.25; // média por dia abaixo de 1/4 da média histórica
+
+export type ReadingHistory = { avgPerDay: number; samples: number };
 
 export type ReadingCheck = {
-  level: "OK" | "ZERO" | "HIGH" | "INVALID";
+  // HIGH/LOW exigem confirmação do operador ("Confirmar mesmo assim"); INVALID bloqueia.
+  level: "OK" | "ZERO" | "HIGH" | "LOW" | "INVALID";
   worked: number | null;
   days: number;
   perDay: number | null;
@@ -212,7 +220,7 @@ export function daysBetween(from: string | null, to: string) {
   return Math.max(1, diff);
 }
 
-export function checkReading(input: { unit: ReadingUnit; start: number | null; end: number | null; lastDate: string | null; recordDate: string }): ReadingCheck {
+export function checkReading(input: { unit: ReadingUnit; start: number | null; end: number | null; lastDate: string | null; recordDate: string; history?: ReadingHistory | null }): ReadingCheck {
   const days = daysBetween(input.lastDate, input.recordDate);
   const { start, end, unit } = input;
   if (start === null || end === null) return { level: "OK", worked: null, days, perDay: null, message: null };
@@ -227,6 +235,16 @@ export function checkReading(input: { unit: ReadingUnit; start: number | null; e
   if (worked > limit || jump) {
     const period = days === 1 ? "1 dia" : `${days} dias (desde ${input.lastDate ? brDate(input.lastDate.slice(0, 10)) : "a última leitura"})`;
     return { level: "HIGH", worked, days, perDay, message: `Isso dá ${readingNumber.format(worked)} ${suffix(unit)} trabalhados em ${period}. Confira se digitou o valor certo.` };
+  }
+  const history = input.history;
+  if (history && history.samples >= HISTORY_MIN_SAMPLES && history.avgPerDay > 0) {
+    const avg = `${readingNumber.format(history.avgPerDay)} ${suffix(unit)}/dia`;
+    if (perDay > history.avgPerDay * HISTORY_HIGH_FACTOR) {
+      return { level: "HIGH", worked, days, perDay, message: `Muito acima do normal deste equipamento: ${readingNumber.format(perDay)} ${suffix(unit)}/dia, a média é ${avg}. Confira o valor.` };
+    }
+    if (perDay < history.avgPerDay * HISTORY_LOW_FACTOR) {
+      return { level: "LOW", worked, days, perDay, message: `Bem abaixo do normal deste equipamento: ${readingNumber.format(perDay)} ${suffix(unit)}/dia, a média é ${avg}. Confira o valor.` };
+    }
   }
   return { level: "OK", worked, days, perDay, message: null };
 }

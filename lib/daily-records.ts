@@ -3,7 +3,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, lt, lte, type SQL } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFronts, users } from "../db/schema";
+import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFrontChangeRequests, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { readingUnitFor, type DailyRecordValue, type ReadingUnit } from "./daily-record-rules";
@@ -63,12 +63,12 @@ function equipmentScope(user: SessionUser): SQL | undefined {
 export async function loadEquipmentOptions(user: SessionUser) {
   const db = await getDb();
   const rows = await db.select({
-    id: equipment.id, prefix: equipment.prefix, type: equipment.type, brand: equipment.brand, model: equipment.model,
+    id: equipment.id, prefix: equipment.prefix, code: equipment.code, plate: equipment.plate, type: equipment.type, brand: equipment.brand, model: equipment.model,
     controlType: equipment.controlType, status: equipment.status, serviceFrontId: equipment.serviceFrontId, front: serviceFronts.name,
   }).from(equipment).leftJoin(serviceFronts, eq(serviceFronts.id, equipment.serviceFrontId))
     .where(equipmentScope(user)).orderBy(equipment.sortKey, equipment.prefix);
   return rows.filter((row) => row.status !== "INACTIVE").map((row) => ({
-    id: row.id, prefix: row.prefix, type: row.type, brand: row.brand, model: row.model,
+    id: row.id, prefix: row.prefix, code: row.code, plate: row.plate, type: row.type, brand: row.brand, model: row.model,
     serviceFrontId: row.serviceFrontId, front: row.front ?? "Sem frente", readingUnit: readingUnitFor(row.controlType, row.prefix),
   }));
 }
@@ -108,9 +108,22 @@ export async function loadLastReading(user: SessionUser, equipmentId: number) {
     .orderBy(desc(dailyRecords.recordDate), desc(dailyRecords.id)).limit(1))[0];
   const current = item.readingUnit === "KM" ? item.currentKm : item.currentHours;
   const daily = last?.endReading ?? null;
-  if (daily !== null && daily >= current) return { value: daily, unit: item.readingUnit, source: "DAILY_RECORD" as const, date: last!.recordDate };
-  if (current > 0) return { value: current, unit: item.readingUnit, source: "EQUIPMENT" as const, date: null };
-  return { value: daily, unit: item.readingUnit, source: daily === null ? null : "DAILY_RECORD" as const, date: last?.recordDate ?? null };
+  const history = await loadReadingHistory(equipmentId, item.readingUnit);
+  if (daily !== null && daily >= current) return { value: daily, unit: item.readingUnit, source: "DAILY_RECORD" as const, date: last!.recordDate, history };
+  if (current > 0) return { value: current, unit: item.readingUnit, source: "EQUIPMENT" as const, date: null, history };
+  return { value: daily, unit: item.readingUnit, source: daily === null ? null : "DAILY_RECORD" as const, date: last?.recordDate ?? null, history };
+}
+
+// Média de trabalho por dia do equipamento nos últimos 30 registros (base do aviso de "muito
+// acima/abaixo do normal" em checkReading). excludeId: ignora o registro em edição.
+export async function loadReadingHistory(equipmentId: number, unit: ReadingUnit, excludeId?: number) {
+  const db = await getDb();
+  const rows = await db.select({ id: dailyRecords.id, start: dailyRecords.startReading, end: dailyRecords.endReading }).from(dailyRecords)
+    .where(and(eq(dailyRecords.equipmentId, equipmentId), eq(dailyRecords.readingUnit, unit), eq(dailyRecords.workedToday, true)))
+    .orderBy(desc(dailyRecords.recordDate), desc(dailyRecords.id)).limit(31);
+  const worked = rows.filter((row) => row.id !== excludeId && row.start !== null && row.end !== null && row.end > row.start).slice(0, 30).map((row) => row.end! - row.start!);
+  if (!worked.length) return { avgPerDay: 0, samples: 0 };
+  return { avgPerDay: worked.reduce((total, value) => total + value, 0) / worked.length, samples: worked.length };
 }
 
 // Data da última leitura deste equipamento ANTES da data do registro — base do cálculo de
@@ -122,7 +135,7 @@ export async function lastReadingDateBefore(equipmentId: number, unit: ReadingUn
     .orderBy(desc(dailyRecords.recordDate), desc(dailyRecords.id)).limit(1))[0]?.recordDate ?? null;
 }
 
-export async function createDailyRecord(user: SessionUser, value: DailyRecordValue, photos: { problem: File | null; production: File | null }) {
+export async function createDailyRecord(user: SessionUser, value: DailyRecordValue, photos: { problem: File | null; production: File | null }, options: { frontChangeRequested?: boolean; frontChangeReason?: string | null } = {}) {
   const item = await requireEquipment(user, value.equipmentId);
   const db = await getDb();
   if (value.serviceFrontId !== null) {
@@ -148,7 +161,29 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
         serviceFrontId: value.serviceFrontId, location: value.location, readingUnit: item.readingUnit, startReading: value.startReading, endReading: value.endReading,
         inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
         hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, createdAt: now, updatedAt: now,
+        officialServiceFrontId: item.serviceFrontId,
       }).returning({ id: dailyRecords.id });
+      // Frente informada diferente da oficial = pedido de mudança de frente. O cadastro do
+      // equipamento NÃO muda aqui: só quando ADMIN/GESTOR aprovar (lib/front-requests.ts).
+      if (options.frontChangeRequested && value.workedToday && value.serviceFrontId !== null && value.serviceFrontId !== item.serviceFrontId) {
+        const reasonLine = `${now.slice(0, 10).split("-").reverse().join("/")} · ${user.name}: ${options.frontChangeReason?.trim() || "informou pelo Controle Diário"}`;
+        const pending = (await tx.select({ id: serviceFrontChangeRequests.id, reason: serviceFrontChangeRequests.reason }).from(serviceFrontChangeRequests)
+          .where(and(eq(serviceFrontChangeRequests.equipmentId, value.equipmentId), eq(serviceFrontChangeRequests.status, "PENDING"))).limit(1))[0];
+        let requestId: number;
+        if (pending) {
+          // Já existe pedido aberto para o equipamento: não cria outro, só acrescenta a nova indicação.
+          await tx.update(serviceFrontChangeRequests).set({ requestedServiceFrontId: value.serviceFrontId, reason: [pending.reason, reasonLine].filter(Boolean).join("\n"), updatedAt: now })
+            .where(eq(serviceFrontChangeRequests.id, pending.id));
+          requestId = pending.id;
+        } else {
+          const [created] = await tx.insert(serviceFrontChangeRequests).values({
+            equipmentId: value.equipmentId, currentServiceFrontId: item.serviceFrontId, requestedServiceFrontId: value.serviceFrontId, reason: reasonLine,
+            requestedBy: user.id, requestedAt: now, status: "PENDING", createdAt: now, updatedAt: now,
+          }).returning({ id: serviceFrontChangeRequests.id });
+          requestId = created.id;
+        }
+        await tx.update(dailyRecords).set({ frontChangeRequestId: requestId }).where(eq(dailyRecords.id, record.id));
+      }
       if (value.fuelings.length) await tx.insert(dailyRecordFuelings).values(value.fuelings.map((fueling, index) => ({
         dailyRecordId: record.id, fuelingNumber: index + 1, liters: fueling.liters, location: fueling.location, createdAt: now, updatedAt: now })));
       if (value.trips.length) await tx.insert(dailyRecordTrips).values(value.trips.map((trip, index) => ({
@@ -187,8 +222,10 @@ export async function listDailyRecords(user: SessionUser, filters: { from?: stri
     startReading: dailyRecords.startReading, endReading: dailyRecords.endReading, inactiveOrProblem: dailyRecords.inactiveOrProblem,
     problemReason: dailyRecords.problemReason, hasProblemPhoto: dailyRecords.problemPhotoKey, hadProduction: dailyRecords.hadProduction,
     productionType: dailyRecords.productionType, hasProductionPhoto: dailyRecords.productionPhotoKey, notes: dailyRecords.notes, createdAt: dailyRecords.createdAt,
+    officialServiceFrontId: dailyRecords.officialServiceFrontId, frontRequestStatus: serviceFrontChangeRequests.status,
   }).from(dailyRecords).innerJoin(equipment, eq(equipment.id, dailyRecords.equipmentId)).innerJoin(users, eq(users.id, dailyRecords.userId))
     .leftJoin(serviceFronts, eq(serviceFronts.id, dailyRecords.serviceFrontId))
+    .leftJoin(serviceFrontChangeRequests, eq(serviceFrontChangeRequests.id, dailyRecords.frontChangeRequestId))
     .where(conditions.length ? and(...conditions) : undefined).orderBy(desc(dailyRecords.recordDate), desc(dailyRecords.id)).limit(300);
   const ids = rows.map((row) => row.id);
   const [fuelings, trips] = ids.length ? await Promise.all([

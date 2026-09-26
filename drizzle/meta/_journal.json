@@ -78,6 +78,13 @@
       "when": 1790361790666,
       "tag": "0010_purple_marvel_apes",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790449947228,
+      "tag": "0011_bitter_eternals",
+      "breakpoints": true
     }
   ]
 }
