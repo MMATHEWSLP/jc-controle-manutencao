@@ -115,3 +115,10 @@ html[data-theme="dark"] .daily-reading-check{background:#0e2a1c;border-color:#1f
 html[data-theme="dark"] .daily-reading-check.zero{background:#2a2213;border-color:#5a4520;color:#ffd166}
 html[data-theme="dark"] .daily-reading-check.high{background:#2e1a0c;border-color:#8a4a18;color:#ffb070}
 html[data-theme="dark"] .daily-reading-check.invalid{background:#3A1116;border-color:#7a2a33;color:#FF8A8A}
+/* Editar / excluir (somente daily.manage) */
+.daily-record-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.daily-record-actions button{min-height:34px;padding:6px 14px;border-radius:7px;font-size:10px;font-weight:800}
+.daily-editing-head{padding:10px 12px;border-radius:9px;background:#fff6e5;border:1px solid #f0d49a}
+.daily-editing-head>div{display:grid;gap:2px}.daily-editing-head h3{color:#7a4b06!important}.daily-editing-head span{color:#8a6a33!important}
+.daily-danger{background:linear-gradient(135deg,#e23d49,#b8212d)!important;border-color:#a51d28!important}
+html[data-theme="dark"] .daily-editing-head{background:#2a2213;border-color:#5a4520}html[data-theme="dark"] .daily-editing-head h3{color:#ffd166!important}

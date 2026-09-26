@@ -52,6 +52,7 @@ export const PERMISSION_GROUPS = [
   { label:"Controle Diário", items:[
     ["daily.register","Registrar o Controle Diário do equipamento que opera"],
     ["daily.view_all","Visualizar os registros diários de todos os operadores (das frentes que enxerga)"],
+    ["daily.manage","Editar e excluir registros do Controle Diário (das frentes que enxerga)"],
   ]},
   { label:"Solicitação de Materiais", items:[
     ["materials.view","Visualizar solicitações de materiais"],

@@ -15,7 +15,7 @@ import ProductsView from "./ProductsView";
 import TasksView from "./TasksView";
 import TaskRoleManagerModal from "./TaskRoleManagerModal";
 import { planBalanceText, planDetailStatus, planSortRank, type PlanState } from "../lib/maintenance-engine";
-type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "daily.register" | "daily.view_all" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "products.view" | "products.create" | "products.edit" | "products.delete" | "products.import" | "products.manage_models" | "suppliers.view" | "suppliers.create" | "suppliers.edit" | "suppliers.delete" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status" | "service_fronts.manage";
+type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "daily.register" | "daily.view_all" | "daily.manage" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "products.view" | "products.create" | "products.edit" | "products.delete" | "products.import" | "products.manage_models" | "suppliers.view" | "suppliers.create" | "suppliers.edit" | "suppliers.delete" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status" | "service_fronts.manage";
 type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO";
 type TaskRole = { id: number; name: string; visualOrder: number; isRoot: boolean };
 type AuthUser = {
@@ -187,7 +187,7 @@ const permissionGroups: Array<{
     { label: "Alertas", items: [["alerts.view", "Visualizar alertas"], ["alerts.share", "Compartilhar alertas"], ["alerts.settings", "Configurar alertas"]] },
     { label: "WhatsApp", items: [["whatsapp.view", "Visualizar configurações e histórico"], ["whatsapp.send", "Enviar alertas"], ["whatsapp.manage", "Gerenciar destinatários e automação"]] },
     { label: "Status da Frota", items: [["fleet.view", "Visualizar Status da Frota"], ["fleet.update", "Atualizar ocorrências e pedidos"], ["fleet.report", "Exportar relatório diário"]] },
-    { label: "Controle Diário", items: [["daily.register", "Registrar o Controle Diário do equipamento que opera"], ["daily.view_all", "Visualizar registros diários de todos os operadores"]] },
+    { label: "Controle Diário", items: [["daily.register", "Registrar o Controle Diário do equipamento que opera"], ["daily.view_all", "Visualizar registros diários de todos os operadores"], ["daily.manage", "Editar e excluir registros do Controle Diário"]] },
     { label: "Solicitação de Materiais", items: [["materials.view", "Visualizar solicitações de materiais"], ["materials.request", "Criar solicitação de materiais"], ["materials.ship", "Separar e enviar materiais solicitados"], ["materials.manage", "Visualizar todas as solicitações (todas as frentes/solicitantes)"]] },
     { label: "Tarefas", items: [["tasks.view", "Acessar o módulo Tarefas (a visibilidade de cada tarefa é definida pela hierarquia)"], ["tasks.create", "Criar tarefas e subtarefas"], ["tasks.edit", "Editar, reatribuir, concluir ou excluir tarefas (quando autorizado pela hierarquia)"]] },
     { label: "Produtos", items: [["products.view", "Visualizar produtos"], ["products.create", "Cadastrar produto"], ["products.edit", "Editar produto"], ["products.delete", "Excluir produto"], ["products.import", "Importar produtos em massa (CSV)"], ["products.manage_models", "Gerenciar modelos de equipamento (Aplicação)"], ["suppliers.view", "Visualizar fornecedores"], ["suppliers.create", "Cadastrar fornecedor"], ["suppliers.edit", "Editar fornecedor"], ["suppliers.delete", "Excluir fornecedor"]] },
@@ -245,7 +245,7 @@ function CategoryReportFilter({ categories, selected, onChange }: { categories: 
 }
 function BrandMark() { return <div className="brand-mark"><Image src="/jc-florestais-logo.png" alt="JC Florestais" width={113} height={51} priority unoptimized onError={(event)=>{event.currentTarget.style.display="none";}}/></div>; }
 function can(user: AuthUser | undefined | null, permission: Permission) { return Boolean(user?.permissions.includes(permission)); }
-function canDaily(user: AuthUser | undefined | null) { return can(user, "daily.register") || can(user, "daily.view_all"); }
+function canDaily(user: AuthUser | undefined | null) { return can(user, "daily.register") || can(user, "daily.view_all") || can(user, "daily.manage"); }
 function LoginScreen({ onAuthenticated }: {
     onAuthenticated: (user: AuthUser) => void;
 }) {
