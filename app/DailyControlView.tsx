@@ -4,24 +4,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   checkReading, emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
-  type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingUnit,
+  type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingHistory, type ReadingUnit,
 } from "../lib/daily-record-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
+import { FieldOperatorsPanel, FrontRequestsPanel } from "./DailyAdminPanels";
 
-type EquipmentOption = { id:number; prefix:string; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
+type EquipmentOption = { id:number; prefix:string; code:string; plate:string|null; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
+export type CurrentUser = { name:string; jobTitle:string|null; profileLabel:string; frontName:string|null };
 type Front = { id:number; name:string };
-type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean };
-type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null };
+type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean; canFieldOperators:boolean; canFrontRequests:boolean };
+type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null; history?:ReadingHistory|null };
 type RecordItem = {
   id:number; recordDate:string; equipmentId:number; serviceFrontId:number|null; userId:number; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
   hadProduction:boolean; productionType:ProductionType|null; hasProductionPhoto:boolean; notes:string|null;
+  officialServiceFrontId:number|null; frontRequestStatus:"PENDING"|"APPROVED"|"REJECTED"|null;
   fuelings:Array<{number:number;liters:number;location:string}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
-type Tab = "new" | "mine" | "all";
+type Tab = "new" | "mine" | "all" | "fronts" | "operators";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
@@ -35,14 +38,18 @@ function blankDraft(recordDate:string, equipmentId:number|null, serviceFrontId:n
     hasProblemPhoto:false, hasProductionPhoto:false };
 }
 
-export default function DailyControlView({ flash }:{ flash:(message:string)=>void }) {
+export default function DailyControlView({ flash, currentUser }:{ flash:(message:string)=>void; currentUser:CurrentUser }) {
   const [context,setContext]=useState<Context|null>(null);
   const [error,setError]=useState("");
   const [tab,setTab]=useState<Tab>("new");
   // Registro aberto para edição (somente com a permissão "daily.manage").
   const [editing,setEditing]=useState<RecordItem|null>(null);
-  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canRegister)setTab(result.canViewAll?"all":"mine"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
+  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canRegister)setTab(result.canViewAll?"all":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"mine"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
   useEffect(()=>{ load(); },[load]);
+  // Contador de solicitações de frente pendentes (para quem aprova).
+  const [pendingFronts,setPendingFronts]=useState(0);
+  const loadPendingFronts=useCallback(()=>{ api<{pending:number}>("/api/daily-records/front-requests?count=1").then((result)=>setPendingFronts(result.pending)).catch(()=>undefined); },[]);
+  useEffect(()=>{ if(context?.canFrontRequests)loadPendingFronts(); },[context,loadPendingFronts]);
 
   if(error) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o Controle Diário</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>;
   if(!context) return <div className="page-loading"><span/><p>Carregando o Controle Diário...</p></div>;
@@ -52,10 +59,14 @@ export default function DailyControlView({ flash }:{ flash:(message:string)=>voi
       {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>{ setEditing(null); setTab("new"); }}>Novo registro</button>}
       {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>{ setEditing(null); setTab("mine"); }}>Meus registros</button>}
       {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>{ setEditing(null); setTab("all"); }}>Todos os registros</button>}
+      {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>{ setEditing(null); setTab("fronts"); }}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
+      {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>{ setEditing(null); setTab("operators"); }}>Funcionários de campo</button>}
     </div>
     {context.canRegister && <PendingQueue userId={context.userId}/>}
-    {editing ? <DailyForm key={`edit-${editing.id}`} context={context} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
-      : tab==="new" && context.canRegister ? <DailyForm context={context} flash={flash} onSent={()=>setTab("mine")}/>
+    {editing ? <DailyForm key={`edit-${editing.id}`} context={context} currentUser={currentUser} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
+      : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("mine")}/>
+      : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
+      : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
       : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
   </>;
 }
@@ -78,7 +89,7 @@ function draftFromRecord(record:RecordItem):DailyRecordDraft {
 
 // `editing`: abre um registro já enviado para correção (somente "daily.manage"). Nesse modo não
 // há memória de equipamento, sugestão de leitura nem fila offline — editar exige internet.
-function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Context; flash:(message:string)=>void; onSent:()=>void; editing?:RecordItem; onCancel?:()=>void }) {
+function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ context:Context; currentUser:CurrentUser; flash:(message:string)=>void; onSent:()=>void; editing?:RecordItem; onCancel?:()=>void }) {
   const initialEquipment=editing?null:context.equipment.find((item)=>item.id===context.assignedEquipmentId)??null;
   const [draft,setDraft]=useState<DailyRecordDraft>(()=>editing?draftFromRecord(editing):blankDraft(localToday(),initialEquipment?.id??null,initialEquipment?.serviceFrontId??context.defaultServiceFrontId));
   const [fromMemory,setFromMemory]=useState(Boolean(initialEquipment));
@@ -96,6 +107,11 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
   const [readingNonce,setReadingNonce]=useState(0);
   // Aviso de leitura fora do plausível vindo do servidor (caso ele calcule diferente da tela).
   const [serverReadingWarning,setServerReadingWarning]=useState<string|null>(null);
+  // "Mudar frente": o operador informa outra frente para este registro; vira uma solicitação
+  // para ADMIN/GESTOR aprovar — o cadastro do equipamento só muda depois da aprovação.
+  const [frontChangeOpen,setFrontChangeOpen]=useState(false);
+  const [frontChangeRequested,setFrontChangeRequested]=useState(false);
+  const [frontChangeReason,setFrontChangeReason]=useState("");
   const equipment=context.equipment.find((item)=>item.id===draft.equipmentId)??null;
   const unit=equipment?.readingUnit??"HOURS";
 
@@ -125,6 +141,7 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
   function selectEquipment(item:EquipmentOption) {
     if(item.id===draft.equipmentId)return;
     patch({ equipmentId:item.id, serviceFrontId:item.serviceFrontId??context.defaultServiceFrontId, ...(editing?{}:{ startReading:"" }) });
+    setFrontChangeOpen(false); setFrontChangeRequested(false); setFrontChangeReason("");
     setFromMemory(false);
     if(editing)return;
     // Troca de máquina: atualiza a "memória" para os próximos registros.
@@ -142,14 +159,15 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
   const pending=Object.values(validation.errors);
   const readingCheck=useMemo<ReadingCheck|null>(()=>{
     if(!draft.workedToday)return null;
-    const check=checkReading({ unit, start:parseDecimal(draft.startReading), end:parseDecimal(draft.endReading), lastDate:lastReading?.date??null, recordDate:draft.recordDate });
+    const check=checkReading({ unit, start:parseDecimal(draft.startReading), end:parseDecimal(draft.endReading), lastDate:lastReading?.date??null, recordDate:draft.recordDate, history:lastReading?.history??null });
     return serverReadingWarning&&check.level!=="INVALID"?{ ...check, level:"HIGH", message:serverReadingWarning }:check;
   },[draft.workedToday,draft.startReading,draft.endReading,draft.recordDate,unit,lastReading,serverReadingWarning]);
 
   function resetAfterSend() {
     setPhoto("problem",null); setPhoto("production",null);
-    setDraft(blankDraft(localToday(),draft.equipmentId,draft.serviceFrontId));
+    setDraft(blankDraft(localToday(),draft.equipmentId,equipment?.serviceFrontId??draft.serviceFrontId));
     setTouched(new Set()); setShowAll(false); setReviewing(false); setFromMemory(true); setReadingNonce((value)=>value+1); setServerReadingWarning(null);
+    setFrontChangeOpen(false); setFrontChangeRequested(false); setFrontChangeReason("");
     onSent();
   }
 
@@ -178,7 +196,7 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
     if(editing)return saveEdit(confirmUnusualReading);
     if(!validation.value)return;
     setBusy(true); setSubmitError("");
-    const payload=JSON.stringify({ ...draft, confirmUnusualReading });
+    const payload=JSON.stringify({ ...draft, confirmUnusualReading, frontChangeRequested:frontChangeRequested&&draft.serviceFrontId!==equipment?.serviceFrontId, frontChangeReason });
     const problemBlob=draft.workedToday&&draft.inactiveOrProblem&&problemPhoto?problemPhoto.blob:null;
     const productionBlob=draft.workedToday&&draft.hadProduction&&productionPhoto?productionPhoto.blob:null;
     // Sem sinal: guarda no celular (com as fotos) e envia sozinho quando a internet voltar.
@@ -219,11 +237,11 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
     <section className="panel daily-card">
       {editing
         ? <header className="daily-card-head daily-editing-head"><div><h3>Editando registro</h3><span>{editing.prefix} · {formatDay(editing.recordDate)} · lançado por {editing.operator}</span></div>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}</header>
-        : <header className="daily-card-head"><h3>Identificação</h3><span>Operador: registro vinculado ao seu login</span></header>}
+        : <IdentityCard user={currentUser}/>}
       <div className="fleet-form-grid">
         <Field label="Data do registro *" error={errorFor("recordDate")}><input type="date" value={draft.recordDate} max={localToday()} onChange={(event)=>patch({ recordDate:event.target.value })} onBlur={()=>touch("recordDate")}/></Field>
         <Field group label="Equipamento (Frota) *" className="span-2" error={errorFor("equipmentId")} hint={fromMemory&&equipment?"Último equipamento que você usou — troque só se mudou de máquina.":undefined}>
-          <EquipmentPicker options={context.equipment} selected={equipment} onSelect={selectEquipment} onBlur={()=>touch("equipmentId")}/>
+          <EquipmentPicker options={context.equipment} selected={equipment} onSelect={(item)=>{ selectEquipment(item); touch("equipmentId"); }}/>
         </Field>
       </div>
       <label className="daily-toggle">
@@ -240,7 +258,15 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
       <section className="panel daily-card">
         <header className="daily-card-head"><h3>Operação</h3></header>
         <div className="fleet-form-grid">
-          <Field label="Frente de serviço *" error={errorFor("serviceFrontId")}><select value={draft.serviceFrontId??""} onChange={(event)=>patch({ serviceFrontId:event.target.value?Number(event.target.value):null })} onBlur={()=>touch("serviceFrontId")}><option value="">Selecione</option>{context.fronts.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></Field>
+          {editing||!equipment?.serviceFrontId
+            ? <Field label="Frente de serviço *" error={errorFor("serviceFrontId")}><select value={draft.serviceFrontId??""} onChange={(event)=>patch({ serviceFrontId:event.target.value?Number(event.target.value):null })} onBlur={()=>touch("serviceFrontId")}><option value="">Selecione</option>{context.fronts.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></Field>
+            : <Field group label="Frente de serviço *" error={errorFor("serviceFrontId")} hint={frontChangeRequested&&draft.serviceFrontId!==equipment.serviceFrontId?`Cadastro do equipamento continua em ${equipment.front} até um gestor aprovar.`:undefined}>
+                <div className="daily-front">
+                  <strong>{context.fronts.find((front)=>front.id===draft.serviceFrontId)?.name??equipment.front}</strong>
+                  {frontChangeRequested&&draft.serviceFrontId!==equipment.serviceFrontId ? <span className="daily-front-pending">Aguardando aprovação</span> : <small>Frente cadastrada do equipamento</small>}
+                  {!frontChangeOpen && <button type="button" className="secondary" onClick={()=>setFrontChangeOpen(true)}>{frontChangeRequested?"Alterar":"Mudar frente"}</button>}
+                </div>
+              </Field>}
           <Field label="Localização *" className="span-2" error={errorFor("location")}><input value={draft.location} onChange={(event)=>patch({ location:event.target.value })} onBlur={()=>touch("location")} placeholder="Fazenda, talhão, pátio..."/></Field>
           <Field label={`${readingLabel(unit)} inicial *`} error={errorFor("startReading")} hint={lastReading?.value!=null?`Sugerido: última leitura ${numberFormat.format(lastReading.value)} ${unitSuffix(unit)}${lastReading.date?` (${formatDay(lastReading.date)})`:""}. Pode alterar.`:undefined}>
             <input inputMode="decimal" value={draft.startReading} onChange={(event)=>patch({ startReading:event.target.value })} onBlur={()=>touch("startReading")}/>
@@ -250,6 +276,18 @@ function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Conte
           </Field>
         </div>
         {readingCheck?.worked!=null && <ReadingSummary check={readingCheck} unit={unit} start={parseDecimal(draft.startReading)} end={parseDecimal(draft.endReading)} lastReading={lastReading}/>}
+        {frontChangeOpen && equipment && <div className="fleet-order-editor daily-reveal daily-front-change">
+          <header><b>O equipamento não está em {equipment.front}?</b></header>
+          <p>Escolha a frente onde ele está. O seu registro já sai com a frente nova; o cadastro do equipamento só muda quando um gestor aprovar.</p>
+          <div className="fleet-form-grid">
+            <label className="daily-field">Frente onde o equipamento está *<select value={frontChangeRequested?String(draft.serviceFrontId??""):""} onChange={(event)=>{ const id=Number(event.target.value); if(!id)return; patch({ serviceFrontId:id }); setFrontChangeRequested(id!==equipment.serviceFrontId); }}><option value="">Selecione</option>{context.fronts.filter((front)=>front.id!==equipment.serviceFrontId).map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
+            <label className="daily-field span-2">Observação (opcional)<input value={frontChangeReason} maxLength={300} onChange={(event)=>setFrontChangeReason(event.target.value)} placeholder="Ex.: veio transferido na segunda-feira"/></label>
+          </div>
+          <div className="daily-front-actions">
+            <button type="button" className="secondary" onClick={()=>{ patch({ serviceFrontId:equipment.serviceFrontId }); setFrontChangeRequested(false); setFrontChangeReason(""); setFrontChangeOpen(false); }}>Manter {equipment.front}</button>
+            <button type="button" className="primary" disabled={!frontChangeRequested} onClick={()=>setFrontChangeOpen(false)}>Usar a frente nova</button>
+          </div>
+        </div>}
       </section>
 
       <section className="panel daily-card">
@@ -340,17 +378,52 @@ function YesNo({ value, onChange, error }:{ value:boolean|null; onChange:(value:
   </div>{error && <small className="daily-error">{error}</small>}</div>;
 }
 
-const describeEquipment=(item:EquipmentOption)=>`${item.prefix} · ${item.type}${item.model?` ${item.model}`:""}`;
+// Busca: ignora acentos, maiúsculas, espaços, pontos e hífens ("cm19", "CM-19" e "axor" acham o CM-19).
+const searchKey=(value:string|null|undefined)=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[\s.\-_/]+/g,"");
+const controlLabel=(unit:ReadingUnit)=>unit==="KM"?"KM":"Horímetro";
 
-function EquipmentPicker({ options, selected, onSelect, onBlur }:{ options:EquipmentOption[]; selected:EquipmentOption|null; onSelect:(item:EquipmentOption)=>void; onBlur:()=>void }) {
-  const [query,setQuery]=useState(selected?describeEquipment(selected):"");
+function IdentityCard({ user }:{ user:CurrentUser }) {
+  const initials=user.name.split(/\s+/).filter(Boolean).slice(0,2).map((part)=>part[0]).join("").toUpperCase();
+  return <div className="daily-identity"><b>{initials}</b><div><strong>{user.name}</strong><span>{[user.jobTitle??user.profileLabel,user.frontName].filter(Boolean).join(" · ")}</span></div></div>;
+}
+
+// Campo do equipamento: mostra o escolhido (com botão para trocar) e abre a busca por lupa.
+function EquipmentPicker({ options, selected, onSelect }:{ options:EquipmentOption[]; selected:EquipmentOption|null; onSelect:(item:EquipmentOption)=>void }) {
   const [open,setOpen]=useState(false);
-  const wrapper=useRef<HTMLDivElement>(null);
-  useEffect(()=>{ if(!open)setQuery(selected?describeEquipment(selected):""); },[selected,open]);
-  const filtered=useMemo(()=>{ const key=query.trim().toLocaleLowerCase("pt-BR"); const typing=!selected||query!==describeEquipment(selected); return (typing&&key?options.filter((item)=>`${item.prefix} ${item.type} ${item.brand} ${item.model} ${item.front}`.toLocaleLowerCase("pt-BR").includes(key)):options).slice(0,60); },[options,query,selected]);
-  return <div className="daily-picker" ref={wrapper} onBlur={(event)=>{ if(!wrapper.current?.contains(event.relatedTarget as Node)){ setOpen(false); onBlur(); } }}>
-    <input value={query} placeholder="Buscar por prefixo, tipo ou modelo..." onFocus={(event)=>{ setOpen(true); event.target.select(); }} onChange={(event)=>{ setQuery(event.target.value); setOpen(true); }}/>
-    {open && <ul role="listbox">{filtered.map((item)=><li key={item.id}><button type="button" className={item.id===selected?.id?"active":""} onMouseDown={(event)=>event.preventDefault()} onClick={()=>{ onSelect(item); setQuery(describeEquipment(item)); setOpen(false); }}><strong>{item.prefix}</strong><span>{item.type} {item.brand} {item.model}</span><small>{item.front}</small></button></li>)}{filtered.length===0 && <li className="daily-picker-empty">Nenhum equipamento encontrado.</li>}</ul>}
+  return <>
+    {selected
+      ? <div className="daily-equipment-card"><div><strong>{selected.prefix}</strong><span>{[selected.brand,selected.model].filter(Boolean).join(" ")||selected.type} · {controlLabel(selected.readingUnit)}</span><small>{selected.front}</small></div>
+          <button type="button" className="daily-search-button" onClick={()=>setOpen(true)} aria-label="Pesquisar outro equipamento"><span aria-hidden="true">⌕</span> Trocar</button></div>
+      : <button type="button" className="daily-search-trigger" onClick={()=>setOpen(true)}><span aria-hidden="true">⌕</span>Pesquisar equipamento por prefixo, código, modelo ou placa...</button>}
+    {open && <EquipmentSearchModal options={options} selectedId={selected?.id??null} close={()=>setOpen(false)} onSelect={(item)=>{ onSelect(item); setOpen(false); }}/>}
+  </>;
+}
+
+function EquipmentSearchModal({ options, selectedId, close, onSelect }:{ options:EquipmentOption[]; selectedId:number|null; close:()=>void; onSelect:(item:EquipmentOption)=>void }) {
+  const [query,setQuery]=useState("");
+  const [cursor,setCursor]=useState(0);
+  const listRef=useRef<HTMLUListElement>(null);
+  const sorted=useMemo(()=>[...options].sort((a,b)=>a.prefix.localeCompare(b.prefix,"pt-BR",{ numeric:true, sensitivity:"base" })),[options]);
+  const results=useMemo(()=>{ const key=searchKey(query); return key?sorted.filter((item)=>[item.prefix,item.code,item.brand,item.model,item.plate,item.type].some((field)=>searchKey(field).includes(key))):sorted; },[sorted,query]);
+  useEffect(()=>{ setCursor(0); },[query]);
+  useEffect(()=>{ listRef.current?.querySelector(`[data-index="${cursor}"]`)?.scrollIntoView({ block:"nearest" }); },[cursor]);
+  function onKey(event:React.KeyboardEvent<HTMLInputElement>) {
+    if(event.key==="ArrowDown"){ event.preventDefault(); setCursor((value)=>Math.min(value+1,results.length-1)); }
+    else if(event.key==="ArrowUp"){ event.preventDefault(); setCursor((value)=>Math.max(value-1,0)); }
+    else if(event.key==="Enter"){ event.preventDefault(); if(results[cursor])onSelect(results[cursor]); }
+    else if(event.key==="Escape"){ event.preventDefault(); close(); }
+  }
+  // Janela presa ao topo da tela: no celular a lista fica acima do teclado, nunca escondida por ele.
+  return <div className="daily-search-backdrop" role="presentation" onMouseDown={(event)=>{ if(event.target===event.currentTarget)close(); }}>
+    <div className="daily-search-modal" role="dialog" aria-modal="true" aria-label="Pesquisar equipamento">
+      <div className="daily-search-bar"><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} onKeyDown={onKey} placeholder="Prefixo, código, modelo ou placa" autoComplete="off" enterKeyHint="search"/><button type="button" onClick={close} aria-label="Fechar">×</button></div>
+      <ul ref={listRef} role="listbox">
+        {results.map((item,index)=><li key={item.id} data-index={index}><button type="button" role="option" aria-selected={index===cursor} className={`${index===cursor?"cursor":""} ${item.id===selectedId?"selected":""}`} onMouseEnter={()=>setCursor(index)} onClick={()=>onSelect(item)}>
+          <strong>{item.prefix}</strong><span>{[item.code!==item.prefix?item.code:null,[item.brand,item.model].filter(Boolean).join(" ")||item.type,item.plate,item.front].filter(Boolean).join(" · ")}</span>
+        </button></li>)}
+        {results.length===0 && <li className="daily-picker-empty">Nenhum equipamento encontrado para &quot;{query}&quot;.</li>}
+      </ul>
+    </div>
   </div>;
 }
 
@@ -377,7 +450,7 @@ function PhotoField({ label, photo, onChange, error, existingUrl, onRemoveExisti
 // Cálculo do trabalhado no período, com cor conforme a regra de leitura plausível.
 function ReadingSummary({ check, unit, start, end, lastReading, big }:{ check:ReadingCheck; unit:ReadingUnit; start:number|null; end:number|null; lastReading:LastReading|null; big?:boolean }) {
   const suffix=unitSuffix(unit);
-  const tone=check.level==="INVALID"?"invalid":check.level==="HIGH"?"high":check.level==="ZERO"?"zero":"ok";
+  const tone=check.level==="INVALID"?"invalid":check.level==="HIGH"||check.level==="LOW"?"high":check.level==="ZERO"?"zero":"ok";
   return <div className={`daily-reading-check ${tone} ${big?"big":""}`} role={check.level==="OK"?undefined:"alert"}>
     <dl>
       <div><dt>{lastReading?.value!=null?"Última leitura":"Leitura inicial"}</dt><dd>{lastReading?.value!=null?<>{numberFormat.format(lastReading.value)} {suffix}{lastReading.date?<small> · em {formatDay(lastReading.date)}</small>:null}</>:<>{numberFormat.format(start??0)} {suffix}</>}</dd></div>
@@ -395,7 +468,7 @@ function ReviewModal({ draft, equipment, fronts, unit, readingCheck, lastReading
   problemPhoto:Photo|null; productionPhoto:Photo|null; busy:boolean; close:()=>void; confirm:(confirmUnusualReading:boolean)=>void;
 }) {
   // Leitura fora do plausível: exige um segundo toque em "Confirmar mesmo assim".
-  const unusual=readingCheck?.level==="HIGH";
+  const unusual=readingCheck?.level==="HIGH"||readingCheck?.level==="LOW";
   const [armed,setArmed]=useState(false);
   const start=parseDecimal(draft.startReading),end=parseDecimal(draft.endReading);
   const count=Number(draft.fuelingCount||0),trips=draft.trips.slice(0,Number(draft.tripCount||0));
@@ -484,7 +557,7 @@ function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mi
         <dl>
           {scope==="all" && <div><dt>Operador</dt><dd>{record.operator}</dd></div>}
           {!record.workedToday ? <div className="wide"><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div> : <>
-            <div><dt>Frente / local</dt><dd>{record.front??"—"} · {record.location}</dd></div>
+            <div><dt>Frente / local</dt><dd>{record.front??"—"} · {record.location}{record.frontRequestStatus==="PENDING" && <span className="daily-front-pending small">Aguardando aprovação</span>}</dd></div>
             <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div>
             <div><dt>Abastecimentos</dt><dd>{record.fuelings.length?record.fuelings.map((item)=>`${numberFormat.format(item.liters)} L (${item.location})`).join(", "):"Nenhum"}</dd></div>
             {record.inactiveOrProblem && <div className="wide"><dt>Problema</dt><dd>{record.problemReason}{record.hasProblemPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=problem`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}

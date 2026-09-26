@@ -79,6 +79,7 @@ const BOOLEAN_COLUMNS = [
   "automatic_enabled",
   "authorized_regression",
   "is_primary_admin",
+  "success",
 ];
 
 // Casa também quando a coluna vem com prefixo de tabela (e.oil_change_enabled=1).

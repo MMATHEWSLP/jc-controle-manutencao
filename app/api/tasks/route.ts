@@ -1,4 +1,4 @@
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../../../db";
 import { tasks, users } from "../../../db/schema";
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
     const tree = roots.map((row) => serializeNode(row, childrenByParent, graph, viewer, everAssigneeIds, hasEditPermission));
 
     const db = await getDb();
-    const activeUsers = await db.select({ id: users.id, name: users.name, taskRoleId: users.taskRoleId }).from(users).where(eq(users.status, "ACTIVE")).orderBy(asc(users.name));
+    const activeUsers = await db.select({ id: users.id, name: users.name, taskRoleId: users.taskRoleId }).from(users).where(and(eq(users.status, "ACTIVE"), ne(users.role, "CAMPO"))).orderBy(asc(users.name));
     const root = isRootRole(graph, viewer.taskRoleId);
     // Só pode ser escolhido como responsável quem pertence a um cargo para o qual o cargo atual
     // do criador tem permissão de envio (ou o criador é o cargo raiz) — seção 10 do spec.

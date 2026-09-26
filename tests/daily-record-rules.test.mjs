@@ -99,3 +99,16 @@ test("leitura plausível: normal, zero, acima do limite, salto de 10x e menor qu
   assert.equal(invalid.level, "INVALID"); assert.match(invalid.message, /menor que a inicial/);
   assert.equal(daysBetween(null, "2026-09-26"), 1); assert.equal(daysBetween("2026-09-26", "2026-09-26"), 1);
 });
+
+test("média histórica: muito acima ou muito abaixo do normal do equipamento pede confirmação", async () => {
+  const { checkReading } = await import("../lib/daily-record-rules.ts");
+  const base = { unit: "HOURS", lastDate: "2026-09-25", recordDate: "2026-09-26", start: 1000 };
+  const history = { avgPerDay: 8, samples: 10 };
+  assert.equal(checkReading({ ...base, end: 1009, history }).level, "OK", "9 h com média de 8 h");
+  const high = checkReading({ ...base, end: 1021, history });
+  assert.equal(high.level, "HIGH"); assert.match(high.message, /acima do normal.*média é 8 h\/dia/);
+  const low = checkReading({ ...base, end: 1001, history });
+  assert.equal(low.level, "LOW"); assert.match(low.message, /abaixo do normal/);
+  assert.equal(checkReading({ ...base, end: 1021, history: { avgPerDay: 8, samples: 3 } }).level, "OK", "poucos dias de histórico: não compara");
+  assert.equal(checkReading({ ...base, end: 1000, history }).level, "ZERO", "zero continua sendo aviso amarelo");
+});

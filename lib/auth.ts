@@ -4,6 +4,14 @@ import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, us
 
 export const SESSION_COOKIE = "maintenance_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
+// Funcionário de campo (perfil CAMPO) entra sem senha: sessão mais curta.
+export const FIELD_SESSION_SECONDS = 60 * 60 * 12;
+// ÚNICAS rotas de API que uma sessão CAMPO pode chamar. Qualquer outra responde 403 em
+// authorize(), mesmo que alguém tente chamar direto (não depende de esconder botão na tela).
+// AVISO DE SEGURANÇA: login sem senha = quem souber nome + código entra no lugar do colega.
+// Contrapartidas: bloqueio por tentativas (lib/field-auth.ts), código só em hash, sessão de
+// 12 h, acesso restrito a estas rotas e todo registro guarda quem lançou.
+const FIELD_ALLOWED_API = ["/api/daily-records", "/api/auth/", "/api/ping"];
 // Cloudflare Workers Web Crypto accepts PBKDF2 iteration counts up to 100,000.
 // Keep the maximum supported cost so hashing works identically in production.
 const PASSWORD_ITERATIONS = 100_000;
@@ -53,6 +61,8 @@ export const PERMISSION_GROUPS = [
     ["daily.register","Registrar o Controle Diário do equipamento que opera"],
     ["daily.view_all","Visualizar os registros diários de todos os operadores (das frentes que enxerga)"],
     ["daily.manage","Editar e excluir registros do Controle Diário (das frentes que enxerga)"],
+    ["daily.field_operators","Cadastrar funcionários de campo (login por nome + código)"],
+    ["daily.front_requests","Aprovar ou recusar solicitações de mudança de frente"],
   ]},
   { label:"Solicitação de Materiais", items:[
     ["materials.view","Visualizar solicitações de materiais"],
@@ -91,7 +101,7 @@ export const PERMISSION_GROUPS = [
 
 export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((group) => group.items.map(([key]) => key));
 export type Permission = typeof ALL_PERMISSIONS[number];
-export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO";
+export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO" | "CAMPO";
 
 // REGRA DO PROJETO (pedido explícito do administrador): ao criar uma função/permissão nova,
 // NUNCA adicione a chave nos arrays de OFICINA/OPERADOR/ALMOXARIFADO (perfis de funcionário)
@@ -102,9 +112,11 @@ export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFAD
 // removido por pedido explícito — quem precisar, o administrador libera individualmente.
 export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
-  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","products.view","products.create","products.edit","suppliers.view","suppliers.create","suppliers.edit"],
+  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","products.view","products.create","products.edit","suppliers.view","suppliers.create","suppliers.edit","daily.field_operators","daily.front_requests"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
+  // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados).
+  CAMPO:["daily.register"],
   ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","products.view","suppliers.view"],
 };
 
@@ -131,6 +143,7 @@ export type SessionUser = {
   // não a `serviceFrontId`, conforme o que foi salvo; frentesVisiveis() é quem decide o resultado.
   serviceFrontIds:number[];
   canExport:boolean;
+  jobTitle:string|null;
 };
 
 function bytesToBase64Url(bytes:Uint8Array) {
@@ -203,20 +216,20 @@ export function assertSameOrigin(request:Request) {
   );
 }
 
-export function sessionCookie(token:string) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_SECONDS}`;
+export function sessionCookie(token:string,seconds=SESSION_SECONDS) {
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${seconds}`;
 }
 
 export function clearSessionCookie() {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 }
 
-export async function createSession(userId:number) {
+export async function createSession(userId:number,seconds=SESSION_SECONDS) {
   const tokenBytes=new Uint8Array(32);
   crypto.getRandomValues(tokenBytes);
   const token=bytesToBase64Url(tokenBytes);
   const now=new Date();
-  const expires=new Date(now.getTime()+SESSION_SECONDS*1000).toISOString();
+  const expires=new Date(now.getTime()+seconds*1000).toISOString();
   const db=await getDb();
   await db.insert(userSessions).values({id:crypto.randomUUID(),userId,tokenHash:await tokenHash(token),expiresAt:expires,lastSeenAt:now.toISOString()});
   return token;
@@ -231,6 +244,7 @@ export async function destroySession(request:Request) {
 
 export async function effectivePermissions(userId:number,profile:Profile) {
   if(profile==="ADMIN")return [...ALL_PERMISSIONS];
+  if(profile==="CAMPO")return [...PROFILE_DEFAULTS.CAMPO];
   const db=await getDb();
   const overrides=await db.select({permission:userPermissions.permission,enabled:userPermissions.enabled}).from(userPermissions).where(eq(userPermissions.userId,userId));
   const values=new Set<Permission>(PROFILE_DEFAULTS[profile]??[]);
@@ -255,7 +269,7 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
     id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,taskRoleId:users.taskRoleId,status:users.status,
     theme:users.theme,isPrimaryAdmin:users.isPrimaryAdmin,lastAccessAt:users.lastAccessAt,createdAt:users.createdAt,
     serviceFrontId:users.serviceFrontId,serviceFrontName:serviceFronts.name,
-    allServiceFronts:users.allServiceFronts,canExport:users.canExport,
+    allServiceFronts:users.allServiceFronts,canExport:users.canExport,jobTitle:users.jobTitle,
   }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(and(eq(userSessions.tokenHash,await tokenHash(token)),gt(userSessions.expiresAt,new Date().toISOString()))).limit(1);
   const row=rows[0];
   if(!row||row.status!=="ACTIVE"||!row.username)return null;
@@ -266,6 +280,11 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
 export async function authorize(request:Request,permission?:Permission) {
   const user=await getSessionUser(request);
   if(!user)return {user:null,response:Response.json({error:"Sessão não autenticada."},{status:401})};
+  if(user.profile==="CAMPO"){
+    const pathname=new URL(request.url).pathname;
+    if(!FIELD_ALLOWED_API.some((prefix)=>pathname===prefix||pathname.startsWith(prefix.endsWith("/")?prefix:`${prefix}/`)))
+      return {user:null,response:Response.json({error:"Acesso de campo permite apenas o Controle Diário."},{status:403})};
+  }
   if(permission&&!user.permissions.includes(permission))return {user:null,response:Response.json({error:"Você não possui permissão para esta ação."},{status:403})};
   return {user,response:null};
 }
@@ -321,5 +340,5 @@ export function publicUser(user:SessionUser) {
 }
 
 export function profileLabel(profile:Profile) {
-  return profile==="ADMIN"?"Administrador":profile==="GESTOR"?"Gestor":profile==="OFICINA"?"Manutenção / Oficina":profile==="OPERADOR"?"Operador":"Operador";
+  return profile==="CAMPO"?"Funcionário de campo":profile==="ADMIN"?"Administrador":profile==="GESTOR"?"Gestor":profile==="OFICINA"?"Manutenção / Oficina":profile==="OPERADOR"?"Operador":"Operador";
 }

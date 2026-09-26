@@ -1,6 +1,7 @@
 import { getD1 } from "../../../../db";
 import { assertSameOrigin,authorize } from "../../../../lib/auth";
 import { allowedEquipmentIds,equipmentAccessResponse,requireEquipmentAccess } from "../../../../lib/front-scope";
+import { transferEquipment,TransferError } from "../../../../lib/equipment-transfer";
 
 type Row=Record<string,unknown>;
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -32,22 +33,7 @@ export async function POST(request:Request){
     const body=await request.json() as Record<string,unknown>;const equipmentId=Number(body.equipmentId);const newServiceFrontId=Number(body.newServiceFrontId);const expectedFrontId=body.currentServiceFrontId==null?null:Number(body.currentServiceFrontId);
     if(!Number.isInteger(equipmentId)||equipmentId<=0||!Number.isInteger(newServiceFrontId)||newServiceFrontId<=0)return Response.json({error:"Selecione o equipamento e a nova frente."},{status:400});
     const d1=await getD1();await requireEquipmentAccess(d1,auth.user!,equipmentId,"MANAGEMENT");
-    const [equipment,front]=await Promise.all([
-      d1.prepare(`SELECT e.id,e.prefix,e.service_front_id,sf.name AS current_front FROM equipment e LEFT JOIN service_fronts sf ON sf.id=e.service_front_id WHERE e.id=?`).bind(equipmentId).first<Row>(),
-      d1.prepare(`SELECT id,name FROM service_fronts WHERE id=? AND active=1`).bind(newServiceFrontId).first<Row>(),
-    ]);
-    if(!equipment)return Response.json({error:"Equipamento não encontrado."},{status:404});if(!front)return Response.json({error:"A frente de destino não existe ou está inativa."},{status:400});
-    const currentFrontId=equipment.service_front_id==null?null:Number(equipment.service_front_id);const currentFront=equipment.current_front==null?"Sem frente definida":String(equipment.current_front);
-    if(expectedFrontId!==null&&expectedFrontId!==currentFrontId)return Response.json({error:"A frente atual do equipamento mudou. Atualize a lista antes de transferir."},{status:409});
-    if(currentFrontId===newServiceFrontId)return Response.json({error:`O equipamento já pertence à frente ${String(front.name)}.`},{status:409});
-    const now=new Date().toISOString();const transferId=crypto.randomUUID();const note=clean(body.note)||null;
-    await d1.batch([
-      d1.prepare(`INSERT INTO equipment_transfers (id,equipment_id,previous_service_front_id,new_service_front_id,transferred_at,transferred_by,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-        .bind(transferId,equipmentId,currentFrontId,newServiceFrontId,now,auth.user!.id,note,now,now),
-      d1.prepare(`UPDATE equipment SET service_front_id=?,updated_at=? WHERE id=? AND service_front_id IS NOT DISTINCT FROM ?`).bind(newServiceFrontId,now,equipmentId,currentFrontId),
-      d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
-        .bind(auth.user!.id,"EQUIPMENT",String(equipmentId),"EQUIPMENT_TRANSFERRED",JSON.stringify({serviceFrontId:currentFrontId,front:currentFront}),JSON.stringify({serviceFrontId:newServiceFrontId,front:String(front.name),note}),now),
-    ]);
-    return Response.json({message:`${String(equipment.prefix)} transferido de ${currentFront} para ${String(front.name)}.`,transfer:{id:transferId,equipmentId,previousServiceFrontId:currentFrontId,newServiceFrontId,previousFront:currentFront,newFront:String(front.name),transferredAt:now,responsible:auth.user!.name,note}});
-  }catch(error){const access=equipmentAccessResponse(error);if(access)return access;const message=error instanceof Error?error.message:"";if(message.includes("EQUIPMENT_FRONT_CHANGED"))return Response.json({error:"A frente atual do equipamento mudou. Atualize a lista e tente novamente."},{status:409});console.error("[equipment-transfers.post]",error);return Response.json({error:"A transferência não foi concluída. Nenhuma alteração parcial foi mantida."},{status:500});}
+    const result=await transferEquipment(d1,auth.user!.id,{equipmentId,newServiceFrontId,expectedFrontId,note:clean(body.note)||null});
+    return Response.json({message:result.message,transfer:{...result.transfer,responsible:auth.user!.name}});
+  }catch(error){const access=equipmentAccessResponse(error);if(access)return access;if(error instanceof TransferError)return Response.json({error:error.message},{status:error.status});const message=error instanceof Error?error.message:"";if(message.includes("EQUIPMENT_FRONT_CHANGED"))return Response.json({error:"A frente atual do equipamento mudou. Atualize a lista e tente novamente."},{status:409});console.error("[equipment-transfers.post]",error);return Response.json({error:"A transferência não foi concluída. Nenhuma alteração parcial foi mantida."},{status:500});}
 }

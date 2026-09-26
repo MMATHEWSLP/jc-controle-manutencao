@@ -9,7 +9,9 @@ import { canManage, canRegister, canViewAll, loadAssignment, loadEquipmentOption
 export async function GET(request: Request) {
   const auth = await authorize(request); if (auth.response) return auth.response;
   const user = auth.user!;
-  if (!canRegister(user) && !canViewAll(user)) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
+  const canFieldOperators = user.permissions.includes("daily.field_operators");
+  const canFrontRequests = user.permissions.includes("daily.front_requests");
+  if (!canRegister(user) && !canViewAll(user) && !canFieldOperators && !canFrontRequests) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
     const db = await getDb();
     const [equipment, fronts, assignedEquipmentId] = await Promise.all([
@@ -21,7 +23,7 @@ export async function GET(request: Request) {
       equipment, fronts,
       assignedEquipmentId: equipment.some((item) => item.id === assignedEquipmentId) ? assignedEquipmentId : null,
       defaultServiceFrontId: user.serviceFrontId,
-      userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user), canManage: canManage(user),
+      userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user), canManage: canManage(user), canFieldOperators, canFrontRequests,
     });
   } catch (error) {
     console.error("[daily-records.context]", error);

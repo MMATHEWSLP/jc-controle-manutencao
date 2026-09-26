@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { taskRoleConnections, taskRoles, users } from "../../../../db/schema";
 import { authorize } from "../../../../lib/auth";
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     const db = await getDb();
     const [roleRows, userCounts, connectionRows] = await Promise.all([
       db.select().from(taskRoles).orderBy(asc(taskRoles.visualOrder)),
-      db.select({ taskRoleId: users.taskRoleId, count: sql<number>`count(*)::int` }).from(users).where(eq(users.status, "ACTIVE")).groupBy(users.taskRoleId),
+      db.select({ taskRoleId: users.taskRoleId, count: sql<number>`count(*)::int` }).from(users).where(and(eq(users.status, "ACTIVE"), ne(users.role, "CAMPO"))).groupBy(users.taskRoleId),
       db.select().from(taskRoleConnections),
     ]);
     const countByRole = new Map(userCounts.filter((row) => row.taskRoleId !== null).map((row) => [row.taskRoleId as number, row.count]));
