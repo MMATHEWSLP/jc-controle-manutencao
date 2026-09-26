@@ -6,12 +6,13 @@ import {
   emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
   type DailyRecordDraft, type ProductionType, type ReadingUnit,
 } from "../lib/daily-record-rules";
+import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
 
 type EquipmentOption = { id:number; prefix:string; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
 type Front = { id:number; name:string };
-type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; canRegister:boolean; canViewAll:boolean };
-type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|null; date:string|null };
+type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean };
+type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null };
 type RecordItem = {
   id:number; recordDate:string; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
@@ -49,6 +50,7 @@ export default function DailyControlView({ flash }:{ flash:(message:string)=>voi
       {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>setTab("mine")}>Meus registros</button>}
       {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>setTab("all")}>Todos os registros</button>}
     </div>
+    {context.canRegister && <PendingQueue userId={context.userId}/>}
     {tab==="new" && context.canRegister ? <DailyForm context={context} flash={flash} onSent={()=>setTab("mine")}/> : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment}/>}
   </>;
 }
@@ -79,12 +81,21 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
   useEffect(()=>{
     if(!draft.equipmentId){ setLastReading(null); return; }
     let cancelled=false;
-    api<LastReading>(`/api/daily-records/last-reading?equipmentId=${draft.equipmentId}`).then((result)=>{
+    const equipmentId=draft.equipmentId;
+    Promise.all([
+      api<LastReading>(`/api/daily-records/last-reading?equipmentId=${equipmentId}`).catch(()=>null),
+      listQueued(context.userId).catch(()=>[] as QueuedDailyRecord[]),
+    ]).then(([fetched,queued])=>{
+      // Registros ainda na fila do celular (sem internet) também contam como "última leitura".
+      const pendingItem=queued.filter((item)=>item.summary.equipmentId===equipmentId&&item.summary.endReading!==null).sort((a,b)=>(b.summary.endReading??0)-(a.summary.endReading??0))[0];
+      const result:LastReading|null=pendingItem&&(fetched?.value==null||pendingItem.summary.endReading!>fetched.value)
+        ?{ value:pendingItem.summary.endReading, unit:fetched?.unit??"HOURS", source:"QUEUE", date:pendingItem.summary.recordDate }:fetched;
       if(cancelled)return; setLastReading(result);
+      if(!result)return;
       setDraft((current)=>({ ...current, startReading:result.value===null?"":String(result.value).replace(".",",") }));
-    }).catch(()=>{ if(!cancelled)setLastReading(null); });
+    });
     return ()=>{ cancelled=true; };
-  },[draft.equipmentId,readingNonce]);
+  },[draft.equipmentId,readingNonce,context.userId]);
 
   function selectEquipment(item:EquipmentOption) {
     if(item.id===draft.equipmentId)return;
@@ -104,20 +115,39 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
   const errorFor=(field:string)=>(showAll||touched.has(field))?validation.errors[field]:undefined;
   const pending=Object.values(validation.errors);
 
+  function resetAfterSend() {
+    setPhoto("problem",null); setPhoto("production",null);
+    setDraft(blankDraft(localToday(),draft.equipmentId,draft.serviceFrontId));
+    setTouched(new Set()); setShowAll(false); setReviewing(false); setFromMemory(true); setReadingNonce((value)=>value+1);
+    onSent();
+  }
+
   async function send() {
     if(!validation.value)return;
     setBusy(true); setSubmitError("");
+    const payload=JSON.stringify(draft);
+    const problemBlob=draft.workedToday&&draft.inactiveOrProblem&&problemPhoto?problemPhoto.blob:null;
+    const productionBlob=draft.workedToday&&draft.hadProduction&&productionPhoto?productionPhoto.blob:null;
+    // Sem sinal: guarda no celular (com as fotos) e envia sozinho quando a internet voltar.
+    const saveOnPhone=async()=>{
+      await enqueue({ userId:context.userId, payload, problemPhoto:problemBlob, productionPhoto:productionBlob,
+        summary:{ prefix:equipment?.prefix??"", recordDate:draft.recordDate, equipmentId:draft.equipmentId, endReading:draft.workedToday?parseDecimal(draft.endReading):null } });
+      flash("Sem internet: registro salvo no celular. Ele será enviado automaticamente quando o sinal voltar.");
+      resetAfterSend();
+    };
     try {
+      if(typeof navigator!=="undefined"&&!navigator.onLine){ await saveOnPhone(); return; }
       const form=new FormData();
-      form.set("payload",JSON.stringify(draft));
-      if(draft.workedToday&&draft.inactiveOrProblem&&problemPhoto)form.set("problemPhoto",problemPhoto.blob,"problema.webp");
-      if(draft.workedToday&&draft.hadProduction&&productionPhoto)form.set("productionPhoto",productionPhoto.blob,"producao.webp");
-      const result=await api<{message:string}>("/api/daily-records",{ method:"POST", body:form });
-      flash(result.message);
-      setPhoto("problem",null); setPhoto("production",null);
-      setDraft(blankDraft(localToday(),draft.equipmentId,draft.serviceFrontId));
-      setTouched(new Set()); setShowAll(false); setReviewing(false); setFromMemory(true); setReadingNonce((value)=>value+1);
-      onSent();
+      form.set("payload",payload);
+      if(problemBlob)form.set("problemPhoto",problemBlob,"problema.webp");
+      if(productionBlob)form.set("productionPhoto",productionBlob,"producao.webp");
+      let response:Response;
+      try { response=await fetch("/api/daily-records",{ method:"POST", body:form }); }
+      catch { await saveOnPhone(); return; }
+      const result=await response.json().catch(()=>({})) as { message?:string; error?:string };
+      if(!response.ok)throw new Error(result.error??"Não foi possível enviar o registro.");
+      flash(result.message??"Controle Diário enviado.");
+      resetAfterSend();
     } catch(problem) { setSubmitError(problem instanceof Error?problem.message:"Não foi possível enviar o registro."); setReviewing(false); }
     finally { setBusy(false); }
   }
@@ -300,6 +330,26 @@ function ReviewModal({ draft, equipment, fronts, unit, problemPhoto, productionP
     </div>
     <footer><button type="button" onClick={close} disabled={busy}>Voltar e editar</button><button type="button" className="primary" onClick={confirm} disabled={busy}>{busy?"ENVIANDO...":"CONFIRMAR ENVIO"}</button></footer>
   </div></div>;
+}
+
+// Registros guardados no celular aguardando internet (e os que o servidor recusou).
+function PendingQueue({ userId }:{ userId:number }) {
+  const [items,setItems]=useState<QueuedDailyRecord[]>([]);
+  const [syncing,setSyncing]=useState(false);
+  useEffect(()=>{
+    const refresh=()=>{ listQueued(userId).then(setItems).catch(()=>setItems([])); };
+    refresh(); window.addEventListener(QUEUE_EVENT,refresh);
+    return ()=>window.removeEventListener(QUEUE_EVENT,refresh);
+  },[userId]);
+  if(!items.length)return null;
+  async function retry(){ setSyncing(true); try{ await syncQueue(); } finally { setSyncing(false); } }
+  return <section className="panel daily-queue">
+    <header><div><strong>Guardados no celular</strong><span>Serão enviados automaticamente quando houver internet.</span></div><button type="button" className="secondary" disabled={syncing} onClick={retry}>{syncing?"Enviando...":"Enviar agora"}</button></header>
+    <ul>{items.map((item)=><li key={item.id} className={item.status==="ERROR"?"error":""}>
+      <strong>{item.summary.prefix}</strong><span>{formatDay(item.summary.recordDate)}</span>
+      {item.status==="ERROR"?<><small>Não enviado: {item.error}</small><button type="button" className="danger-action" onClick={()=>{ if(window.confirm("Descartar este registro guardado no celular?"))removeQueued(item.id); }}>Descartar</button></>:<small>Aguardando envio</small>}
+    </li>)}</ul>
+  </section>;
 }
 
 // ---------------------------------------------------------------------------

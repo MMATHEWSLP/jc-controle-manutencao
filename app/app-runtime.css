@@ -1,0 +1,13 @@
+/* Avisos do app instalável (sem internet / instalar). */
+.app-offline-banner{pointer-events:none;position:fixed;z-index:1200;left:50%;bottom:14px;transform:translateX(-50%);width:min(620px,calc(100vw - 24px));display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:10px;background:#3b2a08;color:#fbe7b5;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:11px;line-height:1.35}
+.app-offline-banner strong{flex:none;color:#ffd166;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.app-offline-banner.syncing{background:#0e2a1c;color:#c9f0dc}.app-offline-banner.syncing strong{color:#4ade80}
+.app-install-hint{position:fixed;z-index:1150;left:50%;bottom:14px;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 14px 40px rgba(8,27,40,.2)}
+.app-install-hint img{flex:none;border-radius:9px;border:1px solid var(--line)}
+.app-install-hint div{flex:1;display:grid;gap:2px}
+.app-install-hint strong{color:var(--ink);font-size:12px}.app-install-hint span{color:var(--muted);font-size:10px}
+.app-install-hint .primary{min-height:36px;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:900}
+.app-install-close{border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.app-offline-banner~.app-install-hint{display:none}
+/* Reserva espaço no fim da página para o aviso fixo nunca cobrir botões (ex.: Revisar e Enviar). */
+body:has(.app-offline-banner),body:has(.app-install-hint){padding-bottom:96px}

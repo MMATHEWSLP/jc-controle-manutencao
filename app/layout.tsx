@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./qr-admin.css";
@@ -6,6 +6,8 @@ import "./fleet-status.css";
 import "./materials-tasks.css";
 import "./task-roles.css";
 import "./daily-control.css";
+import "./app-runtime.css";
+import AppRuntime from "./AppRuntime";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,10 +37,18 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+    apple: "/apple-touch-icon.png",
   },
+  appleWebApp: { capable: true, title: "JC Sistema", statusBarStyle: "default" },
   other: {
     "codex-preview": "development",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0b2942",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -52,6 +62,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <AppRuntime />
       </body>
     </html>
   );

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
       equipment, fronts,
       assignedEquipmentId: equipment.some((item) => item.id === assignedEquipmentId) ? assignedEquipmentId : null,
       defaultServiceFrontId: user.serviceFrontId,
-      canRegister: canRegister(user), canViewAll: canViewAll(user),
+      userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user),
     });
   } catch (error) {
     console.error("[daily-records.context]", error);

@@ -84,3 +84,12 @@ html[data-theme="dark"] .daily-picker li button:hover,html[data-theme="dark"] .d
 html[data-theme="dark"] .daily-hint{color:#7fcfa9}html[data-theme="dark"] .daily-error,html[data-theme="dark"] .daily-pending{color:#FF8A8A}
 html[data-theme="dark"] .daily-field.has-error input,html[data-theme="dark"] .daily-field.has-error select,html[data-theme="dark"] .daily-field.has-error textarea{background:#3A1116}
 html[data-theme="dark"] .daily-review-list>div{border-color:#3a3833}
+/* Fila do celular (sem internet) */
+.daily-queue{display:grid;gap:10px;margin-bottom:14px;padding:14px 16px;border-color:#f0d49a;background:#fffaf0}
+.daily-queue header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.daily-queue header div{display:grid;gap:2px}.daily-queue header strong{color:#7a4b06;font-size:12px}.daily-queue header span{color:#8a6a33;font-size:10px}
+.daily-queue ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.daily-queue li{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:#fff;border:1px solid #f0e2c4;font-size:10px}
+.daily-queue li small{flex:1;color:#8a6a33}.daily-queue li.error{border-color:#efc1c5;background:#fff5f6}.daily-queue li.error small{color:#ad2834}
+html[data-theme="dark"] .daily-queue{background:#2a2213;border-color:#5a4520}html[data-theme="dark"] .daily-queue li{background:#201e1a;border-color:#4a3d25}
+html[data-theme="dark"] .daily-queue header strong{color:#ffd166}html[data-theme="dark"] .daily-queue header span,html[data-theme="dark"] .daily-queue li small{color:#d9c59a}
