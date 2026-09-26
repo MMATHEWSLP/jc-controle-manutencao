@@ -32,7 +32,7 @@ export async function PUT(request: Request, { params }: Context) {
     const { errors, value } = validateDailyRecord({ ...draft,
       hasProblemPhoto: Boolean(photos.problem) || (photos.keepProblem && Boolean(current.record.problemPhotoKey)),
       hasProductionPhoto: Boolean(photos.production) || (photos.keepProduction && Boolean(current.record.productionPhotoKey)),
-    }, new Date().toISOString().slice(0, 10));
+    }, new Date().toISOString().slice(0, 10), { requireOperatorName: Boolean(current.record.operatorName) });
     if (!value) return Response.json({ error: Object.values(errors)[0] ?? "Revise os campos do formulário.", fields: errors }, { status: 400 });
     if (value.workedToday) {
       const item = await requireEquipment(auth.user!, value.equipmentId);

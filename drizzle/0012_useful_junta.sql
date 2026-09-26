@@ -1,0 +1,1 @@
+ALTER TABLE "daily_records" ADD COLUMN "operator_name" text;

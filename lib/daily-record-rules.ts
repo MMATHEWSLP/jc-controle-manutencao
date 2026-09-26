@@ -27,6 +27,8 @@ export type DailyRecordDraft = {
   tripCount: string;
   trips: TripDraft[];
   notes: string;
+  // Lançamento manual (login padrão): nome do operador a quem o registro se refere.
+  operatorName?: string;
   hasProblemPhoto: boolean;
   hasProductionPhoto: boolean;
   // Operador confirmou (segundo toque) uma leitura fora do plausível — ver checkReading().
@@ -49,6 +51,7 @@ export type DailyRecordValue = {
   productionType: ProductionType | null;
   trips: Array<{ logs: number; meters: number | null }>;
   notes: string | null;
+  operatorName: string | null;
 };
 
 export const MAX_FUELINGS = 20;
@@ -108,7 +111,9 @@ const clean = (value: string | null | undefined) => String(value ?? "").trim();
  * ex.: "fuelings.0.liters") e, quando não há erro, o valor normalizado pronto para gravar.
  * `today` (YYYY-MM-DD) limita datas futuras — tolera 1 dia por causa de fuso horário.
  */
-export function validateDailyRecord(draft: DailyRecordDraft, today: string): { errors: Record<string, string>; value: DailyRecordValue | null } {
+// options.requireOperatorName: login padrão (ADMIN/GESTOR/usuário) precisa informar o nome do
+// operador; o funcionário de campo (login simplificado) não — o registro já é dele.
+export function validateDailyRecord(draft: DailyRecordDraft, today: string, options: { requireOperatorName?: boolean } = {}): { errors: Record<string, string>; value: DailyRecordValue | null } {
   const errors: Record<string, string> = {};
   if (!isIsoDate(draft.recordDate)) errors.recordDate = "Informe a data do registro.";
   else if (isIsoDate(today)) {
@@ -116,6 +121,8 @@ export function validateDailyRecord(draft: DailyRecordDraft, today: string): { e
     if (draft.recordDate > limit.toISOString().slice(0, 10)) errors.recordDate = "A data do registro não pode ser futura.";
   }
   if (!draft.equipmentId || !Number.isInteger(draft.equipmentId) || draft.equipmentId <= 0) errors.equipmentId = "Selecione o equipamento.";
+  const operatorName = options.requireOperatorName ? clean(draft.operatorName).replace(/\s+/g, " ").toUpperCase() : "";
+  if (options.requireOperatorName && operatorName.length < 3) errors.operatorName = "Informe o nome do operador deste registro.";
 
   if (!draft.workedToday) {
     if (!clean(draft.noWorkReason)) errors.noWorkReason = "Informe o motivo por não ter trabalhado.";
@@ -126,6 +133,7 @@ export function validateDailyRecord(draft: DailyRecordDraft, today: string): { e
         recordDate: draft.recordDate, equipmentId: draft.equipmentId!, workedToday: false, noWorkReason: clean(draft.noWorkReason),
         serviceFrontId: null, location: null, startReading: null, endReading: null, fuelings: [],
         inactiveOrProblem: false, problemReason: null, hadProduction: false, productionType: null, trips: [], notes: clean(draft.notes) || null,
+        operatorName: operatorName || null,
       },
     };
   }
@@ -179,7 +187,7 @@ export function validateDailyRecord(draft: DailyRecordDraft, today: string): { e
       serviceFrontId: draft.serviceFrontId, location: clean(draft.location), startReading: start, endReading: end, fuelings,
       inactiveOrProblem: draft.inactiveOrProblem === true, problemReason: draft.inactiveOrProblem ? clean(draft.problemReason) : null,
       hadProduction: draft.hadProduction === true, productionType: draft.hadProduction ? draft.productionType : null, trips,
-      notes: clean(draft.notes) || null,
+      notes: clean(draft.notes) || null, operatorName: operatorName || null,
     },
   };
 }

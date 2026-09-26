@@ -343,3 +343,40 @@ export function createProductsListPdf(input:ProductsListPdfInput){
   return buildPdf(pages);
 }
 import { PDF_LOGO_HEIGHT,PDF_LOGO_JPEG_BASE64,PDF_LOGO_WIDTH } from "./pdf-logo";
+
+// Histórico de Registros Diários (Controle Diário) — página deitada (A4 paisagem) para caber
+// as colunas da listagem: data, equipamento, operador, frente, trabalhado e status.
+export type DailyRecordPdfRow={date:string;equipment:string;operator:string;manual:boolean;front:string;worked:string;status:string};
+type DailyRecordsPdfInput={rows:DailyRecordPdfRow[];generatedAt:string;filters:string;total:number};
+
+export function createDailyRecordsPdf(input:DailyRecordsPdfInput){
+  const width=842,perPage=19;const pageCount=Math.max(1,Math.ceil(input.rows.length/perPage));
+  const columns:[number,string][]=[[46,"DATA"],[108,"EQUIPAMENTO"],[208,"OPERADOR"],[420,"FRENTE"],[540,"TRABALHADO"],[622,"STATUS"]];
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const rows=input.rows.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    content+=`1 1 1 rg 0 505 ${width} 90 re f\n`;content+=`0.16 0.48 0.66 rg 0 499 ${width} 6 re f\n`;content+=logo(36,527,88);
+    content+=text(136,563,9,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(136,540,16,"HISTÓRICO DE REGISTROS DIÁRIOS",true,"0.08 0.25 0.36");
+    content+=text(136,523,8,truncate(input.filters,120),false,"0.31 0.46 0.55");
+    content+=text(680,563,8,"GERADO EM",true,"0.31 0.46 0.55");content+=text(680,546,9,input.generatedAt,false,"0.08 0.25 0.36");
+    content+=`0.96 0.97 0.98 rg 36 457 ${width-72} 28 re f\n`;
+    content+=text(46,468,8,`REGISTROS: ${input.total}`,true,"0.15 0.27 0.36");content+=text(width-130,468,8,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.15 0.27 0.36");
+    content+=`0.11 0.35 0.49 rg 36 419 ${width-72} 25 re f\n`;
+    for(const [x,label] of columns)content+=text(x,428,7,label,true,"1 1 1");
+    if(rows.length===0)content+=text(260,370,12,"Nenhum registro encontrado para o período e filtros selecionados.",true,"0.33 0.47 0.55");
+    rows.forEach((row,index)=>{
+      const top=398-(index*19.5);if(index%2===0)content+=`0.965 0.975 0.98 rg 36 ${top-6} ${width-72} 19 re f\n`;
+      content+=text(46,top,7.5,row.date,true);
+      content+=text(108,top,7.5,truncate(row.equipment,18),true);
+      content+=text(208,top,7.5,truncate(row.operator,row.manual?30:40),false);
+      if(row.manual)content+=text(362,top,6,"(MANUAL)",true,"0.42 0.27 0.66");
+      content+=text(420,top,7.5,truncate(row.front,22),false);
+      content+=text(540,top,7.5,row.worked,true,"0.08 0.40 0.30");
+      content+=text(622,top,7,truncate(row.status,42),false,"0.15 0.27 0.36");
+      content+=`0.88 0.91 0.93 RG 0.35 w 36 ${top-6} m ${width-36} ${top-6} l S\n`;
+    });
+    content+=`0.86 0.90 0.92 RG 0.6 w 36 44 m ${width-36} 44 l S\n`;
+    content+=text(42,28,8,"Relatório gerado com os filtros aplicados na tela do Histórico. (MANUAL) = lançamento manual feito por login padrão em nome do operador.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages,{width,height:595});
+}

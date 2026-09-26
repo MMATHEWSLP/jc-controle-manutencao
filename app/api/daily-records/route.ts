@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     const production = form.get("productionPhoto");
     const photos = { problem: problem instanceof File && problem.size > 0 ? problem : null, production: production instanceof File && production.size > 0 ? production : null };
     const today = new Date().toISOString().slice(0, 10);
-    const { errors, value } = validateDailyRecord({ ...draft, hasProblemPhoto: Boolean(photos.problem), hasProductionPhoto: Boolean(photos.production) }, today);
+    // Login padrão (não é funcionário de campo): o nome do operador é digitado e obrigatório.
+    const { errors, value } = validateDailyRecord({ ...draft, hasProblemPhoto: Boolean(photos.problem), hasProductionPhoto: Boolean(photos.production) }, today, { requireOperatorName: auth.user!.profile !== "CAMPO" });
     if (!value) return Response.json({ error: Object.values(errors)[0] ?? "Revise os campos do formulário.", fields: errors }, { status: 400 });
     if (value.workedToday) {
       // Mesma regra de leitura plausível da tela: acima do limite só grava com a confirmação

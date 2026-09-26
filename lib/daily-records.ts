@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, lt, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFrontChangeRequests, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
@@ -161,7 +161,7 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
         serviceFrontId: value.serviceFrontId, location: value.location, readingUnit: item.readingUnit, startReading: value.startReading, endReading: value.endReading,
         inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
         hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, createdAt: now, updatedAt: now,
-        officialServiceFrontId: item.serviceFrontId,
+        officialServiceFrontId: item.serviceFrontId, operatorName: value.operatorName,
       }).returning({ id: dailyRecords.id });
       // Frente informada diferente da oficial = pedido de mudança de frente. O cadastro do
       // equipamento NÃO muda aqui: só quando ADMIN/GESTOR aprovar (lib/front-requests.ts).
@@ -307,6 +307,7 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
         serviceFrontId: value.serviceFrontId, location: value.location, readingUnit: item.readingUnit, startReading: value.startReading, endReading: value.endReading,
         inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
         hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, updatedAt: now,
+        operatorName: value.operatorName,
       }).where(eq(dailyRecords.id, recordId));
       await tx.delete(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId));
       await tx.delete(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId));
@@ -343,4 +344,15 @@ export async function deleteDailyRecord(user: SessionUser, recordId: number) {
   });
   await removePhoto(before.record.problemPhotoKey);
   await removePhoto(before.record.productionPhotoKey);
+}
+
+// Sugestões para o campo "Nome do operador" (lançamento manual): funcionários de campo ativos
+// e nomes já digitados antes — só ajuda a digitar, o campo continua livre.
+export async function loadOperatorSuggestions() {
+  const db = await getDb();
+  const [fieldUsers, typed] = await Promise.all([
+    db.select({ name: users.name }).from(users).where(and(eq(users.role, "CAMPO"), eq(users.status, "ACTIVE"))),
+    db.selectDistinct({ name: dailyRecords.operatorName }).from(dailyRecords).where(sql`${dailyRecords.operatorName} IS NOT NULL`).limit(500),
+  ]);
+  return [...new Set([...fieldUsers.map((row) => row.name), ...typed.map((row) => row.name ?? "")].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }

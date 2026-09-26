@@ -191,3 +191,62 @@ html[data-theme="dark"] .daily-equipment-card strong,html[data-theme="dark"] .da
 html[data-theme="dark"] .daily-search-button,html[data-theme="dark"] .daily-search-trigger{background:#252421;border-color:#45423d;color:#d8d5cf}
 html[data-theme="dark"] .daily-search-modal li button.cursor{background:#0E2A1C}
 html[data-theme="dark"] .daily-security-note{background:#2a2213;color:#ffd166}
+/* Lançamento manual (login padrão digitando o nome do operador) */
+.daily-identity.manual{border-color:#d9c6f0;background:#f7f2fd}.daily-identity.manual>b{background:#6b46a8}
+.daily-identity.manual strong{color:#3b2463}.daily-identity.manual span{color:#6a5591}
+.daily-manual-tag{display:inline-flex;align-items:center;width:max-content;padding:2px 8px;border-radius:10px;background:#efe6fb;color:#5b2ea6;font-size:10px;font-weight:900;letter-spacing:.02em}
+.daily-manual-tag.inline{margin-left:4px;vertical-align:middle}
+html[data-theme="dark"] .daily-identity.manual{background:#221a30;border-color:#4a3868}html[data-theme="dark"] .daily-identity.manual strong{color:#efe6fb}html[data-theme="dark"] .daily-manual-tag{background:#35264f;color:#d9c6f0}
+/* ---------- Histórico de Registros Diários ---------- */
+.daily-history-filters{display:grid;grid-template-columns:minmax(220px,2fr) repeat(2,minmax(130px,.8fr)) minmax(150px,1fr) minmax(170px,1.2fr);gap:10px;align-items:end;padding:13px 15px;border-bottom:1px solid var(--line);background:#f8fbfc}
+.daily-history-filters>label{display:grid;gap:0;color:#4a6272;font-size:9px;font-weight:800}
+.daily-history-search{position:relative}.daily-history-search>span{position:absolute;left:11px;bottom:11px;font-size:16px;color:#6b7d89}
+.daily-history-search input{padding-left:34px}
+.daily-history-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 15px;border-bottom:1px solid var(--line)}
+.daily-history-toolbar>span{color:var(--muted);font-size:11px}.daily-history-toolbar strong{color:var(--ink);font-size:13px}
+.daily-history-toolbar>div{display:flex;gap:8px}
+.daily-export{display:inline-flex;align-items:center;min-height:36px;padding:7px 16px;border-radius:8px;font-size:11px;font-weight:900;text-decoration:none}
+.daily-export.disabled{opacity:.4;pointer-events:none}
+.daily-history-list{display:grid;padding:6px 10px 12px}
+.daily-history-row{display:grid;grid-template-columns:78px minmax(90px,1fr) minmax(140px,1.6fr) minmax(90px,1fr) 88px minmax(150px,1.4fr) 40px;align-items:center;gap:10px;min-height:46px;padding:6px 8px;border-bottom:1px solid #edf1f3;font-size:12px;color:#304657;cursor:pointer}
+.daily-history-row.head{min-height:30px;cursor:default;color:#7d8e9a;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line)}
+.daily-history-item:hover .daily-history-row:not(.head),.daily-history-item.open .daily-history-row{background:#f4f9f7}
+.daily-history-row>span{min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
+.daily-history-row .date{font-weight:800;color:#1e394e}
+.daily-history-row .equipment{flex-direction:column;align-items:flex-start;gap:0}.daily-history-row .equipment strong{font-size:13px;color:#113b2c}.daily-history-row .equipment small{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.daily-history-row .operator{font-weight:700}
+.daily-history-row em{font-style:normal}
+.daily-history-row .worked{font-weight:900;color:#0d5c42}
+.daily-history-row .actions{justify-content:flex-end}
+.daily-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:900}
+.daily-chip.ok{background:#e7f6ef;color:#0d7455}.daily-chip.off{background:#eef1f3;color:#5b6f7f}.daily-chip.warn{background:#fff1e5;color:#9a3b00}.daily-chip.prod{background:#e6f0fa;color:#1b567e}
+.daily-icon-button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #cad8df;border-radius:8px;background:#fff;color:#1b567e;font-size:16px;cursor:pointer}
+.daily-history-detail{padding:10px 14px 12px;border-bottom:1px solid #edf1f3;background:#fbfdfc}
+.daily-history-detail dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 16px;margin:0}
+.daily-history-detail dl>div.wide{grid-column:1/-1}
+.daily-history-detail dt{color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}.daily-history-detail dd{margin:2px 0 0;font-size:12px;color:#304657}
+.daily-history-detail a{color:#0878bd;font-weight:800}
+.daily-load-more{justify-self:center;margin-top:12px;min-height:40px;padding:8px 18px;border-radius:8px;font-size:11px;font-weight:900}
+.daily-multiselect{position:relative;display:grid;color:#4a6272;font-size:9px;font-weight:800}
+.daily-multiselect-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:38px;margin-top:6px;padding:8px 10px;border:1px solid #dce3e7;border-radius:6px;background:#fff;color:#304657;font-size:11px;font-weight:700;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden}
+.daily-multiselect-panel{position:absolute;z-index:40;top:calc(100% + 4px);right:0;width:min(320px,90vw);padding:8px;border:1px solid #dce3e7;border-radius:10px;background:var(--surface);box-shadow:0 14px 34px rgba(8,27,40,.18)}
+.daily-multiselect-panel>input{margin:0 0 6px}
+.daily-multiselect-options{display:grid;max-height:260px;overflow:auto}
+.daily-multiselect-options label{display:flex;align-items:center;gap:8px;min-height:36px;padding:4px 6px;border-radius:6px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
+.daily-multiselect-options label:hover{background:#f1f6f8}.daily-multiselect-options input{width:auto;min-height:0;margin:0}
+.daily-multiselect-options p{margin:6px;color:var(--muted);font-size:11px}
+@media(max-width:1100px){.daily-history-filters{grid-template-columns:1fr 1fr}.daily-history-search{grid-column:1/-1}}
+/* Celular: cada registro em duas linhas dentro do mesmo cartão fino (sem voltar ao bloco grande). */
+@media(max-width:760px){
+  .daily-history-filters{grid-template-columns:1fr 1fr}.daily-multiselect{grid-column:1/-1}
+  .daily-history-row.head{display:none}
+  .daily-history-row{grid-template-columns:auto 1fr auto auto;grid-template-areas:"date equipment worked actions" "operator operator front front" "status status status status";gap:4px 10px;padding:9px 6px}
+  .daily-history-row .date{grid-area:date}.daily-history-row .equipment{grid-area:equipment}.daily-history-row .worked{grid-area:worked}.daily-history-row .actions{grid-area:actions}
+  .daily-history-row .operator{grid-area:operator;font-size:11px}.daily-history-row .front{grid-area:front;justify-content:flex-end;font-size:11px;color:var(--muted)}.daily-history-row .status{grid-area:status}
+  .daily-history-detail dl{grid-template-columns:1fr 1fr}
+}
+html[data-theme="dark"] .daily-history-filters{background:#1f1d19}
+html[data-theme="dark"] .daily-history-row{color:#d8d5cf;border-color:#33312d}html[data-theme="dark"] .daily-history-row .date,html[data-theme="dark"] .daily-history-row .equipment strong{color:var(--ink)}
+html[data-theme="dark"] .daily-history-item:hover .daily-history-row:not(.head),html[data-theme="dark"] .daily-history-item.open .daily-history-row{background:#23211d}
+html[data-theme="dark"] .daily-history-detail{background:#1c1b18;border-color:#33312d}html[data-theme="dark"] .daily-history-detail dd{color:#d8d5cf}
+html[data-theme="dark"] .daily-icon-button,html[data-theme="dark"] .daily-multiselect-trigger{background:#252421;border-color:#45423d;color:#d8d5cf}

@@ -315,6 +315,9 @@ export default function Home() {
         setTheme(result.user.theme);
     } }).catch(() => undefined).finally(() => setAuthLoading(false)); }, []);
     useEffect(() => { document.documentElement.dataset.theme = theme.toLowerCase(); window.localStorage.setItem("maintenance-theme", theme); }, [theme]);
+    // Link do Histórico do Controle Diário (?cd=historico&filtros...) abre direto na aba certa.
+    useEffect(() => { if (authUser && canDaily(authUser) && new URLSearchParams(window.location.search).get("cd"))
+        setActive("Controle Diário"); }, [authUser]);
     // Contador de solicitações de mudança de frente (aviso dentro do sistema para quem aprova).
     const [pendingFrontRequests, setPendingFrontRequests] = useState(0);
     useEffect(() => { if (!authUser || !can(authUser, "daily.front_requests"))

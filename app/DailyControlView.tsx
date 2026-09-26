@@ -14,17 +14,20 @@ import { FieldOperatorsPanel, FrontRequestsPanel } from "./DailyAdminPanels";
 type EquipmentOption = { id:number; prefix:string; code:string; plate:string|null; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
 export type CurrentUser = { name:string; jobTitle:string|null; profileLabel:string; frontName:string|null };
 type Front = { id:number; name:string };
-type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean; canFieldOperators:boolean; canFrontRequests:boolean };
+type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean; canFieldOperators:boolean; canFrontRequests:boolean;
+  isFieldUser:boolean; operatorSuggestions:string[]; accountName:string };
 type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null; history?:ReadingHistory|null };
 type RecordItem = {
   id:number; recordDate:string; equipmentId:number; serviceFrontId:number|null; userId:number; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
   hadProduction:boolean; productionType:ProductionType|null; hasProductionPhoto:boolean; notes:string|null;
   officialServiceFrontId:number|null; frontRequestStatus:"PENDING"|"APPROVED"|"REJECTED"|null;
+  // operatorName preenchido = lançamento manual (login padrão); accountName = conta que lançou.
+  operatorName:string|null; accountName:string; manualEntry:boolean; equipmentModel?:string|null; frontId?:number|null;
   fuelings:Array<{number:number;liters:number;location:string}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
-type Tab = "new" | "mine" | "all" | "fronts" | "operators";
+type Tab = "new" | "history" | "fronts" | "operators";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
@@ -44,7 +47,7 @@ export default function DailyControlView({ flash, currentUser }:{ flash:(message
   const [tab,setTab]=useState<Tab>("new");
   // Registro aberto para edição (somente com a permissão "daily.manage").
   const [editing,setEditing]=useState<RecordItem|null>(null);
-  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canRegister)setTab(result.canViewAll?"all":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"mine"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
+  const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(new URLSearchParams(window.location.search).get("cd")==="historico")setTab("history"); else if(!result.canRegister)setTab(result.canViewAll?"history":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"history"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
   useEffect(()=>{ load(); },[load]);
   // Contador de solicitações de frente pendentes (para quem aprova).
   const [pendingFronts,setPendingFronts]=useState(0);
@@ -57,17 +60,16 @@ export default function DailyControlView({ flash, currentUser }:{ flash:(message
     <div className="page-heading module-heading"><div><p className="eyebrow">OPERAÇÃO · REGISTRO DO DIA</p><h1>Controle Diário</h1><span>Registro diário do equipamento: leituras, abastecimentos, problemas e produção.</span></div></div>
     <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do Controle Diário">
       {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>{ setEditing(null); setTab("new"); }}>Novo registro</button>}
-      {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>{ setEditing(null); setTab("mine"); }}>Meus registros</button>}
-      {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>{ setEditing(null); setTab("all"); }}>Todos os registros</button>}
+      {(context.canRegister||context.canViewAll) && <button className={tab==="history"?"active":""} onClick={()=>{ setEditing(null); setTab("history"); }}>{context.canViewAll?"Histórico de registros":"Meus registros"}</button>}
       {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>{ setEditing(null); setTab("fronts"); }}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
       {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>{ setEditing(null); setTab("operators"); }}>Funcionários de campo</button>}
     </div>
     {context.canRegister && <PendingQueue userId={context.userId}/>}
     {editing ? <DailyForm key={`edit-${editing.id}`} context={context} currentUser={currentUser} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
-      : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("mine")}/>
+      : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("history")}/>
       : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
       : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
-      : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
+      : <HistoryPanel canManage={context.canManage} canViewAll={context.canViewAll} fronts={context.fronts} flash={flash} onEdit={setEditing}/>}
   </>;
 }
 
@@ -83,7 +85,7 @@ function draftFromRecord(record:RecordItem):DailyRecordDraft {
     inactiveOrProblem:record.workedToday?record.inactiveOrProblem:null, problemReason:record.problemReason??"",
     hadProduction:record.workedToday?record.hadProduction:null, productionType:record.productionType,
     tripCount:record.trips.length?String(record.trips.length):"", trips:record.trips.map((trip)=>({ logs:String(trip.logs), meters:decimal(trip.meters) })),
-    notes:record.notes??"", hasProblemPhoto:record.hasProblemPhoto, hasProductionPhoto:record.hasProductionPhoto,
+    notes:record.notes??"", hasProblemPhoto:record.hasProblemPhoto, hasProductionPhoto:record.hasProductionPhoto, operatorName:record.operatorName??"",
   };
 }
 
@@ -154,7 +156,9 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
     setter(photo);
   };
 
-  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto)||keepProblemPhoto, hasProductionPhoto:Boolean(productionPhoto)||keepProductionPhoto },localToday()),[draft,problemPhoto,productionPhoto,keepProblemPhoto,keepProductionPhoto]);
+  // Login padrão (ADMIN/GESTOR/usuário) não é o operador: o nome é digitado (lançamento manual).
+  const manualEntry=editing?Boolean(editing.operatorName):!context.isFieldUser;
+  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto)||keepProblemPhoto, hasProductionPhoto:Boolean(productionPhoto)||keepProductionPhoto },localToday(),{ requireOperatorName:manualEntry }),[draft,problemPhoto,productionPhoto,keepProblemPhoto,keepProductionPhoto,manualEntry]);
   const errorFor=(field:string)=>(showAll||touched.has(field))?validation.errors[field]:undefined;
   const pending=Object.values(validation.errors);
   const readingCheck=useMemo<ReadingCheck|null>(()=>{
@@ -237,7 +241,12 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
     <section className="panel daily-card">
       {editing
         ? <header className="daily-card-head daily-editing-head"><div><h3>Editando registro</h3><span>{editing.prefix} · {formatDay(editing.recordDate)} · lançado por {editing.operator}</span></div>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}</header>
-        : <IdentityCard user={currentUser}/>}
+        : <IdentityCard user={currentUser} manual={manualEntry}/>}
+      {manualEntry && <Field label="Nome do operador *" error={errorFor("operatorName")} hint="Quem operou o equipamento. O registro fica marcado como lançamento manual, feito pela sua conta.">
+        <input value={draft.operatorName??""} list="daily-operator-suggestions" autoComplete="off" autoCapitalize="characters" placeholder="Digite o nome do operador"
+          onChange={(event)=>patch({ operatorName:event.target.value })} onBlur={()=>touch("operatorName")}/>
+        <datalist id="daily-operator-suggestions">{context.operatorSuggestions.map((name)=><option key={name} value={name}/>)}</datalist>
+      </Field>}
       <div className="fleet-form-grid">
         <Field label="Data do registro *" error={errorFor("recordDate")}><input type="date" value={draft.recordDate} max={localToday()} onChange={(event)=>patch({ recordDate:event.target.value })} onBlur={()=>touch("recordDate")}/></Field>
         <Field group label="Equipamento (Frota) *" className="span-2" error={errorFor("equipmentId")} hint={fromMemory&&equipment?"Último equipamento que você usou — troque só se mudou de máquina.":undefined}>
@@ -382,9 +391,11 @@ function YesNo({ value, onChange, error }:{ value:boolean|null; onChange:(value:
 const searchKey=(value:string|null|undefined)=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[\s.\-_/]+/g,"");
 const controlLabel=(unit:ReadingUnit)=>unit==="KM"?"KM":"Horímetro";
 
-function IdentityCard({ user }:{ user:CurrentUser }) {
+function IdentityCard({ user, manual }:{ user:CurrentUser; manual?:boolean }) {
   const initials=user.name.split(/\s+/).filter(Boolean).slice(0,2).map((part)=>part[0]).join("").toUpperCase();
-  return <div className="daily-identity"><b>{initials}</b><div><strong>{user.name}</strong><span>{[user.jobTitle??user.profileLabel,user.frontName].filter(Boolean).join(" · ")}</span></div></div>;
+  return <div className={`daily-identity ${manual?"manual":""}`}><b>{initials}</b><div>
+    {manual && <small className="daily-manual-tag">Lançamento manual · feito por</small>}
+    <strong>{user.name}</strong><span>{[user.jobTitle??user.profileLabel,user.frontName].filter(Boolean).join(" · ")}</span></div></div>;
 }
 
 // Campo do equipamento: mostra o escolhido (com botão para trocar) e abre a busca por lupa.
@@ -472,7 +483,7 @@ function ReviewModal({ draft, equipment, fronts, unit, readingCheck, lastReading
   const [armed,setArmed]=useState(false);
   const start=parseDecimal(draft.startReading),end=parseDecimal(draft.endReading);
   const count=Number(draft.fuelingCount||0),trips=draft.trips.slice(0,Number(draft.tripCount||0));
-  const rows:Array<[string,ReactNode]>=[["Data",formatDay(draft.recordDate)],["Equipamento",equipment?`${equipment.prefix} · ${equipment.type} ${equipment.model}`:"—"],["Trabalhou hoje?",draft.workedToday?"Sim":"Não"]];
+  const rows:Array<[string,ReactNode]>=[...(draft.operatorName?.trim()?[["Operador",<>{draft.operatorName.trim().toUpperCase()} <span className="daily-manual-tag inline">Lançamento manual</span></>] as [string,ReactNode]]:[]),["Data",formatDay(draft.recordDate)],["Equipamento",equipment?`${equipment.prefix} · ${equipment.type} ${equipment.model}`:"—"],["Trabalhou hoje?",draft.workedToday?"Sim":"Não"]];
   if(!draft.workedToday)rows.push(["Motivo",draft.noWorkReason.trim()]);
   else {
     rows.push(["Frente de serviço",fronts.find((front)=>front.id===draft.serviceFrontId)?.name??"—"],["Localização",draft.location.trim()],
@@ -526,51 +537,144 @@ function PendingQueue({ userId }:{ userId:number }) {
 // ---------------------------------------------------------------------------
 // Registros enviados
 // ---------------------------------------------------------------------------
-function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mine"|"all"; equipment:EquipmentOption[]; canManage:boolean; flash:(message:string)=>void; onEdit:(record:RecordItem)=>void }) {
-  const [deleting,setDeleting]=useState<RecordItem|null>(null);
+// ---------------------------------------------------------------------------
+// Histórico de Registros Diários: filtros combináveis (guardados na URL), linhas compactas,
+// "carregar mais", exportação PDF/Excel do que está filtrado e edição para quem pode.
+// ---------------------------------------------------------------------------
+type HistoryFiltersState = { q:string; from:string; to:string; frontId:string; operators:string[] };
+type HistoryResponse = { records:RecordItem[]; total:number; page:number; pageSize:number; operators:string[]|null; scope:"ALL"|"MINE" };
+
+function readHistoryFilters():HistoryFiltersState {
+  const params=new URLSearchParams(typeof window==="undefined"?"":window.location.search);
+  return { q:params.get("q")??"", from:params.get("de")??"", to:params.get("ate")??"", frontId:params.get("frente")??"", operators:params.getAll("colab") };
+}
+function historyParams(filters:HistoryFiltersState) {
+  const params=new URLSearchParams();
+  if(filters.q.trim())params.set("q",filters.q.trim());
+  if(filters.from)params.set("de",filters.from);
+  if(filters.to)params.set("ate",filters.to);
+  if(filters.frontId)params.set("frente",filters.frontId);
+  for(const name of filters.operators)params.append("colab",name);
+  return params;
+}
+
+function HistoryPanel({ canManage, canViewAll, fronts, flash, onEdit }:{ canManage:boolean; canViewAll:boolean; fronts:Front[]; flash:(message:string)=>void; onEdit:(record:RecordItem)=>void }) {
+  const [filters,setFilters]=useState<HistoryFiltersState>(readHistoryFilters);
+  const [query,setQuery]=useState(filters.q);
   const [records,setRecords]=useState<RecordItem[]>([]);
+  const [total,setTotal]=useState(0);
+  const [page,setPage]=useState(1);
+  const [operators,setOperators]=useState<string[]>([]);
   const [loading,setLoading]=useState(true);
+  const [loadingMore,setLoadingMore]=useState(false);
   const [error,setError]=useState("");
-  const [from,setFrom]=useState(()=>{ const date=new Date(); date.setDate(date.getDate()-30); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; });
-  const [to,setTo]=useState(localToday());
-  const [equipmentId,setEquipmentId]=useState("");
-  const load=useCallback(async()=>{
-    setLoading(true); setError("");
-    const params=new URLSearchParams({ scope, from, to }); if(equipmentId)params.set("equipmentId",equipmentId);
-    try { setRecords((await api<{records:RecordItem[]}>(`/api/daily-records?${params.toString()}`)).records); }
-    catch(problem) { setError(problem instanceof Error?problem.message:"Falha ao carregar."); }
-    finally { setLoading(false); }
-  },[scope,from,to,equipmentId]);
-  useEffect(()=>{ load(); },[load]);
-  // Quando a fila do celular envia registros, a lista se atualiza sozinha.
-  useEffect(()=>{ window.addEventListener(QUEUE_EVENT,load); return ()=>window.removeEventListener(QUEUE_EVENT,load); },[load]);
-  return <article className="panel module-panel">
-    <div className="module-filters-grid">
-      <label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label>
-      <label>Até<input type="date" value={to} onChange={(event)=>setTo(event.target.value)}/></label>
-      <label>Equipamento<select value={equipmentId} onChange={(event)=>setEquipmentId(event.target.value)}><option value="">Todos</option>{equipment.map((item)=><option key={item.id} value={item.id}>{item.prefix}</option>)}</select></label>
+  const [expanded,setExpanded]=useState<number|null>(null);
+  const [deleting,setDeleting]=useState<RecordItem|null>(null);
+  const firstLoad=useRef(true);
+
+  // Busca por texto com pequeno atraso (debounce); os demais filtros aplicam na hora.
+  useEffect(()=>{ const timer=window.setTimeout(()=>setFilters((current)=>current.q===query?current:{ ...current, q:query }),350); return ()=>window.clearTimeout(timer); },[query]);
+
+  const load=useCallback(async(pageToLoad:number)=>{
+    const params=historyParams(filters);
+    // Filtros na URL: dá para recarregar ou compartilhar a mesma busca.
+    const urlParams=new URLSearchParams(params); urlParams.set("cd","historico");
+    window.history.replaceState(null,"",`${window.location.pathname}?${urlParams.toString()}`);
+    params.set("pagina",String(pageToLoad));
+    if(firstLoad.current&&canViewAll)params.set("colaboradores","1");
+    if(pageToLoad===1)setLoading(true); else setLoadingMore(true);
+    setError("");
+    try {
+      const result=await api<HistoryResponse>(`/api/daily-records/history?${params.toString()}`);
+      setRecords((current)=>pageToLoad===1?result.records:[...current,...result.records]);
+      setTotal(result.total); setPage(pageToLoad);
+      if(result.operators){ setOperators(result.operators); firstLoad.current=false; }
+    } catch(problem) { setError(problem instanceof Error?problem.message:"Falha ao carregar."); }
+    finally { setLoading(false); setLoadingMore(false); }
+  },[filters,canViewAll]);
+  useEffect(()=>{ load(1); },[load]);
+  // Registros enviados pela fila do celular aparecem sem recarregar a tela.
+  useEffect(()=>{ const reload=()=>load(1); window.addEventListener(QUEUE_EVENT,reload); return ()=>window.removeEventListener(QUEUE_EVENT,reload); },[load]);
+
+  const exportParams=historyParams(filters).toString();
+  const hasFilters=Boolean(filters.q||filters.from||filters.to||filters.frontId||filters.operators.length);
+  const clear=()=>{ setQuery(""); setFilters({ q:"", from:"", to:"", frontId:"", operators:[] }); };
+
+  return <article className="panel module-panel daily-history">
+    <div className="daily-history-filters">
+      <label className="daily-history-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Buscar por equipamento ou operador..." aria-label="Buscar por equipamento ou operador"/></label>
+      <label>De<input type="date" value={filters.from} max={filters.to||undefined} onChange={(event)=>setFilters({ ...filters, from:event.target.value })}/></label>
+      <label>Até<input type="date" value={filters.to} min={filters.from||undefined} onChange={(event)=>setFilters({ ...filters, to:event.target.value })}/></label>
+      <label>Frente de serviço<select value={filters.frontId} onChange={(event)=>setFilters({ ...filters, frontId:event.target.value })}><option value="">Todas as frentes</option>{fronts.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
+      {canViewAll && <OperatorMultiSelect options={operators} value={filters.operators} onChange={(value)=>setFilters({ ...filters, operators:value })}/>}
+    </div>
+    <div className="daily-history-toolbar">
+      <span><strong>{total}</strong> registro(s){hasFilters?" com os filtros aplicados":""}{hasFilters && <button type="button" className="field-link" onClick={clear}>Limpar filtros</button>}</span>
+      <div>
+        <a className={`secondary daily-export ${total===0?"disabled":""}`} aria-disabled={total===0} href={total===0?undefined:`/api/daily-records/history/export?formato=pdf&${exportParams}`}>PDF</a>
+        <a className={`secondary daily-export ${total===0?"disabled":""}`} aria-disabled={total===0} href={total===0?undefined:`/api/daily-records/history/export?formato=xlsx&${exportParams}`}>Excel</a>
+      </div>
     </div>
     {error && <div className="fleet-form-error">! {error}</div>}
-    {loading ? <div className="page-loading"><span/><p>Carregando registros...</p></div> : <div className="daily-records">
-      {records.map((record)=><article key={record.id} className={`daily-record ${record.workedToday?(record.inactiveOrProblem?"warn":"ok"):"off"}`}>
-        <header><strong>{record.prefix}</strong><span>{formatDay(record.recordDate)}</span><span className={`status-pill ${record.workedToday?(record.inactiveOrProblem?"orange":"green"):"gray"}`}>{record.workedToday?(record.inactiveOrProblem?"Com problema":"Trabalhou"):"Não trabalhou"}</span></header>
-        <dl>
-          {scope==="all" && <div><dt>Operador</dt><dd>{record.operator}</dd></div>}
-          {!record.workedToday ? <div className="wide"><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div> : <>
-            <div><dt>Frente / local</dt><dd>{record.front??"—"} · {record.location}{record.frontRequestStatus==="PENDING" && <span className="daily-front-pending small">Aguardando aprovação</span>}</dd></div>
-            <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div>
-            <div><dt>Abastecimentos</dt><dd>{record.fuelings.length?record.fuelings.map((item)=>`${numberFormat.format(item.liters)} L (${item.location})`).join(", "):"Nenhum"}</dd></div>
-            {record.inactiveOrProblem && <div className="wide"><dt>Problema</dt><dd>{record.problemReason}{record.hasProblemPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=problem`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
-            {record.hadProduction && <div className="wide"><dt>Produção ({record.productionType==="PORTO"?"Porto":"Baldeio"})</dt><dd>{record.trips.map((trip)=>`V${trip.number}: ${trip.logs} tora(s)${trip.meters!==null?` / ${numberFormat.format(trip.meters)} m`:""}`).join(" · ")}{record.hasProductionPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=production`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
-          </>}
-          {record.notes && <div className="wide"><dt>Observações</dt><dd>{record.notes}</dd></div>}
-        </dl>
-        {canManage && <footer className="daily-record-actions"><button type="button" className="secondary" onClick={()=>onEdit(record)}>Editar</button><button type="button" className="danger-action" onClick={()=>setDeleting(record)}>Excluir</button></footer>}
-      </article>)}
-      {records.length===0 && <div className="empty-state">Nenhum registro no período.</div>}
+    {loading ? <div className="page-loading"><span/><p>Carregando histórico...</p></div> : <div className="daily-history-list" role="list">
+      <div className="daily-history-row head" aria-hidden="true"><span>Data</span><span>Equipamento</span><span>Operador</span><span>Frente</span><span>Trabalhado</span><span>Status</span><span/></div>
+      {records.map((record)=><div key={record.id} role="listitem" className={`daily-history-item ${expanded===record.id?"open":""}`}>
+        <div className="daily-history-row" onClick={()=>setExpanded(expanded===record.id?null:record.id)}>
+          <span className="date">{formatDay(record.recordDate)}</span>
+          <span className="equipment"><strong>{record.prefix}</strong>{record.equipmentModel && <small>{record.equipmentModel}</small>}</span>
+          <span className="operator">{record.operator}{record.manualEntry && <em className="daily-manual-tag" title={`Lançado pela conta ${record.accountName}`}>Manual</em>}</span>
+          <span className="front">{record.front??"—"}{record.frontRequestStatus==="PENDING" && <em className="daily-front-pending small">Aguardando</em>}</span>
+          <span className="worked">{record.workedToday&&record.endReading!==null&&record.startReading!==null?`${numberFormat.format(record.endReading-record.startReading)} ${unitSuffix(record.readingUnit)}`:"—"}</span>
+          <span className="status">
+            <em className={`daily-chip ${record.workedToday?"ok":"off"}`}>{record.workedToday?"Trabalhou":"Não trabalhou"}</em>
+            {record.inactiveOrProblem && <em className="daily-chip warn">Problema</em>}
+            {record.hadProduction && <em className="daily-chip prod">{record.productionType==="PORTO"?"Porto":"Baldeio"}</em>}
+          </span>
+          <span className="actions" onClick={(event)=>event.stopPropagation()}>{canManage && <button type="button" className="daily-icon-button" title="Editar registro" aria-label={`Editar registro do ${record.prefix} de ${formatDay(record.recordDate)}`} onClick={()=>onEdit(record)}>✎</button>}</span>
+        </div>
+        {expanded===record.id && <div className="daily-history-detail daily-reveal">
+          <dl>
+            {record.manualEntry && <div><dt>Lançamento manual</dt><dd>Feito pela conta {record.accountName}</dd></div>}
+            {!record.workedToday ? <div className="wide"><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div> : <>
+              <div><dt>Localização</dt><dd>{record.location??"—"}</dd></div>
+              <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div>
+              <div><dt>Abastecimentos</dt><dd>{record.fuelings.length?record.fuelings.map((item)=>`${numberFormat.format(item.liters)} L (${item.location})`).join(", "):"Nenhum"}</dd></div>
+              {record.inactiveOrProblem && <div className="wide"><dt>Problema</dt><dd>{record.problemReason}{record.hasProblemPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=problem`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
+              {record.hadProduction && <div className="wide"><dt>Produção ({record.productionType==="PORTO"?"Porto":"Baldeio"})</dt><dd>{record.trips.map((trip)=>`V${trip.number}: ${trip.logs} tora(s)${trip.meters!==null?` / ${numberFormat.format(trip.meters)} m`:""}`).join(" · ")}{record.hasProductionPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=production`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
+            </>}
+            {record.notes && <div className="wide"><dt>Observações</dt><dd>{record.notes}</dd></div>}
+          </dl>
+          {canManage && <footer className="daily-record-actions"><button type="button" className="secondary" onClick={()=>onEdit(record)}>Editar</button><button type="button" className="danger-action" onClick={()=>setDeleting(record)}>Excluir</button></footer>}
+        </div>}
+      </div>)}
+      {records.length===0 && <div className="empty-state">Nenhum registro encontrado{hasFilters?" para os filtros selecionados":""}.</div>}
+      {records.length<total && <button type="button" className="secondary daily-load-more" disabled={loadingMore} onClick={()=>load(page+1)}>{loadingMore?"Carregando...":`Carregar mais (${total-records.length} restantes)`}</button>}
     </div>}
-    {deleting && <DeleteRecordModal record={deleting} close={()=>setDeleting(null)} deleted={async(message)=>{ setDeleting(null); flash(message); await load(); }}/>}
+    {deleting && <DeleteRecordModal record={deleting} close={()=>setDeleting(null)} deleted={async(message)=>{ setDeleting(null); flash(message); await load(1); }}/>}
   </article>;
+}
+
+// Seleção de um ou mais colaboradores, com busca.
+function OperatorMultiSelect({ options, value, onChange }:{ options:string[]; value:string[]; onChange:(value:string[])=>void }) {
+  const [open,setOpen]=useState(false);
+  const [search,setSearch]=useState("");
+  const wrapper=useRef<HTMLDivElement>(null);
+  useEffect(()=>{ if(!open)return; const close=(event:MouseEvent)=>{ if(!wrapper.current?.contains(event.target as Node))setOpen(false); }; document.addEventListener("mousedown",close); return ()=>document.removeEventListener("mousedown",close); },[open]);
+  const key=searchKey(search);
+  const visible=options.filter((name)=>!key||searchKey(name).includes(key));
+  const toggle=(name:string)=>onChange(value.includes(name)?value.filter((item)=>item!==name):[...value,name]);
+  return <div className="daily-multiselect" ref={wrapper}>
+    <span className="daily-multiselect-label">Colaboradores</span>
+    <button type="button" className="daily-multiselect-trigger" aria-expanded={open} onClick={()=>setOpen(!open)}>{value.length===0?"Todos os colaboradores":value.length===1?value[0]:`${value.length} selecionados`}<b aria-hidden="true">⌄</b></button>
+    {open && <div className="daily-multiselect-panel">
+      <input autoFocus value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar colaborador..." aria-label="Buscar colaborador"/>
+      <div className="daily-multiselect-options">
+        {visible.map((name)=><label key={name}><input type="checkbox" checked={value.includes(name)} onChange={()=>toggle(name)}/>{name}</label>)}
+        {visible.length===0 && <p>Nenhum colaborador encontrado.</p>}
+      </div>
+      {value.length>0 && <button type="button" className="field-link" onClick={()=>onChange([])}>Limpar seleção ({value.length})</button>}
+    </div>}
+  </div>;
 }
 
 function DeleteRecordModal({ record, close, deleted }:{ record:RecordItem; close:()=>void; deleted:(message:string)=>Promise<void> }) {

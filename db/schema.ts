@@ -840,6 +840,10 @@ export const dailyRecords = pgTable("daily_records", {
   // Frente oficial do equipamento no momento do lançamento. `serviceFrontId` (acima) é a frente
   // informada pelo operador — difere desta quando ele pediu mudança de frente.
   officialServiceFrontId: integer("official_service_front_id").references(() => serviceFronts.id),
+  // Lançamento manual: quem entrou com login padrão (ADMIN/GESTOR/usuário) digita o nome do
+  // operador a quem o registro se refere. `userId` continua sendo a conta que lançou (auditoria).
+  // NULL = lançado pelo próprio funcionário de campo (login simplificado).
+  operatorName: text("operator_name"),
   frontChangeRequestId: integer("front_change_request_id"),
   ...timestamps,
 }, (table) => [
