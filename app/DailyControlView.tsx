@@ -12,10 +12,10 @@ import { optimizePhoto } from "../lib/photo-client";
 
 type EquipmentOption = { id:number; prefix:string; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
 type Front = { id:number; name:string };
-type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean };
+type Context = { equipment:EquipmentOption[]; fronts:Front[]; assignedEquipmentId:number|null; defaultServiceFrontId:number|null; userId:number; canRegister:boolean; canViewAll:boolean; canManage:boolean };
 type LastReading = { value:number|null; unit:ReadingUnit; source:"DAILY_RECORD"|"EQUIPMENT"|"QUEUE"|null; date:string|null };
 type RecordItem = {
-  id:number; recordDate:string; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
+  id:number; recordDate:string; equipmentId:number; serviceFrontId:number|null; userId:number; prefix:string; operator:string; workedToday:boolean; noWorkReason:string|null; front:string|null; location:string|null;
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
   hadProduction:boolean; productionType:ProductionType|null; hasProductionPhoto:boolean; notes:string|null;
   fuelings:Array<{number:number;liters:number;location:string}>; trips:Array<{number:number;logs:number;meters:number|null}>;
@@ -39,6 +39,8 @@ export default function DailyControlView({ flash }:{ flash:(message:string)=>voi
   const [context,setContext]=useState<Context|null>(null);
   const [error,setError]=useState("");
   const [tab,setTab]=useState<Tab>("new");
+  // Registro aberto para edição (somente com a permissão "daily.manage").
+  const [editing,setEditing]=useState<RecordItem|null>(null);
   const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canRegister)setTab(result.canViewAll?"all":"mine"); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);
   useEffect(()=>{ load(); },[load]);
 
@@ -47,22 +49,42 @@ export default function DailyControlView({ flash }:{ flash:(message:string)=>voi
   return <>
     <div className="page-heading module-heading"><div><p className="eyebrow">OPERAÇÃO · REGISTRO DO DIA</p><h1>Controle Diário</h1><span>Registro diário do equipamento: leituras, abastecimentos, problemas e produção.</span></div></div>
     <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do Controle Diário">
-      {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Novo registro</button>}
-      {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>setTab("mine")}>Meus registros</button>}
-      {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>setTab("all")}>Todos os registros</button>}
+      {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>{ setEditing(null); setTab("new"); }}>Novo registro</button>}
+      {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>{ setEditing(null); setTab("mine"); }}>Meus registros</button>}
+      {context.canViewAll && <button className={tab==="all"?"active":""} onClick={()=>{ setEditing(null); setTab("all"); }}>Todos os registros</button>}
     </div>
     {context.canRegister && <PendingQueue userId={context.userId}/>}
-    {tab==="new" && context.canRegister ? <DailyForm context={context} flash={flash} onSent={()=>setTab("mine")}/> : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment}/>}
+    {editing ? <DailyForm key={`edit-${editing.id}`} context={context} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
+      : tab==="new" && context.canRegister ? <DailyForm context={context} flash={flash} onSent={()=>setTab("mine")}/>
+      : <RecordsPanel scope={tab==="all"?"all":"mine"} equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
   </>;
 }
 
 // ---------------------------------------------------------------------------
 // Formulário
 // ---------------------------------------------------------------------------
-function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:string)=>void; onSent:()=>void }) {
-  const initialEquipment=context.equipment.find((item)=>item.id===context.assignedEquipmentId)??null;
-  const [draft,setDraft]=useState<DailyRecordDraft>(()=>blankDraft(localToday(),initialEquipment?.id??null,initialEquipment?.serviceFrontId??context.defaultServiceFrontId));
+function draftFromRecord(record:RecordItem):DailyRecordDraft {
+  const decimal=(value:number|null)=>value===null?"":String(value).replace(".",",");
+  return {
+    recordDate:record.recordDate, equipmentId:record.equipmentId, workedToday:record.workedToday, noWorkReason:record.noWorkReason??"",
+    serviceFrontId:record.serviceFrontId, location:record.location??"", startReading:decimal(record.startReading), endReading:decimal(record.endReading),
+    fuelingCount:record.fuelings.length?String(record.fuelings.length):"", fuelings:record.fuelings.map((item)=>({ liters:decimal(item.liters), location:item.location })),
+    inactiveOrProblem:record.workedToday?record.inactiveOrProblem:null, problemReason:record.problemReason??"",
+    hadProduction:record.workedToday?record.hadProduction:null, productionType:record.productionType,
+    tripCount:record.trips.length?String(record.trips.length):"", trips:record.trips.map((trip)=>({ logs:String(trip.logs), meters:decimal(trip.meters) })),
+    notes:record.notes??"", hasProblemPhoto:record.hasProblemPhoto, hasProductionPhoto:record.hasProductionPhoto,
+  };
+}
+
+// `editing`: abre um registro já enviado para correção (somente "daily.manage"). Nesse modo não
+// há memória de equipamento, sugestão de leitura nem fila offline — editar exige internet.
+function DailyForm({ context, flash, onSent, editing, onCancel }:{ context:Context; flash:(message:string)=>void; onSent:()=>void; editing?:RecordItem; onCancel?:()=>void }) {
+  const initialEquipment=editing?null:context.equipment.find((item)=>item.id===context.assignedEquipmentId)??null;
+  const [draft,setDraft]=useState<DailyRecordDraft>(()=>editing?draftFromRecord(editing):blankDraft(localToday(),initialEquipment?.id??null,initialEquipment?.serviceFrontId??context.defaultServiceFrontId));
   const [fromMemory,setFromMemory]=useState(Boolean(initialEquipment));
+  // Fotos já gravadas no registro em edição (mantidas até o usuário remover ou trocar).
+  const [keepProblemPhoto,setKeepProblemPhoto]=useState(Boolean(editing?.hasProblemPhoto));
+  const [keepProductionPhoto,setKeepProductionPhoto]=useState(Boolean(editing?.hasProductionPhoto));
   const [lastReading,setLastReading]=useState<LastReading|null>(null);
   const [problemPhoto,setProblemPhoto]=useState<Photo|null>(null);
   const [productionPhoto,setProductionPhoto]=useState<Photo|null>(null);
@@ -82,7 +104,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
 
   // Autopreenche a leitura inicial sempre que o equipamento muda (o valor continua editável).
   useEffect(()=>{
-    if(!draft.equipmentId){ setLastReading(null); return; }
+    if(editing||!draft.equipmentId){ setLastReading(null); return; }
     let cancelled=false;
     const equipmentId=draft.equipmentId;
     Promise.all([
@@ -98,12 +120,13 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
       setDraft((current)=>({ ...current, startReading:result.value===null?"":String(result.value).replace(".",",") }));
     });
     return ()=>{ cancelled=true; };
-  },[draft.equipmentId,readingNonce,context.userId]);
+  },[draft.equipmentId,readingNonce,context.userId,editing]);
 
   function selectEquipment(item:EquipmentOption) {
     if(item.id===draft.equipmentId)return;
-    patch({ equipmentId:item.id, serviceFrontId:item.serviceFrontId??context.defaultServiceFrontId, startReading:"" });
+    patch({ equipmentId:item.id, serviceFrontId:item.serviceFrontId??context.defaultServiceFrontId, ...(editing?{}:{ startReading:"" }) });
     setFromMemory(false);
+    if(editing)return;
     // Troca de máquina: atualiza a "memória" para os próximos registros.
     api("/api/daily-records/assignment",{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ equipmentId:item.id }) }).catch(()=>undefined);
   }
@@ -114,7 +137,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
     setter(photo);
   };
 
-  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto), hasProductionPhoto:Boolean(productionPhoto) },localToday()),[draft,problemPhoto,productionPhoto]);
+  const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto)||keepProblemPhoto, hasProductionPhoto:Boolean(productionPhoto)||keepProductionPhoto },localToday()),[draft,problemPhoto,productionPhoto,keepProblemPhoto,keepProductionPhoto]);
   const errorFor=(field:string)=>(showAll||touched.has(field))?validation.errors[field]:undefined;
   const pending=Object.values(validation.errors);
   const readingCheck=useMemo<ReadingCheck|null>(()=>{
@@ -130,7 +153,29 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
     onSent();
   }
 
+  async function saveEdit(confirmUnusualReading:boolean) {
+    if(!editing||!validation.value)return;
+    setBusy(true); setSubmitError("");
+    try {
+      const form=new FormData();
+      form.set("payload",JSON.stringify({ ...draft, confirmUnusualReading, keepProblemPhoto, keepProductionPhoto }));
+      if(draft.workedToday&&draft.inactiveOrProblem&&problemPhoto)form.set("problemPhoto",problemPhoto.blob,"problema.webp");
+      if(draft.workedToday&&draft.hadProduction&&productionPhoto)form.set("productionPhoto",productionPhoto.blob,"producao.webp");
+      let response:Response;
+      try { response=await fetch(`/api/daily-records/${editing.id}`,{ method:"PUT", body:form }); }
+      catch { throw new Error("Sem conexão com a internet. Para editar um registro é preciso estar conectado."); }
+      const result=await response.json().catch(()=>({})) as { message?:string; error?:string; requiresConfirmation?:boolean };
+      if(response.status===400&&result.requiresConfirmation){ setServerReadingWarning(result.error??"Leitura fora do normal. Confira o valor."); return; }
+      if(!response.ok)throw new Error(result.error??"Não foi possível salvar a alteração.");
+      setPhoto("problem",null); setPhoto("production",null); setReviewing(false);
+      flash(result.message??"Registro atualizado.");
+      onSent();
+    } catch(problem) { setSubmitError(problem instanceof Error?problem.message:"Não foi possível salvar a alteração."); setReviewing(false); }
+    finally { setBusy(false); }
+  }
+
   async function send(confirmUnusualReading:boolean) {
+    if(editing)return saveEdit(confirmUnusualReading);
     if(!validation.value)return;
     setBusy(true); setSubmitError("");
     const payload=JSON.stringify({ ...draft, confirmUnusualReading });
@@ -172,7 +217,9 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
   const worked=draft.workedToday;
   return <div className="daily-form">
     <section className="panel daily-card">
-      <header className="daily-card-head"><h3>Identificação</h3><span>Operador: registro vinculado ao seu login</span></header>
+      {editing
+        ? <header className="daily-card-head daily-editing-head"><div><h3>Editando registro</h3><span>{editing.prefix} · {formatDay(editing.recordDate)} · lançado por {editing.operator}</span></div>{onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}</header>
+        : <header className="daily-card-head"><h3>Identificação</h3><span>Operador: registro vinculado ao seu login</span></header>}
       <div className="fleet-form-grid">
         <Field label="Data do registro *" error={errorFor("recordDate")}><input type="date" value={draft.recordDate} max={localToday()} onChange={(event)=>patch({ recordDate:event.target.value })} onBlur={()=>touch("recordDate")}/></Field>
         <Field group label="Equipamento (Frota) *" className="span-2" error={errorFor("equipmentId")} hint={fromMemory&&equipment?"Último equipamento que você usou — troque só se mudou de máquina.":undefined}>
@@ -227,7 +274,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
         <Reveal open={draft.inactiveOrProblem===true}>
           <div className="fleet-order-editor">
             <Field label="Motivo *" error={errorFor("problemReason")}><textarea rows={3} value={draft.problemReason} onChange={(event)=>patch({ problemReason:event.target.value })} onBlur={()=>touch("problemReason")} placeholder="Descreva o problema ou o motivo da inatividade"/></Field>
-            <PhotoField label="Foto do problema (opcional)" photo={problemPhoto} onChange={(photo)=>setPhoto("problem",photo)}/>
+            <PhotoField label="Foto do problema (opcional)" photo={problemPhoto} existingUrl={editing&&keepProblemPhoto?`/api/daily-records/${editing.id}/photo?kind=problem`:null} onRemoveExisting={()=>setKeepProblemPhoto(false)} onChange={(photo)=>{ setPhoto("problem",photo); if(photo)setKeepProblemPhoto(false); }}/>
           </div>
         </Reveal>
       </section>
@@ -253,7 +300,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
                   {draft.productionType==="PORTO" && <Field label="Metragem *" error={errorFor(`trips.${index}.meters`)}><input inputMode="decimal" value={trip.meters} onChange={(event)=>setDraft((current)=>({ ...current, trips:current.trips.map((item,position)=>position===index?{ ...item, meters:event.target.value }:item) }))} onBlur={()=>touch(`trips.${index}.meters`)}/></Field>}
                 </div>)}
               </div>
-              <PhotoField label={draft.productionType==="PORTO"?"Foto da produção *":"Foto da ficha do baldeio *"} photo={productionPhoto} onChange={(photo)=>{ setPhoto("production",photo); touch("productionPhoto"); }} error={errorFor("productionPhoto")}/>
+              <PhotoField label={draft.productionType==="PORTO"?"Foto da produção *":"Foto da ficha do baldeio *"} photo={productionPhoto} existingUrl={editing&&keepProductionPhoto?`/api/daily-records/${editing.id}/photo?kind=production`:null} onRemoveExisting={()=>setKeepProductionPhoto(false)} onChange={(photo)=>{ setPhoto("production",photo); if(photo)setKeepProductionPhoto(false); touch("productionPhoto"); }} error={errorFor("productionPhoto")}/>
             </Reveal>
           </div>
         </Reveal>
@@ -265,7 +312,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
       {submitError && <div className="fleet-form-error">! {submitError}</div>}
       <div className="daily-submit">
         {pending.length>0 ? <button type="button" className="daily-pending" onClick={()=>setShowAll(true)}>{pending.length} item(ns) pendente(s){showAll?`: ${pending.slice(0,3).join(" · ")}${pending.length>3?" …":""}`:" — toque para ver"}</button> : <span className="daily-ready">✓ Tudo preenchido</span>}
-        <button type="button" className="primary" disabled={!validation.value||busy} onClick={()=>setReviewing(true)}>{worked?"Revisar e Enviar":"Revisar e Enviar registro"}</button>
+        <button type="button" className="primary" disabled={!validation.value||busy} onClick={()=>setReviewing(true)}>{editing?"Revisar e Salvar alteração":worked?"Revisar e Enviar":"Revisar e Enviar registro"}</button>
       </div>
     </section>
 
@@ -307,7 +354,7 @@ function EquipmentPicker({ options, selected, onSelect, onBlur }:{ options:Equip
   </div>;
 }
 
-function PhotoField({ label, photo, onChange, error }:{ label:string; photo:Photo|null; onChange:(photo:Photo|null)=>void; error?:string }) {
+function PhotoField({ label, photo, onChange, error, existingUrl, onRemoveExisting }:{ label:string; photo:Photo|null; onChange:(photo:Photo|null)=>void; error?:string; existingUrl?:string|null; onRemoveExisting?:()=>void }) {
   const input=useRef<HTMLInputElement>(null);
   const [busy,setBusy]=useState(false);
   const [problem,setProblem]=useState("");
@@ -320,6 +367,7 @@ function PhotoField({ label, photo, onChange, error }:{ label:string; photo:Phot
   return <div className={`daily-photo ${error?"has-error":""}`}>
     <span>{label}</span>
     {photo ? <div className="daily-photo-preview"><img src={photo.url} alt={label}/><div><button type="button" className="secondary" onClick={()=>input.current?.click()}>Trocar foto</button><button type="button" className="secondary" onClick={()=>onChange(null)}>Remover</button></div></div>
+      : existingUrl ? <div className="daily-photo-preview"><img src={existingUrl} alt={label}/><div><button type="button" className="secondary" onClick={()=>input.current?.click()}>Trocar foto</button><button type="button" className="secondary" onClick={()=>onRemoveExisting?.()}>Remover</button></div></div>
       : <button type="button" className="daily-photo-empty" disabled={busy} onClick={()=>input.current?.click()}>{busy?"Otimizando foto...":"📷 Tirar ou escolher foto"}</button>}
     <input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={(event)=>handle(event.target.files?.[0])}/>
     {(problem||error) && <small className="daily-error">{problem||error}</small>}
@@ -405,7 +453,8 @@ function PendingQueue({ userId }:{ userId:number }) {
 // ---------------------------------------------------------------------------
 // Registros enviados
 // ---------------------------------------------------------------------------
-function RecordsPanel({ scope, equipment }:{ scope:"mine"|"all"; equipment:EquipmentOption[] }) {
+function RecordsPanel({ scope, equipment, canManage, flash, onEdit }:{ scope:"mine"|"all"; equipment:EquipmentOption[]; canManage:boolean; flash:(message:string)=>void; onEdit:(record:RecordItem)=>void }) {
+  const [deleting,setDeleting]=useState<RecordItem|null>(null);
   const [records,setRecords]=useState<RecordItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -443,8 +492,31 @@ function RecordsPanel({ scope, equipment }:{ scope:"mine"|"all"; equipment:Equip
           </>}
           {record.notes && <div className="wide"><dt>Observações</dt><dd>{record.notes}</dd></div>}
         </dl>
+        {canManage && <footer className="daily-record-actions"><button type="button" className="secondary" onClick={()=>onEdit(record)}>Editar</button><button type="button" className="danger-action" onClick={()=>setDeleting(record)}>Excluir</button></footer>}
       </article>)}
       {records.length===0 && <div className="empty-state">Nenhum registro no período.</div>}
     </div>}
+    {deleting && <DeleteRecordModal record={deleting} close={()=>setDeleting(null)} deleted={async(message)=>{ setDeleting(null); flash(message); await load(); }}/>}
   </article>;
+}
+
+function DeleteRecordModal({ record, close, deleted }:{ record:RecordItem; close:()=>void; deleted:(message:string)=>Promise<void> }) {
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  async function remove() {
+    setBusy(true); setError("");
+    try { const result=await api<{message:string}>(`/api/daily-records/${record.id}`,{ method:"DELETE" }); await deleted(result.message); }
+    catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível excluir."); }
+    finally { setBusy(false); }
+  }
+  return <div className="fleet-modal-backdrop" role="presentation"><div className="fleet-modal daily-review" role="dialog" aria-modal="true">
+    <header><div><p>CONTROLE DIÁRIO</p><h2>Excluir registro?</h2><span>Esta ação não pode ser desfeita. Fica registrado no histórico de auditoria quem excluiu.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+    <div className="fleet-modal-body"><dl className="daily-review-list">
+      <div><dt>Equipamento</dt><dd>{record.prefix}</dd></div>
+      <div><dt>Data</dt><dd>{formatDay(record.recordDate)}</dd></div>
+      <div><dt>Operador</dt><dd>{record.operator}</dd></div>
+      {record.workedToday ? <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div> : <div><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div>}
+    </dl>{error && <div className="fleet-form-error">! {error}</div>}</div>
+    <footer><button type="button" onClick={close} disabled={busy}>Cancelar</button><button type="button" className="primary daily-danger" onClick={remove} disabled={busy}>{busy?"EXCLUINDO...":"EXCLUIR REGISTRO"}</button></footer>
+  </div></div>;
 }

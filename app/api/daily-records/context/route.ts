@@ -2,7 +2,7 @@ import { getDb } from "../../../../db";
 import { serviceFronts } from "../../../../db/schema";
 import { eq } from "drizzle-orm";
 import { authorize } from "../../../../lib/auth";
-import { canRegister, canViewAll, loadAssignment, loadEquipmentOptions } from "../../../../lib/daily-records";
+import { canManage, canRegister, canViewAll, loadAssignment, loadEquipmentOptions } from "../../../../lib/daily-records";
 
 // Tudo o que o formulário precisa ao abrir: equipamentos que o operador pode escolher,
 // frentes ativas, a "memória" do último equipamento e a frente padrão do usuário.
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
       equipment, fronts,
       assignedEquipmentId: equipment.some((item) => item.id === assignedEquipmentId) ? assignedEquipmentId : null,
       defaultServiceFrontId: user.serviceFrontId,
-      userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user),
+      userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user), canManage: canManage(user),
     });
   } catch (error) {
     console.error("[daily-records.context]", error);

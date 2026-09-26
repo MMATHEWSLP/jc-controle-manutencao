@@ -24,7 +24,9 @@ export class DailyRecordError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-export function canViewAll(user: SessionUser) { return user.permissions.includes("daily.view_all"); }
+// Quem pode editar/excluir (daily.manage) também precisa enxergar os registros de todos.
+export function canViewAll(user: SessionUser) { return user.permissions.includes("daily.view_all") || canManage(user); }
+export function canManage(user: SessionUser) { return user.permissions.includes("daily.manage"); }
 export function canRegister(user: SessionUser) { return user.permissions.includes("daily.register"); }
 
 // Buffer já validado -> grava e devolve a chave relativa (ex.: "2026-09/uuid.webp").
@@ -211,4 +213,97 @@ export async function loadPhotoKey(user: SessionUser, recordId: number, kind: "p
     if (!canViewAll(user) || !inScope) throw new DailyRecordError("Você não possui acesso a este registro.", 403);
   }
   return kind === "problem" ? row.problem : row.production;
+}
+
+// ---------------------------------------------------------------------------
+// Edição e exclusão (somente daily.manage, nas frentes que o usuário enxerga).
+// Cada alteração grava em audit_logs o registro completo como era antes.
+// ---------------------------------------------------------------------------
+async function loadRecordSnapshot(recordId: number) {
+  const db = await getDb();
+  const record = (await db.select().from(dailyRecords).where(eq(dailyRecords.id, recordId)).limit(1))[0];
+  if (!record) return null;
+  const [fuelings, trips] = await Promise.all([
+    db.select().from(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId)).orderBy(dailyRecordFuelings.fuelingNumber),
+    db.select().from(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId)).orderBy(dailyRecordTrips.tripNumber),
+  ]);
+  return { record, fuelings, trips };
+}
+
+export async function requireManagedRecord(user: SessionUser, recordId: number) {
+  if (!canManage(user)) throw new DailyRecordError("Você não possui permissão para editar ou excluir registros.", 403);
+  const snapshot = await loadRecordSnapshot(recordId);
+  if (!snapshot) throw new DailyRecordError("Registro não encontrado.", 404);
+  await requireEquipment(user, snapshot.record.equipmentId); // escopo por frente
+  return snapshot;
+}
+
+export async function updateDailyRecord(user: SessionUser, recordId: number, value: DailyRecordValue, photos: { problem: File | null; production: File | null; keepProblem: boolean; keepProduction: boolean }) {
+  const before = await requireManagedRecord(user, recordId);
+  const item = await requireEquipment(user, value.equipmentId);
+  const db = await getDb();
+  if (value.serviceFrontId !== null) {
+    const front = (await db.select({ id: serviceFronts.id, active: serviceFronts.active }).from(serviceFronts).where(eq(serviceFronts.id, value.serviceFrontId)).limit(1))[0];
+    if (!front || !front.active) throw new DailyRecordError("Frente de serviço inválida ou inativa.");
+  }
+  // O registro continua sendo do operador que lançou; só não pode colidir com outro dele no mesmo dia.
+  const duplicate = (await db.select({ id: dailyRecords.id }).from(dailyRecords)
+    .where(and(eq(dailyRecords.userId, before.record.userId), eq(dailyRecords.equipmentId, value.equipmentId), eq(dailyRecords.recordDate, value.recordDate))).limit(2))
+    .find((row) => row.id !== recordId);
+  if (duplicate) throw new DailyRecordError("Esse operador já tem outro registro deste equipamento nesta data.", 409);
+
+  const stored: string[] = [];
+  const oldKeys = { problem: before.record.problemPhotoKey, production: before.record.productionPhotoKey };
+  try {
+    const newProblem = value.inactiveOrProblem && photos.problem ? await storePhoto(photos.problem) : null;
+    if (newProblem) stored.push(newProblem);
+    const newProduction = value.hadProduction && photos.production ? await storePhoto(photos.production) : null;
+    if (newProduction) stored.push(newProduction);
+    const problemPhotoKey = value.inactiveOrProblem ? newProblem ?? (photos.keepProblem ? oldKeys.problem : null) : null;
+    const productionPhotoKey = value.hadProduction ? newProduction ?? (photos.keepProduction ? oldKeys.production : null) : null;
+    if (value.hadProduction && !productionPhotoKey) throw new DailyRecordError(value.productionType === "BALDEIO" ? "Anexe a foto da ficha do baldeio." : "Anexe a foto da produção.");
+
+    const now = new Date().toISOString();
+    await db.transaction(async (tx) => {
+      await tx.update(dailyRecords).set({
+        equipmentId: value.equipmentId, recordDate: value.recordDate, workedToday: value.workedToday, noWorkReason: value.noWorkReason,
+        serviceFrontId: value.serviceFrontId, location: value.location, readingUnit: item.readingUnit, startReading: value.startReading, endReading: value.endReading,
+        inactiveOrProblem: value.inactiveOrProblem, problemReason: value.problemReason, problemPhotoKey,
+        hadProduction: value.hadProduction, productionType: value.productionType, productionPhotoKey, notes: value.notes, updatedAt: now,
+      }).where(eq(dailyRecords.id, recordId));
+      await tx.delete(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId));
+      await tx.delete(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId));
+      if (value.fuelings.length) await tx.insert(dailyRecordFuelings).values(value.fuelings.map((fueling, index) => ({
+        dailyRecordId: recordId, fuelingNumber: index + 1, liters: fueling.liters, location: fueling.location, createdAt: now, updatedAt: now })));
+      if (value.trips.length) await tx.insert(dailyRecordTrips).values(value.trips.map((trip, index) => ({
+        dailyRecordId: recordId, tripNumber: index + 1, logsQuantity: trip.logs, meters: trip.meters, createdAt: now, updatedAt: now })));
+      await tx.insert(auditLogs).values({ userId: user.id, entityType: "DAILY_RECORD", entityId: String(recordId), action: "CONTROLE DIÁRIO EDITADO",
+        previousValue: JSON.stringify(before), newValue: JSON.stringify({ ...value, problemPhotoKey, productionPhotoKey }), occurredAt: now });
+    });
+    // Fotos substituídas/removidas só são apagadas depois que a gravação deu certo.
+    if (oldKeys.problem && oldKeys.problem !== problemPhotoKey) await removePhoto(oldKeys.problem);
+    if (oldKeys.production && oldKeys.production !== productionPhotoKey) await removePhoto(oldKeys.production);
+    return { id: recordId, prefix: item.prefix };
+  } catch (error) {
+    for (const key of stored) await removePhoto(key);
+    if (error instanceof Error && /daily_records_user_equipment_date_unique/.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
+      throw new DailyRecordError("Esse operador já tem outro registro deste equipamento nesta data.", 409);
+    }
+    throw error;
+  }
+}
+
+export async function deleteDailyRecord(user: SessionUser, recordId: number) {
+  const before = await requireManagedRecord(user, recordId);
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx.delete(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId));
+    await tx.delete(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId));
+    await tx.delete(dailyRecords).where(eq(dailyRecords.id, recordId));
+    await tx.insert(auditLogs).values({ userId: user.id, entityType: "DAILY_RECORD", entityId: String(recordId), action: "CONTROLE DIÁRIO EXCLUÍDO",
+      previousValue: JSON.stringify(before), occurredAt: now });
+  });
+  await removePhoto(before.record.problemPhotoKey);
+  await removePhoto(before.record.productionPhotoKey);
 }
