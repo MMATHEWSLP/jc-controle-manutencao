@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, type SQL } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
@@ -109,6 +109,15 @@ export async function loadLastReading(user: SessionUser, equipmentId: number) {
   if (daily !== null && daily >= current) return { value: daily, unit: item.readingUnit, source: "DAILY_RECORD" as const, date: last!.recordDate };
   if (current > 0) return { value: current, unit: item.readingUnit, source: "EQUIPMENT" as const, date: null };
   return { value: daily, unit: item.readingUnit, source: daily === null ? null : "DAILY_RECORD" as const, date: last?.recordDate ?? null };
+}
+
+// Data da última leitura deste equipamento ANTES da data do registro — base do cálculo de
+// "trabalhado por dia" em checkReading() (lib/daily-record-rules.ts).
+export async function lastReadingDateBefore(equipmentId: number, unit: ReadingUnit, recordDate: string) {
+  const db = await getDb();
+  return (await db.select({ recordDate: dailyRecords.recordDate }).from(dailyRecords)
+    .where(and(eq(dailyRecords.equipmentId, equipmentId), eq(dailyRecords.readingUnit, unit), eq(dailyRecords.workedToday, true), lt(dailyRecords.recordDate, recordDate)))
+    .orderBy(desc(dailyRecords.recordDate), desc(dailyRecords.id)).limit(1))[0]?.recordDate ?? null;
 }
 
 export async function createDailyRecord(user: SessionUser, value: DailyRecordValue, photos: { problem: File | null; production: File | null }) {

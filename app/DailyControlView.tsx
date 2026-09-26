@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element -- pré-visualização local (blob:) e fotos servidas por rota própria */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
-  type DailyRecordDraft, type ProductionType, type ReadingUnit,
+  checkReading, emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
+  type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingUnit,
 } from "../lib/daily-record-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
@@ -72,6 +72,8 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
   const [busy,setBusy]=useState(false);
   const [submitError,setSubmitError]=useState("");
   const [readingNonce,setReadingNonce]=useState(0);
+  // Aviso de leitura fora do plausível vindo do servidor (caso ele calcule diferente da tela).
+  const [serverReadingWarning,setServerReadingWarning]=useState<string|null>(null);
   const equipment=context.equipment.find((item)=>item.id===draft.equipmentId)??null;
   const unit=equipment?.readingUnit??"HOURS";
 
@@ -115,18 +117,23 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
   const validation=useMemo(()=>validateDailyRecord({ ...draft, hasProblemPhoto:Boolean(problemPhoto), hasProductionPhoto:Boolean(productionPhoto) },localToday()),[draft,problemPhoto,productionPhoto]);
   const errorFor=(field:string)=>(showAll||touched.has(field))?validation.errors[field]:undefined;
   const pending=Object.values(validation.errors);
+  const readingCheck=useMemo<ReadingCheck|null>(()=>{
+    if(!draft.workedToday)return null;
+    const check=checkReading({ unit, start:parseDecimal(draft.startReading), end:parseDecimal(draft.endReading), lastDate:lastReading?.date??null, recordDate:draft.recordDate });
+    return serverReadingWarning&&check.level!=="INVALID"?{ ...check, level:"HIGH", message:serverReadingWarning }:check;
+  },[draft.workedToday,draft.startReading,draft.endReading,draft.recordDate,unit,lastReading,serverReadingWarning]);
 
   function resetAfterSend() {
     setPhoto("problem",null); setPhoto("production",null);
     setDraft(blankDraft(localToday(),draft.equipmentId,draft.serviceFrontId));
-    setTouched(new Set()); setShowAll(false); setReviewing(false); setFromMemory(true); setReadingNonce((value)=>value+1);
+    setTouched(new Set()); setShowAll(false); setReviewing(false); setFromMemory(true); setReadingNonce((value)=>value+1); setServerReadingWarning(null);
     onSent();
   }
 
-  async function send() {
+  async function send(confirmUnusualReading:boolean) {
     if(!validation.value)return;
     setBusy(true); setSubmitError("");
-    const payload=JSON.stringify(draft);
+    const payload=JSON.stringify({ ...draft, confirmUnusualReading });
     const problemBlob=draft.workedToday&&draft.inactiveOrProblem&&problemPhoto?problemPhoto.blob:null;
     const productionBlob=draft.workedToday&&draft.hadProduction&&productionPhoto?productionPhoto.blob:null;
     // Sem sinal: guarda no celular (com as fotos) e envia sozinho quando a internet voltar.
@@ -153,7 +160,8 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
         return;
       }
       finally { window.clearTimeout(timer); }
-      const result=await response.json().catch(()=>({})) as { message?:string; error?:string };
+      const result=await response.json().catch(()=>({})) as { message?:string; error?:string; requiresConfirmation?:boolean };
+      if(response.status===400&&result.requiresConfirmation){ setServerReadingWarning(result.error??"Leitura fora do normal. Confira o valor."); return; }
       if(!response.ok)throw new Error(result.error??"Não foi possível enviar o registro.");
       flash(result.message??"Controle Diário enviado.");
       resetAfterSend();
@@ -190,10 +198,11 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
           <Field label={`${readingLabel(unit)} inicial *`} error={errorFor("startReading")} hint={lastReading?.value!=null?`Sugerido: última leitura ${numberFormat.format(lastReading.value)} ${unitSuffix(unit)}${lastReading.date?` (${formatDay(lastReading.date)})`:""}. Pode alterar.`:undefined}>
             <input inputMode="decimal" value={draft.startReading} onChange={(event)=>patch({ startReading:event.target.value })} onBlur={()=>touch("startReading")}/>
           </Field>
-          <Field label={`${readingLabel(unit)} final *`} error={errorFor("endReading")} hint={(()=>{ const start=parseDecimal(draft.startReading),end=parseDecimal(draft.endReading); return start!==null&&end!==null&&end>=start?`Trabalhado no dia: ${numberFormat.format(end-start)} ${unitSuffix(unit)}`:undefined; })()}>
-            <input inputMode="decimal" value={draft.endReading} onChange={(event)=>patch({ endReading:event.target.value })} onBlur={()=>touch("endReading")}/>
+          <Field label={`${readingLabel(unit)} final *`} error={readingCheck?.level==="INVALID"?undefined:errorFor("endReading")}>
+            <input inputMode="decimal" value={draft.endReading} onChange={(event)=>{ patch({ endReading:event.target.value }); setServerReadingWarning(null); }} onBlur={()=>touch("endReading")}/>
           </Field>
         </div>
+        {readingCheck?.worked!=null && <ReadingSummary check={readingCheck} unit={unit} start={parseDecimal(draft.startReading)} end={parseDecimal(draft.endReading)} lastReading={lastReading}/>}
       </section>
 
       <section className="panel daily-card">
@@ -260,7 +269,7 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
       </div>
     </section>
 
-    {reviewing && validation.value && <ReviewModal draft={draft} equipment={equipment} fronts={context.fronts} unit={unit} problemPhoto={problemPhoto} productionPhoto={productionPhoto} busy={busy} close={()=>setReviewing(false)} confirm={send}/>}
+    {reviewing && validation.value && <ReviewModal draft={draft} equipment={equipment} fronts={context.fronts} unit={unit} readingCheck={readingCheck} lastReading={lastReading} problemPhoto={problemPhoto} productionPhoto={productionPhoto} busy={busy} close={()=>setReviewing(false)} confirm={send}/>}
   </div>;
 }
 
@@ -317,9 +326,29 @@ function PhotoField({ label, photo, onChange, error }:{ label:string; photo:Phot
   </div>;
 }
 
-function ReviewModal({ draft, equipment, fronts, unit, problemPhoto, productionPhoto, busy, close, confirm }:{
-  draft:DailyRecordDraft; equipment:EquipmentOption|null; fronts:Front[]; unit:ReadingUnit; problemPhoto:Photo|null; productionPhoto:Photo|null; busy:boolean; close:()=>void; confirm:()=>void;
+// Cálculo do trabalhado no período, com cor conforme a regra de leitura plausível.
+function ReadingSummary({ check, unit, start, end, lastReading, big }:{ check:ReadingCheck; unit:ReadingUnit; start:number|null; end:number|null; lastReading:LastReading|null; big?:boolean }) {
+  const suffix=unitSuffix(unit);
+  const tone=check.level==="INVALID"?"invalid":check.level==="HIGH"?"high":check.level==="ZERO"?"zero":"ok";
+  return <div className={`daily-reading-check ${tone} ${big?"big":""}`} role={check.level==="OK"?undefined:"alert"}>
+    <dl>
+      <div><dt>{lastReading?.value!=null?"Última leitura":"Leitura inicial"}</dt><dd>{lastReading?.value!=null?<>{numberFormat.format(lastReading.value)} {suffix}{lastReading.date?<small> · em {formatDay(lastReading.date)}</small>:null}</>:<>{numberFormat.format(start??0)} {suffix}</>}</dd></div>
+      {lastReading?.value!=null && start!==null && start!==lastReading.value && <div><dt>Inicial informada</dt><dd>{numberFormat.format(start)} {suffix}</dd></div>}
+      <div><dt>Leitura de hoje</dt><dd>{numberFormat.format(end??0)} {suffix}</dd></div>
+      <div className="total"><dt>Trabalhado</dt><dd>{numberFormat.format(check.worked??0)} {suffix}{check.days>1&&check.perDay!==null?<small> ({check.days} dias · média {numberFormat.format(check.perDay)} {suffix}/dia)</small>:null}</dd></div>
+    </dl>
+    {lastReading?.value==null && <p>Primeira leitura deste equipamento — sem comparação.</p>}
+    {check.message && <p>{check.message}</p>}
+  </div>;
+}
+
+function ReviewModal({ draft, equipment, fronts, unit, readingCheck, lastReading, problemPhoto, productionPhoto, busy, close, confirm }:{
+  draft:DailyRecordDraft; equipment:EquipmentOption|null; fronts:Front[]; unit:ReadingUnit; readingCheck:ReadingCheck|null; lastReading:LastReading|null;
+  problemPhoto:Photo|null; productionPhoto:Photo|null; busy:boolean; close:()=>void; confirm:(confirmUnusualReading:boolean)=>void;
 }) {
+  // Leitura fora do plausível: exige um segundo toque em "Confirmar mesmo assim".
+  const unusual=readingCheck?.level==="HIGH";
+  const [armed,setArmed]=useState(false);
   const start=parseDecimal(draft.startReading),end=parseDecimal(draft.endReading);
   const count=Number(draft.fuelingCount||0),trips=draft.trips.slice(0,Number(draft.tripCount||0));
   const rows:Array<[string,ReactNode]>=[["Data",formatDay(draft.recordDate)],["Equipamento",equipment?`${equipment.prefix} · ${equipment.type} ${equipment.model}`:"—"],["Trabalhou hoje?",draft.workedToday?"Sim":"Não"]];
@@ -334,10 +363,14 @@ function ReviewModal({ draft, equipment, fronts, unit, problemPhoto, productionP
   if(draft.notes.trim())rows.push(["Observações",draft.notes.trim()]);
   return <div className="fleet-modal-backdrop" role="presentation"><div className="fleet-modal daily-review" role="dialog" aria-modal="true">
     <header><div><p>CONTROLE DIÁRIO</p><h2>Revise antes de enviar</h2><span>Depois de enviado, o registro não pode ser editado por aqui.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
-    <div className="fleet-modal-body"><dl className="daily-review-list">{rows.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    <div className="fleet-modal-body">
+      {readingCheck?.worked!=null && <ReadingSummary big check={readingCheck} unit={unit} start={parseDecimal(draft.startReading)} end={parseDecimal(draft.endReading)} lastReading={lastReading}/>}
+      <dl className="daily-review-list">{rows.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       {productionPhoto && draft.workedToday && draft.hadProduction && <img className="daily-review-photo" src={productionPhoto.url} alt="Foto da produção"/>}
     </div>
-    <footer><button type="button" onClick={close} disabled={busy}>Voltar e editar</button><button type="button" className="primary" onClick={confirm} disabled={busy}>{busy?"ENVIANDO...":"CONFIRMAR ENVIO"}</button></footer>
+    <footer><button type="button" onClick={close} disabled={busy}>Voltar e editar</button>{unusual
+      ? <button type="button" className={`primary daily-confirm-unusual ${armed?"armed":""}`} disabled={busy} onClick={()=>{ if(armed)confirm(true); else setArmed(true); }}>{busy?"ENVIANDO...":armed?"TOQUE DE NOVO PARA ENVIAR":"CONFIRMAR MESMO ASSIM"}</button>
+      : <button type="button" className="primary" onClick={()=>confirm(false)} disabled={busy}>{busy?"ENVIANDO...":"CONFIRMAR ENVIO"}</button>}</footer>
   </div></div>;
 }
 
