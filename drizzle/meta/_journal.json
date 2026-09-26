@@ -71,6 +71,13 @@
       "when": 1788991161922,
       "tag": "0009_petite_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790361790666,
+      "tag": "0010_purple_marvel_apes",
+      "breakpoints": true
     }
   ]
 }

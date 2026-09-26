@@ -49,6 +49,10 @@ export const PERMISSION_GROUPS = [
     ["fleet.update","Atualizar status, ocorrências e pedidos"],
     ["fleet.report","Exportar relatório diário da frota"],
   ]},
+  { label:"Controle Diário", items:[
+    ["daily.register","Registrar o Controle Diário do equipamento que opera"],
+    ["daily.view_all","Visualizar os registros diários de todos os operadores (das frentes que enxerga)"],
+  ]},
   { label:"Solicitação de Materiais", items:[
     ["materials.view","Visualizar solicitações de materiais"],
     ["materials.request","Criar solicitação de materiais"],

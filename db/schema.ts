@@ -805,3 +805,63 @@ export const products = pgTable("products", {
 
 // Preparado para uma futura tabela de estoque (product_stock: productId, unitId/serviceFrontId,
 // quantity) — não implementada agora por pedido explícito da especificação do módulo.
+
+// ---------------------------------------------------------------------------
+// Controle Diário do equipamento (registro feito pelo próprio operador logado).
+// O operador NÃO é um campo do formulário: user_id vem sempre da sessão.
+// ---------------------------------------------------------------------------
+export const dailyRecords = pgTable("daily_records", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  recordDate: text("record_date").notNull(),
+  workedToday: boolean("worked_today").notNull(),
+  noWorkReason: text("no_work_reason"),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  location: text("location"),
+  // Unidade da leitura no momento do registro ("HOURS" = horímetro, "KM" = odômetro).
+  readingUnit: text("reading_unit", { enum:["HOURS","KM"] }).notNull(),
+  startReading: doublePrecision("start_reading"),
+  endReading: doublePrecision("end_reading"),
+  inactiveOrProblem: boolean("inactive_or_problem").notNull().default(false),
+  problemReason: text("problem_reason"),
+  problemPhotoKey: text("problem_photo_key"),
+  hadProduction: boolean("had_production").notNull().default(false),
+  productionType: text("production_type", { enum:["BALDEIO","PORTO"] }),
+  // Foto única do registro: ficha do baldeio (BALDEIO) ou foto da produção (PORTO).
+  productionPhotoKey: text("production_photo_key"),
+  notes: text("notes"),
+  ...timestamps,
+}, (table) => [
+  // Um operador não registra o mesmo equipamento duas vezes no mesmo dia (evita envio duplicado).
+  uniqueIndex("daily_records_user_equipment_date_unique").on(table.userId, table.equipmentId, table.recordDate),
+  index("daily_records_equipment_date_idx").on(table.equipmentId, table.recordDate),
+  index("daily_records_front_date_idx").on(table.serviceFrontId, table.recordDate),
+]);
+
+export const dailyRecordFuelings = pgTable("daily_record_fuelings", {
+  id: serial("id").primaryKey(),
+  dailyRecordId: integer("daily_record_id").notNull().references(() => dailyRecords.id, { onDelete:"cascade" }),
+  fuelingNumber: integer("fueling_number").notNull(),
+  liters: doublePrecision("liters").notNull(),
+  location: text("location").notNull(),
+  ...timestamps,
+}, (table) => [uniqueIndex("daily_record_fuelings_number_unique").on(table.dailyRecordId, table.fuelingNumber)]);
+
+export const dailyRecordTrips = pgTable("daily_record_trips", {
+  id: serial("id").primaryKey(),
+  dailyRecordId: integer("daily_record_id").notNull().references(() => dailyRecords.id, { onDelete:"cascade" }),
+  tripNumber: integer("trip_number").notNull(),
+  logsQuantity: integer("logs_quantity").notNull(),
+  // Só no PORTO; NULL no BALDEIO.
+  meters: doublePrecision("meters"),
+  ...timestamps,
+}, (table) => [uniqueIndex("daily_record_trips_number_unique").on(table.dailyRecordId, table.tripNumber)]);
+
+// "Memória" do último equipamento usado por cada operador: pré-seleciona o equipamento
+// ao abrir o Controle Diário. Uma linha por usuário, atualizada quando ele troca de máquina.
+export const equipmentCurrentAssignments = pgTable("equipment_current_assignments", {
+  userId: integer("user_id").primaryKey().references(() => users.id),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  ...timestamps,
+}, (table) => [index("equipment_current_assignments_equipment_idx").on(table.equipmentId)]);
