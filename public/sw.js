@@ -9,13 +9,13 @@
  * - Ao sair do sistema ou entrar com outro usuário, a página pede para apagar os dados salvos
  *   (mensagem CLEAR_USER_DATA), para um funcionário nunca ver dados de outro no mesmo celular.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `jc-static-${VERSION}`;
 const PAGE_CACHE = `jc-pages-${VERSION}`;
 const API_CACHE = `jc-api-${VERSION}`;
 const PRECACHE = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/jc-florestais-logo.png", "/favicon.svg"];
 // Exportações (PDF/Excel/CSV) e login/logout nunca são guardados.
-const API_SKIP = [/^\/api\/auth\/(login|logout|theme)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
+const API_SKIP = [/^\/api\/ping/, /^\/api\/auth\/(login|logout|theme)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE)).catch(() => undefined).then(() => self.skipWaiting()));
@@ -43,14 +43,26 @@ async function cacheFirst(request) {
   return response;
 }
 
+// Com sinal fraco a rede pode demorar muito: se não responder em NETWORK_TIMEOUT_MS e houver
+// cópia salva, mostra a cópia (a resposta da rede, se chegar depois, ainda atualiza o cache).
+const NETWORK_TIMEOUT_MS = 8000;
+
 async function networkFirst(request, cacheName, fallbackUrl) {
-  try {
-    const response = await fetch(request);
+  const fromCache = async () => (await caches.match(request, { cacheName })) || (fallbackUrl ? await caches.match(fallbackUrl) : undefined);
+  const network = fetch(request).then(async (response) => {
     const type = response.headers.get("content-type") || "";
-    if (response.ok && (cacheName !== API_CACHE || type.includes("application/json"))) (await caches.open(cacheName)).put(request, response.clone());
+    if (response.ok && (cacheName !== API_CACHE || type.includes("application/json"))) await (await caches.open(cacheName)).put(request, response.clone());
     return response;
+  });
+  network.catch(() => undefined); // evita erro solto quando já respondemos com a cópia salva
+  const timeout = new Promise((resolve) => setTimeout(() => resolve("timeout"), NETWORK_TIMEOUT_MS));
+  try {
+    const first = await Promise.race([network, timeout]);
+    if (first !== "timeout") return first;
+    const cached = await fromCache();
+    return cached || (await network);
   } catch (error) {
-    const cached = (await caches.match(request, { cacheName })) || (fallbackUrl && (await caches.match(fallbackUrl)));
+    const cached = await fromCache();
     if (cached) return cached;
     if (cacheName === API_CACHE) {
       return new Response(JSON.stringify({ error: "Sem conexão com a internet. Estes dados ainda não foram carregados neste celular." }), { status: 503, headers: { "Content-Type": "application/json", "X-Offline": "1" } });

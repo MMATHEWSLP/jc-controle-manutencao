@@ -2,7 +2,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @next/next/no-img-element -- ícone estático pequeno do próprio app */
 import { useEffect, useState } from "react";
-import { QUEUE_EVENT, listQueued, syncQueue } from "../lib/offline-queue";
+import { CONNECTIVITY_EVENT, checkOnline } from "../lib/connectivity";
+import { QUEUE_EVENT, QUEUE_SENT_EVENT, listQueued, syncQueue } from "../lib/offline-queue";
 
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -14,21 +15,29 @@ export default function AppRuntime() {
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [iosHint, setIosHint] = useState(false);
   const [dismissed, setDismissed] = useState(true);
+  const [sentNotice, setSentNotice] = useState(0);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker.register("/sw.js").then((registration) => registration.update()).catch(() => undefined);
     }
     const refreshPending = () => { listQueued().then((items) => setPending(items.filter((item) => item.status === "PENDING").length)).catch(() => undefined); };
-    const goOnline = () => { setOnline(true); syncQueue().catch(() => undefined); };
-    const goOffline = () => setOnline(false);
-    setOnline(navigator.onLine);
+    // O iPhone nem sempre avisa que ficou sem internet: a conexão é confirmada chamando o
+    // servidor (lib/connectivity.ts) — a cada 20 s, ao voltar para o app e nos eventos do navegador.
+    const probe = () => { checkOnline().then((ok) => { if (ok) syncQueue().catch(() => undefined); }).catch(() => undefined); };
+    const onConnectivity = (event: Event) => setOnline(Boolean((event as CustomEvent<boolean>).detail));
+    const onVisible = () => { if (document.visibilityState === "visible") probe(); };
+    const onSent = (event: Event) => { setSentNotice(Number((event as CustomEvent<number>).detail)); window.setTimeout(() => setSentNotice(0), 5000); };
     refreshPending();
-    syncQueue().catch(() => undefined);
-    const timer = window.setInterval(() => { if (navigator.onLine) syncQueue().catch(() => undefined); }, 60_000);
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
+    probe();
+    const timer = window.setInterval(probe, 20_000);
+    window.addEventListener("online", probe);
+    window.addEventListener("offline", probe);
+    window.addEventListener("focus", probe);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(CONNECTIVITY_EVENT, onConnectivity);
     window.addEventListener(QUEUE_EVENT, refreshPending);
+    window.addEventListener(QUEUE_SENT_EVENT, onSent);
 
     const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
     let hidden = false;
@@ -40,9 +49,13 @@ export default function AppRuntime() {
     if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) setIosHint(true);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", probe);
+      window.removeEventListener("offline", probe);
+      window.removeEventListener("focus", probe);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(CONNECTIVITY_EVENT, onConnectivity);
       window.removeEventListener(QUEUE_EVENT, refreshPending);
+      window.removeEventListener(QUEUE_SENT_EVENT, onSent);
       window.removeEventListener("beforeinstallprompt", onPrompt);
     };
   }, []);
@@ -53,6 +66,7 @@ export default function AppRuntime() {
   return <>
     {!online && <div className="app-offline-banner" role="status"><strong>Sem internet</strong><span>Mostrando os últimos dados salvos no celular. O Controle Diário pode ser preenchido e será enviado quando o sinal voltar.{pending > 0 ? ` ${pending} registro(s) aguardando envio.` : ""}</span></div>}
     {online && pending > 0 && <div className="app-offline-banner syncing" role="status"><strong>Enviando</strong><span>{pending} registro(s) do Controle Diário aguardando envio...</span></div>}
+    {online && pending === 0 && sentNotice > 0 && <div className="app-offline-banner syncing" role="status"><strong>✓ Enviado</strong><span>{sentNotice} registro(s) guardado(s) no celular foram enviados. Já aparecem em &quot;Meus registros&quot;.</span></div>}
     {!dismissed && (installPrompt || iosHint) && <div className="app-install-hint" role="dialog" aria-label="Instalar app">
       <img src="/icon-192.png" alt="" width={40} height={40}/>
       <div><strong>Instale o app JC Sistema</strong><span>{installPrompt ? "Abre direto da tela inicial, em tela cheia, e funciona sem internet." : "No Safari, toque em Compartilhar e depois em \"Adicionar à Tela de Início\"."}</span></div>
