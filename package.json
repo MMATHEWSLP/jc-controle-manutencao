@@ -25,12 +25,13 @@
     "test:equipment-sort": "esbuild tests/equipment-sort.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-equipment-sort.mjs && node --test /tmp/manutencao-preventiva-equipment-sort.mjs",
     "test:import-trocas-oleo": "node --test tests/import-trocas-oleo.test.mjs",
     "test:daily-record-rules": "esbuild tests/daily-record-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-daily-record-rules.mjs && node --test /tmp/manutencao-preventiva-daily-record-rules.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:generic-date-correction && npm run test:equipment-health-summary && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization && npm run test:products-import && npm run test:equipment-sort && npm run test:import-trocas-oleo && npm run test:daily-record-rules",
+    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:generic-date-correction && npm run test:equipment-health-summary && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization && npm run test:products-import && npm run test:equipment-sort && npm run test:import-trocas-oleo && npm run test:daily-record-rules && npm run test:daily-history-rules",
     "import:equipamentos": "node importar-equipamentos.mjs",
     "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
     "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular",
     "import:trocas-oleo": "node importar-trocas-oleo.mjs",
-    "import:trocas-oleo:confirmar": "node importar-trocas-oleo.mjs --confirmar"
+    "import:trocas-oleo:confirmar": "node importar-trocas-oleo.mjs --confirmar",
+    "test:daily-history-rules": "esbuild tests/daily-history-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-daily-history-rules.mjs && node --test /tmp/manutencao-preventiva-daily-history-rules.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

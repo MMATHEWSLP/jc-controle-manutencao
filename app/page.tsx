@@ -276,7 +276,9 @@ export default function Home() {
     const [data, setData] = useState<SystemData>(emptyData);
     const [dataLoading, setDataLoading] = useState(false);
     const [dataError, setDataError] = useState("");
+    // Link do Histórico de Registros Diários (filtros na URL): abre direto no Controle Diário.
     const [active, setActive] = useState<Section>("Dashboard");
+    useEffect(() => { if (new URLSearchParams(window.location.search).get("tela") === "historico-diario") setActive("Controle Diário"); }, []);
     const [oilOpen, setOilOpen] = useState(true);
     const [profileOpen, setProfileOpen] = useState(false);
     const [notice, setNotice] = useState("");

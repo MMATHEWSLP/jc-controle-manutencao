@@ -191,3 +191,75 @@ html[data-theme="dark"] .daily-equipment-card strong,html[data-theme="dark"] .da
 html[data-theme="dark"] .daily-search-button,html[data-theme="dark"] .daily-search-trigger{background:#252421;border-color:#45423d;color:#d8d5cf}
 html[data-theme="dark"] .daily-search-modal li button.cursor{background:#0E2A1C}
 html[data-theme="dark"] .daily-security-note{background:#2a2213;color:#ffd166}
+/* ---------- Lançamento manual (login que não é de campo) ---------- */
+.daily-manual-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;background:#fff1e5;color:#9a3b00;border:1px solid #f3c9a4;font-size:9px;font-style:normal;font-weight:900;letter-spacing:.02em;white-space:nowrap;vertical-align:middle}
+.daily-manual-operator{display:grid;gap:10px;padding:12px 14px;border:1px solid #f0d49a;border-radius:12px;background:#fffaf0}
+.daily-manual-operator-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.daily-manual-operator-head span{color:#8a6a33;font-size:11px;font-weight:700}
+.daily-manual-operator input{font-size:15px;min-height:46px}
+html[data-theme="dark"] .daily-manual-tag{background:#2e1a0c;border-color:#8a4a18;color:#ffb070}
+html[data-theme="dark"] .daily-manual-operator{background:#2a2213;border-color:#5a4520}html[data-theme="dark"] .daily-manual-operator-head span{color:#d9c59a}
+/* ---------- Histórico de Registros Diários ---------- */
+.daily-history{display:grid;gap:0}
+.daily-history-filters{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(250px,1.2fr) minmax(170px,.9fr) minmax(200px,1fr);gap:10px 12px;align-items:start;padding:14px 16px;border-bottom:1px solid var(--line)}
+.daily-history-filters label,.daily-history-period legend,.daily-history-multi>span{color:#4a6272;font-size:9px;font-weight:800}
+.daily-history-search{position:relative;align-self:end;display:block}
+.daily-history-search>span{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:18px;line-height:1;color:#6b7d89;pointer-events:none}
+.daily-history-search input{margin:0;padding-left:34px;min-height:40px}
+.daily-history-period{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;margin:0;padding:0;border:0;min-width:0}
+.daily-history-period legend{padding:0;margin-bottom:6px}
+.daily-history-period input{margin:0;min-width:0}.daily-history-period>span{color:var(--muted);font-size:10px}
+.daily-history-select{display:grid;gap:6px}.daily-history-select select{margin:0}
+.daily-history-multi{position:relative;display:grid;gap:6px;min-width:0}
+.daily-history-multi-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:1px solid #dce3e7;border-radius:7px;background:var(--surface);color:#4c6574;font-size:11px;text-align:left;cursor:pointer}
+.daily-history-multi-trigger strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}.daily-history-multi-trigger.has-value{border-color:#9acdbb;color:#0d7455}
+.daily-history-multi-menu{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;min-width:240px;display:grid;gap:6px;padding:8px;border:1px solid #dce3e7;border-radius:9px;background:var(--surface);box-shadow:0 14px 34px rgba(8,27,40,.16)}
+.daily-history-multi-menu input[type=search]{margin:0}
+.daily-history-multi-menu ul{max-height:260px;overflow:auto;margin:0;padding:0;list-style:none}
+.daily-history-multi-menu li label{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;color:#304657;font-size:11px;font-weight:600;cursor:pointer}
+.daily-history-multi-menu li label:hover{background:#eaf5f0}.daily-history-multi-menu li input{width:auto;min-height:0;margin:0}
+.daily-history-chips{display:flex;flex-wrap:wrap;gap:5px}
+.daily-history-chips button{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid #9acdbb;border-radius:12px;background:#effaf5;color:#0d5c42;font-size:10px;font-weight:800;cursor:pointer}
+.daily-history-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line)}
+.daily-history-toolbar>span{display:flex;align-items:center;gap:10px;color:#4a6272;font-size:11px;font-weight:800}
+.daily-history-toolbar>div{display:flex;gap:8px}
+.daily-history-toolbar button{min-height:34px;min-width:74px;padding:6px 14px;border-radius:7px;font-size:10px;font-weight:900}
+.daily-history-toolbar button:disabled{opacity:.45;cursor:not-allowed}
+.daily-history-clear{border:0;background:transparent;color:#0878bd;font-size:10px;font-weight:800;cursor:pointer;padding:2px 4px}
+.daily-history-list{display:grid;gap:6px;padding:12px 16px;transition:opacity .15s}.daily-history-list.is-loading{opacity:.55}
+.daily-history-head,.daily-history-row{display:grid;grid-template-columns:78px minmax(110px,1fr) minmax(150px,1.3fr) minmax(110px,1fr) 104px minmax(150px,1.3fr) 40px;align-items:center;gap:10px}
+.daily-history-head{padding:0 12px 2px 15px;color:var(--muted);font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.daily-history-row{min-height:48px;padding:6px 12px;border:1px solid var(--line);border-left:3px solid #16835f;border-radius:8px;background:var(--surface);font-size:11px;color:#304657}
+.daily-history-row.warn{border-left-color:var(--orange)}.daily-history-row.off{border-left-color:#a8b2b9}
+.daily-history-row>span{min-width:0}
+.daily-history-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:9px;font-weight:600}
+.dh-date{font-weight:800;color:#1e394e}
+.dh-equipment strong{display:block;color:#1e394e;font-size:13px;font-weight:900}
+.dh-operator{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}.dh-operator b{overflow:hidden;text-overflow:ellipsis;font-weight:800}
+.dh-front{overflow:hidden;text-overflow:ellipsis}
+.dh-worked{font-weight:900;color:#0d5c42;font-variant-numeric:tabular-nums}
+.dh-status{display:flex;flex-wrap:wrap;gap:4px}.dh-status .status-pill{font-size:8px;font-style:normal;padding:3px 7px}
+.dh-actions{display:flex;justify-content:flex-end}
+.daily-history-edit{display:grid;place-items:center;width:34px;height:34px;border:1px solid #dce3e7;border-radius:8px;background:var(--surface);color:#27789f;font-size:16px;cursor:pointer}
+.daily-history-edit:hover{border-color:#9fc3d6;background:#eef6fb}.daily-history-edit:disabled{opacity:.5;cursor:wait}
+.daily-history-pages{display:flex;align-items:center;justify-content:center;gap:12px;padding:4px 16px 16px;color:#4a6272;font-size:11px;font-weight:800}
+.daily-history-pages button{min-height:34px;padding:6px 14px;border-radius:7px;font-size:10px;font-weight:800}
+@media(max-width:1100px){.daily-history-filters{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){
+  .daily-history-head{display:none}
+  /* Celular/tablet: o card quebra em duas linhas, sem voltar ao bloco grande. */
+  .daily-history-row{grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"date equip worked actions" "operator operator front front" "status status status status";gap:4px 10px;padding:8px 10px}
+  .dh-date{grid-area:date}.dh-equipment{grid-area:equip}.dh-worked{grid-area:worked;text-align:right}.dh-actions{grid-area:actions}
+  .dh-operator{grid-area:operator}.dh-front{grid-area:front;text-align:right}.dh-status{grid-area:status}
+  .dh-equipment{display:flex;align-items:baseline;gap:6px;min-width:0}.dh-equipment small{display:inline}
+}
+@media(max-width:600px){
+  .daily-history-filters{grid-template-columns:1fr;padding:12px}
+  .daily-history-list{padding:10px 12px}
+  .daily-history-toolbar{padding:10px 12px}
+}
+html[data-theme="dark"] .daily-history-row,html[data-theme="dark"] .daily-history-multi-trigger,html[data-theme="dark"] .daily-history-multi-menu,html[data-theme="dark"] .daily-history-edit{border-color:#45423d;color:#d8d5cf}
+html[data-theme="dark"] .daily-history-row.warn{border-left-color:var(--orange)}html[data-theme="dark"] .daily-history-row.ok{border-left-color:#16835f}html[data-theme="dark"] .daily-history-row.off{border-left-color:#6f6a63}
+html[data-theme="dark"] .dh-date,html[data-theme="dark"] .dh-equipment strong{color:var(--ink)}html[data-theme="dark"] .dh-worked{color:#8fe3bd}
+html[data-theme="dark"] .daily-history-filters label,html[data-theme="dark"] .daily-history-period legend,html[data-theme="dark"] .daily-history-multi>span,html[data-theme="dark"] .daily-history-toolbar>span,html[data-theme="dark"] .daily-history-multi-menu li label{color:#d8d5cf}
+html[data-theme="dark"] .daily-history-multi-menu li label:hover,html[data-theme="dark"] .daily-history-edit:hover{background:#0E2A1C}
+html[data-theme="dark"] .daily-history-chips button{background:#0e2a1c;border-color:#1f6b4b;color:#8fe3bd}
