@@ -1,23 +1,30 @@
 // Fila do Controle Diário no próprio celular (IndexedDB), para registrar sem internet.
 // O registro fica guardado com as fotos e é enviado sozinho quando a conexão volta
-// (evento "online", ao abrir o app e a cada minuto enquanto houver pendência).
+// (ao reconectar, ao voltar para o app e a cada 30 s enquanto houver pendência).
 //
 // Cada item guarda o id do usuário que preencheu: só é enviado quando ESSE usuário está
 // logado, para um registro nunca ser gravado em nome de outro funcionário que use o mesmo celular.
+import { checkOnline } from "./connectivity";
+
+// Fotos são guardadas como bytes (ArrayBuffer) e não como Blob: alguns iPhones recusam
+// gravar Blob no IndexedDB. Itens antigos (com Blob) continuam sendo aceitos no envio.
+export type StoredPhoto = { data: ArrayBuffer; type: string } | Blob;
 
 export type QueuedDailyRecord = {
   id: string;
   userId: number;
   createdAt: string;
   payload: string;
-  problemPhoto: Blob | null;
-  productionPhoto: Blob | null;
+  problemPhoto: StoredPhoto | null;
+  productionPhoto: StoredPhoto | null;
   summary: { prefix: string; recordDate: string; equipmentId: number | null; endReading: number | null };
   status: "PENDING" | "ERROR";
   error: string | null;
 };
 
 export const QUEUE_EVENT = "jc-offline-queue-changed";
+// Disparado com detail = quantidade enviada, para o app avisar "N registro(s) enviado(s)".
+export const QUEUE_SENT_EVENT = "jc-offline-queue-sent";
 const DB_NAME = "jc-sistema-offline";
 const STORE = "daily-records";
 
@@ -45,14 +52,25 @@ async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStor
 
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event(QUEUE_EVENT)); };
 
+async function toStored(blob: Blob | null): Promise<StoredPhoto | null> {
+  return blob ? { data: await blob.arrayBuffer(), type: blob.type || "image/webp" } : null;
+}
+function toBlob(photo: StoredPhoto | null): Blob | null {
+  if (!photo) return null;
+  return photo instanceof Blob ? photo : new Blob([photo.data], { type: photo.type });
+}
+
 export async function listQueued(userId?: number): Promise<QueuedDailyRecord[]> {
   if (typeof indexedDB === "undefined") return [];
   const all = await withStore<QueuedDailyRecord[]>("readonly", (store) => store.getAll() as IDBRequest<QueuedDailyRecord[]>).catch(() => []);
   return all.filter((item) => userId === undefined || item.userId === userId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-export async function enqueue(item: Omit<QueuedDailyRecord, "id" | "createdAt" | "status" | "error">) {
-  const record: QueuedDailyRecord = { ...item, id: crypto.randomUUID(), createdAt: new Date().toISOString(), status: "PENDING", error: null };
+export async function enqueue(item: Omit<QueuedDailyRecord, "id" | "createdAt" | "status" | "error" | "problemPhoto" | "productionPhoto"> & { problemPhoto: Blob | null; productionPhoto: Blob | null }) {
+  const record: QueuedDailyRecord = {
+    ...item, problemPhoto: await toStored(item.problemPhoto), productionPhoto: await toStored(item.productionPhoto),
+    id: crypto.randomUUID(), createdAt: new Date().toISOString(), status: "PENDING", error: null,
+  };
   await withStore("readwrite", (store) => store.put(record));
   notify();
   return record;
@@ -73,35 +91,40 @@ let running: Promise<number> | null = null;
 export function syncQueue(): Promise<number> {
   if (running) return running;
   // A trava é liberada no .finally() da promessa (e não num try/finally interno): quando a função
-  // retorna antes do primeiro await (ex.: sem internet), um finally interno rodaria ANTES desta
-  // atribuição e a trava ficaria presa para sempre, bloqueando todos os envios seguintes.
+  // retorna antes do primeiro await, um finally interno rodaria ANTES desta atribuição e a
+  // trava ficaria presa para sempre, bloqueando todos os envios seguintes.
   running = (async () => {
     let sent = 0;
-    if (typeof navigator !== "undefined" && !navigator.onLine) return 0;
     const pendingAll = (await listQueued()).filter((item) => item.status === "PENDING");
     if (!pendingAll.length) return 0;
+    if (!(await checkOnline())) return 0;
     const session = await fetch("/api/auth/session", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).catch(() => null) as { user?: { id: number } } | null;
     const userId = session?.user?.id;
     if (!userId) return 0;
     for (const item of pendingAll.filter((entry) => entry.userId === userId)) {
       const form = new FormData();
       form.set("payload", item.payload);
-      if (item.problemPhoto) form.set("problemPhoto", item.problemPhoto, "problema.webp");
-      if (item.productionPhoto) form.set("productionPhoto", item.productionPhoto, "producao.webp");
+      const problem = toBlob(item.problemPhoto), production = toBlob(item.productionPhoto);
+      if (problem) form.set("problemPhoto", problem, "problema.webp");
+      if (production) form.set("productionPhoto", production, "producao.webp");
       let response: Response;
       try { response = await fetch("/api/daily-records", { method: "POST", body: form }); }
-      catch { break; } // sem conexão de verdade: tenta de novo depois
-      // 409 = já estava gravado (ex.: a resposta de uma tentativa anterior se perdeu no caminho).
-      if (response.ok || response.status === 409) { await withStore("readwrite", (store) => store.delete(item.id)); sent++; continue; }
+      catch { break; } // caiu a conexão no meio: tenta de novo depois
+      if (response.ok) { await withStore("readwrite", (store) => store.delete(item.id)); sent++; continue; }
       if (response.status >= 500 || response.status === 401 || response.headers.get("X-Offline")) break;
+      // Recusado (ex.: 409 = já existe registro deste equipamento nesta data). Nunca some em
+      // silêncio: fica na lista com o motivo, e o operador confere e descarta.
       const body = await response.json().catch(() => ({})) as { error?: string };
-      await markError(item, body.error ?? "O servidor recusou este registro.");
+      await markError(item, response.status === 409
+        ? `${body.error ?? "Já existe um registro deste equipamento nesta data."} Confira em "Meus registros" e descarte este se estiver repetido.`
+        : body.error ?? "O servidor recusou este registro.");
     }
     return sent;
   })().finally(() => {
     running = null;
     notify();
   });
+  running.then((sent) => { if (sent > 0 && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUEUE_SENT_EVENT, { detail: sent })); }).catch(() => undefined);
   return running;
 }
 

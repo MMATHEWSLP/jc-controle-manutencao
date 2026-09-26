@@ -6,6 +6,7 @@ import {
   emptyFueling, emptyTrip, MAX_FUELINGS, MAX_TRIPS, parseDecimal, readingLabel, resizeCards, validateDailyRecord,
   type DailyRecordDraft, type ProductionType, type ReadingUnit,
 } from "../lib/daily-record-rules";
+import { reportNetworkFailure } from "../lib/connectivity";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
 
@@ -130,20 +131,28 @@ function DailyForm({ context, flash, onSent }:{ context:Context; flash:(message:
     const productionBlob=draft.workedToday&&draft.hadProduction&&productionPhoto?productionPhoto.blob:null;
     // Sem sinal: guarda no celular (com as fotos) e envia sozinho quando a internet voltar.
     const saveOnPhone=async()=>{
+      reportNetworkFailure();
       await enqueue({ userId:context.userId, payload, problemPhoto:problemBlob, productionPhoto:productionBlob,
         summary:{ prefix:equipment?.prefix??"", recordDate:draft.recordDate, equipmentId:draft.equipmentId, endReading:draft.workedToday?parseDecimal(draft.endReading):null } });
       flash("Sem internet: registro salvo no celular. Ele será enviado automaticamente quando o sinal voltar.");
       resetAfterSend();
     };
     try {
-      if(typeof navigator!=="undefined"&&!navigator.onLine){ await saveOnPhone(); return; }
       const form=new FormData();
       form.set("payload",payload);
       if(problemBlob)form.set("problemPhoto",problemBlob,"problema.webp");
       if(productionBlob)form.set("productionPhoto",productionBlob,"producao.webp");
       let response:Response;
-      try { response=await fetch("/api/daily-records",{ method:"POST", body:form }); }
-      catch { await saveOnPhone(); return; }
+      // Não confia em navigator.onLine (no iPhone ele diz "online" mesmo em modo avião): tenta
+      // enviar e, se a rede falhar ou demorar demais (sinal fraco), guarda no celular.
+      const controller=new AbortController(); const timer=window.setTimeout(()=>controller.abort(),45_000);
+      try { response=await fetch("/api/daily-records",{ method:"POST", body:form, signal:controller.signal }); }
+      catch {
+        try { await saveOnPhone(); }
+        catch { throw new Error("Sem internet e não foi possível guardar no celular. Libere o armazenamento do navegador e tente de novo."); }
+        return;
+      }
+      finally { window.clearTimeout(timer); }
       const result=await response.json().catch(()=>({})) as { message?:string; error?:string };
       if(!response.ok)throw new Error(result.error??"Não foi possível enviar o registro.");
       flash(result.message??"Controle Diário enviado.");
@@ -336,15 +345,23 @@ function ReviewModal({ draft, equipment, fronts, unit, problemPhoto, productionP
 function PendingQueue({ userId }:{ userId:number }) {
   const [items,setItems]=useState<QueuedDailyRecord[]>([]);
   const [syncing,setSyncing]=useState(false);
+  const [retryMessage,setRetryMessage]=useState("");
   useEffect(()=>{
     const refresh=()=>{ listQueued(userId).then(setItems).catch(()=>setItems([])); };
     refresh(); window.addEventListener(QUEUE_EVENT,refresh);
     return ()=>window.removeEventListener(QUEUE_EVENT,refresh);
   },[userId]);
   if(!items.length)return null;
-  async function retry(){ setSyncing(true); try{ await syncQueue(); } finally { setSyncing(false); } }
+  async function retry(){
+    setSyncing(true); setRetryMessage("");
+    try{ await syncQueue(); const left=await listQueued(userId); if(left.some((item)=>item.status==="PENDING"))setRetryMessage("Ainda sem conexão com o servidor. O envio acontece sozinho quando o sinal voltar."); }
+    finally { setSyncing(false); }
+  }
   return <section className="panel daily-queue">
-    <header><div><strong>Guardados no celular</strong><span>Serão enviados automaticamente quando houver internet.</span></div><button type="button" className="secondary" disabled={syncing} onClick={retry}>{syncing?"Enviando...":"Enviar agora"}</button></header>
+    {items.some((item)=>item.status==="PENDING")
+      ? <header><div><strong>Guardados no celular</strong><span>Serão enviados automaticamente quando houver internet.</span></div><button type="button" className="secondary" disabled={syncing} onClick={retry}>{syncing?"Enviando...":"Enviar agora"}</button></header>
+      : <header><div><strong>Registros não enviados</strong><span>O servidor recusou estes registros. Confira o motivo e descarte.</span></div></header>}
+    {retryMessage && <p className="daily-queue-note">{retryMessage}</p>}
     <ul>{items.map((item)=><li key={item.id} className={item.status==="ERROR"?"error":""}>
       <strong>{item.summary.prefix}</strong><span>{formatDay(item.summary.recordDate)}</span>
       {item.status==="ERROR"?<><small>Não enviado: {item.error}</small><button type="button" className="danger-action" onClick={()=>{ if(window.confirm("Descartar este registro guardado no celular?"))removeQueued(item.id); }}>Descartar</button></>:<small>Aguardando envio</small>}
@@ -370,6 +387,8 @@ function RecordsPanel({ scope, equipment }:{ scope:"mine"|"all"; equipment:Equip
     finally { setLoading(false); }
   },[scope,from,to,equipmentId]);
   useEffect(()=>{ load(); },[load]);
+  // Quando a fila do celular envia registros, a lista se atualiza sozinha.
+  useEffect(()=>{ window.addEventListener(QUEUE_EVENT,load); return ()=>window.removeEventListener(QUEUE_EVENT,load); },[load]);
   return <article className="panel module-panel">
     <div className="module-filters-grid">
       <label>De<input type="date" value={from} onChange={(event)=>setFrom(event.target.value)}/></label>
