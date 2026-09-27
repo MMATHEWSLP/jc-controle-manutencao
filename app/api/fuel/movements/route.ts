@@ -52,6 +52,8 @@ export async function POST(request: Request) {
     if (problem) return Response.json({ error: problem }, { status: 400 });
     const [created] = await db.insert(fuelMovements).values({
       ...input, serviceFrontId,
+      // Frente ↔ Porto da mesma frente: o destino é a própria frente.
+      destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
       meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,
       createdBy: user.id,
     }).returning({ id: fuelMovements.id });

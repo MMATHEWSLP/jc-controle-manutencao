@@ -77,7 +77,7 @@ export async function PUT(request: Request, { params }: Context) {
     }
 
     if (!auth.user!.permissions.includes("materials.ship")) return Response.json({ error: "Você não possui permissão para separar/enviar materiais." }, { status: 403 });
-    if (found.status === "SENT" || found.status === "NOT_FULFILLED") return Response.json({ error: "Esta solicitação já foi concluída e não pode mais ser alterada." }, { status: 409 });
+    if (found.status === "SENT" || found.status === "PARTIALLY_SENT" || found.status === "NOT_FULFILLED") return Response.json({ error: "Esta solicitação já foi concluída e não pode mais ser alterada." }, { status: 409 });
     if (found.status === "CANCELLED") return Response.json({ error: "Esta solicitação foi cancelada e não pode mais ser alterada." }, { status: 409 });
 
     const confirm = body.confirm === true;

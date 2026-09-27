@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { authorize } from "../../../../lib/auth";
 import { activeFuelTypes, fuelBalances, fuelHistory, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters } from "../../../../lib/fuel";
-import { FUEL_MOVEMENT_LABELS } from "../../../../lib/fuel-rules";
+import { FUEL_LOCATION_LABELS, FUEL_MOVEMENT_LABELS, THIRD_PARTY_LABEL } from "../../../../lib/fuel-rules";
 import { createFuelHistoryPdf, formatPdfDate } from "../../../../lib/pdf";
 
 // Exporta exatamente o Histórico exibido (mesma query string): ?formato=pdf | ?formato=xlsx.
@@ -25,9 +25,17 @@ export async function GET(request: Request) {
     const [{ rows, total }, balances] = await Promise.all([fuelHistory(db, scope, filters, EXPORT_LIMIT), fuelBalances(db, scope, filters.from, filters.to)]);
     const frontLabel = scope.length === fronts.length && fronts.length > 1 ? "Todas as frentes" : fronts.filter((front) => scope.includes(front.id)).map((front) => front.name).join(", ") || "—";
     const fuelLabel = filters.fuelTypeId ? types.find((type) => type.id === filters.fuelTypeId)?.name ?? "—" : "Todos";
-    const movementLabel = filters.movementType ? FUEL_MOVEMENT_LABELS[filters.movementType] : "Todos";
+    const movementLabel = `${filters.movementType === "TERCEIROS" ? THIRD_PARTY_LABEL : filters.movementType ? FUEL_MOVEMENT_LABELS[filters.movementType] : "Todos"}${filters.location ? ` · ${FUEL_LOCATION_LABELS[filters.location]}` : ""}`;
     const meter = (row: (typeof rows)[number]) => row.meterReading === null ? "" : `${liters(row.meterReading)} ${row.meterUnit === "KM" ? "km" : "h"}`;
-    const frontText = (row: (typeof rows)[number]) => row.movementType === "TRANSFERENCIA" ? `${row.frontName} » ${row.destinationFrontName ?? "—"}` : row.frontName;
+    type Row = (typeof rows)[number];
+    // Origem = estoque (Frente/Porto). Na transferência mostra origem » destino.
+    const originText = (row: Row) => {
+      const origin = `${row.stockLocationLabel}${row.origin ? ` (${row.origin})` : ""}`;
+      if (row.movementType !== "TRANSFERENCIA") return origin;
+      const destination = row.destinationFrontId && row.destinationFrontId !== row.serviceFrontId ? `${row.destinationLocationLabel ?? "Frente"} ${row.destinationFrontName ?? ""}`.trim() : row.destinationLocationLabel ?? "Frente";
+      return `${row.stockLocationLabel} » ${destination}`;
+    };
+    const receiver = (row: Row) => row.thirdParty ? `Terceiro: ${row.thirdPartyDescription ?? "—"}` : row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : "—";
     const now = new Date();
     const stamp = now.toISOString().slice(0, 10);
 
@@ -35,10 +43,16 @@ export async function GET(request: Request) {
       const pdf = createFuelHistoryPdf({
         generatedAt: formatPdfDate(now.toISOString()), total, truncated: total > rows.length,
         filters: { period: `${brDay(filters.from)} a ${brDay(filters.to)}`, front: frontLabel, fuel: fuelLabel, movement: movementLabel },
-        balances: types.map((type) => { const balance = balances.get(type.id); return { fuel: type.name, balance: `${liters(balance?.balance ?? 0)} L`, entries: `${liters(balance?.entries ?? 0)} L`, exits: `${liters(balance?.exits ?? 0)} L` }; }),
+        balances: types.map((type) => {
+          const balance = balances.get(type.id);
+          return {
+            fuel: type.name, balance: `${liters(balance?.balance ?? 0)} L`, entries: `${liters(balance?.entries ?? 0)} L`, exits: `${liters(balance?.exits ?? 0)} L`,
+            split: `Frente ${liters(balance?.byLocation.FRENTE.balance ?? 0)} L · Porto ${liters(balance?.byLocation.PORTO.balance ?? 0)} L`,
+          };
+        }),
         items: rows.map((row) => ({
-          date: brDay(row.movementDate), type: row.movementLabel, fuel: row.fuelName, quantity: liters(row.quantity), front: frontText(row),
-          equipment: row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : "—", origin: row.origin ?? "—", meter: meter(row) || "—", responsible: row.responsible ?? "—",
+          date: brDay(row.movementDate), type: row.movementLabel, fuel: row.fuelName, quantity: liters(row.quantity), front: row.frontName,
+          equipment: receiver(row), origin: originText(row), meter: meter(row) || "—", responsible: row.responsible ?? "—",
         })),
       });
       return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="combustivel-${stamp}.pdf"`, "Cache-Control": "private, no-store" } });
@@ -54,11 +68,12 @@ export async function GET(request: Request) {
       { header: "Combustível", key: "fuel", width: 16 },
       { header: "Quantidade (L)", key: "quantity", width: 14 },
       { header: "Frente de serviço", key: "front", width: 18 },
-      { header: "Filial destino", key: "destination", width: 18 },
+      { header: "Origem (estoque)", key: "origin", width: 18 },
+      { header: "Destino da transferência", key: "destination", width: 22 },
       { header: "Veículo/Máquina", key: "equipment", width: 16 },
       { header: "Modelo", key: "model", width: 24 },
+      { header: "Saída para terceiros — destino/descrição", key: "thirdParty", width: 30 },
       { header: "Hodômetro/Horímetro", key: "meter", width: 16 },
-      { header: "Origem", key: "origin", width: 22 },
       { header: "Responsável", key: "responsible", width: 22 },
       { header: "Observações", key: "notes", width: 30 },
       { header: "Lançado por", key: "createdBy", width: 22 },
@@ -70,25 +85,32 @@ export async function GET(request: Request) {
     for (const row of rows) {
       sheet.addRow({
         date: new Date(`${row.movementDate}T12:00:00Z`), type: row.movementLabel, fuel: row.fuelName, quantity: row.quantity, front: row.frontName,
-        destination: row.destinationFrontName ?? "", equipment: row.equipmentPrefix ?? "", model: row.equipmentModel ?? "", meter: meter(row),
-        origin: row.origin ?? "", responsible: row.responsible ?? "", notes: row.notes ?? "", createdBy: row.createdByName ?? "",
+        origin: `${row.stockLocationLabel}${row.origin ? ` (${row.origin})` : ""}`,
+        destination: row.movementType === "TRANSFERENCIA" ? `${row.destinationFrontName ?? row.frontName} — ${row.destinationLocationLabel ?? "Frente"}` : "",
+        equipment: row.equipmentPrefix ?? "", model: row.equipmentModel ?? "", thirdParty: row.thirdParty ? row.thirdPartyDescription ?? "" : "", meter: meter(row),
+        responsible: row.responsible ?? "", notes: row.notes ?? "", createdBy: row.createdByName ?? "",
       });
     }
     sheet.getColumn("date").numFmt = "dd/mm/yyyy";
     sheet.getColumn("quantity").numFmt = "#,##0.00";
     const summary = workbook.addWorksheet("Saldos");
     summary.columns = [
-      { header: "Combustível", key: "fuel", width: 18 }, { header: "Frente", key: "front", width: 20 },
+      { header: "Combustível", key: "fuel", width: 18 }, { header: "Frente", key: "front", width: 20 }, { header: "Estoque", key: "location", width: 12 },
       { header: "Saldo atual (L)", key: "balance", width: 16 }, { header: "Entradas no período (L)", key: "entries", width: 20 }, { header: "Saídas no período (L)", key: "exits", width: 20 },
     ];
     summary.getRow(1).font = { bold: true };
     const frontName = new Map(fronts.map((front) => [front.id, front.name]));
+    const locations = [["FRENTE", "Frente"], ["PORTO", "Porto"]] as const;
     for (const type of types) {
       const balance = balances.get(type.id);
-      summary.addRow({ fuel: type.name, front: frontLabel, balance: balance?.balance ?? 0, entries: balance?.entries ?? 0, exits: balance?.exits ?? 0 }).font = { bold: true };
-      if (scope.length > 1) for (const id of scope) {
-        const totals = balance?.byFront.get(id);
-        summary.addRow({ fuel: "", front: frontName.get(id) ?? "—", balance: totals?.balance ?? 0, entries: totals?.entries ?? 0, exits: totals?.exits ?? 0 });
+      summary.addRow({ fuel: type.name, front: frontLabel, location: "Total", balance: balance?.balance ?? 0, entries: balance?.entries ?? 0, exits: balance?.exits ?? 0 }).font = { bold: true };
+      for (const [key, label] of locations) {
+        const totals = balance?.byLocation[key];
+        summary.addRow({ fuel: "", front: frontLabel, location: label, balance: totals?.balance ?? 0, entries: totals?.entries ?? 0, exits: totals?.exits ?? 0 });
+      }
+      if (scope.length > 1) for (const id of scope) for (const [key, label] of locations) {
+        const totals = balance?.byFront.get(id)?.byLocation[key];
+        summary.addRow({ fuel: "", front: frontName.get(id) ?? "—", location: label, balance: totals?.balance ?? 0, entries: totals?.entries ?? 0, exits: totals?.exits ?? 0 });
       }
     }
     const buffer = await workbook.xlsx.writeBuffer();

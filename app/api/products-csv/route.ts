@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const header = ["tag", "nome", "referencia", "preco", "fornecedor", "marca", "aplicacao", "estoque", "estoque_por_frente"].join(";");
     const lines = rows.map((row) => {
       const extra = extras.get(row.id)!;
-      const byFront = extra.fronts.filter((front) => front.active && front.quantity !== null).map((front) => `${front.name}: ${front.quantity}`).join(" | ");
+      const byFront = extra.fronts.filter((front) => front.active && front.editable).map((front) => `${front.name}: ${front.quantity}`).join(" | ");
       return [row.tag, row.name, row.reference ?? "", row.price.toFixed(2), row.supplierName ?? "", row.brand ?? "", extra.applicationNames.join(", "), String(scopeSummary(extra.fronts, displayed).quantityHere).replace(".", ","), byFront]
         .map((value) => csvCell(String(value)))
         .join(";");

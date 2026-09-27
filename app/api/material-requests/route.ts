@@ -12,8 +12,11 @@ export const STATUS_LABELS: Record<RequestStatus, string> = { PENDING:"Pendente"
 export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = { PENDING:"Pendente", SENT:"Enviado", NOT_AVAILABLE:"Não disponível" };
 // Ativas (seção 10): ainda exigem alguma ação — ficam nas telas Recebidas/Enviadas. Terminais:
 // só aparecem no Histórico. A separação acontece aqui na consulta, não por CSS/filtro visual.
-export const ACTIVE_STATUSES: RequestStatus[] = ["PENDING", "IN_SEPARATION", "PARTIALLY_SENT"];
-export const TERMINAL_STATUSES: RequestStatus[] = ["SENT", "NOT_FULFILLED", "CANCELLED"];
+// PARTIALLY_SENT é terminal: só é gravado na confirmação do envio, quando TODOS os itens já foram
+// decididos (enviado ou "não tem"). Vai direto para o Histórico, que mostra item a item o que foi
+// enviado e o que ficou sem estoque (referência para compra).
+export const ACTIVE_STATUSES: RequestStatus[] = ["PENDING", "IN_SEPARATION"];
+export const TERMINAL_STATUSES: RequestStatus[] = ["SENT", "PARTIALLY_SENT", "NOT_FULFILLED", "CANCELLED"];
 
 export function requestNumber(id: number) { return `SOL-${String(id).padStart(6, "0")}`; }
 export function canSeeAllRequests(user: SessionUser) { return user.permissions.includes("materials.manage") || user.permissions.includes("materials.ship"); }

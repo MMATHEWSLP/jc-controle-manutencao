@@ -381,7 +381,7 @@ export function createDailyHistoryPdf(input:DailyHistoryPdfInput){
 }
 
 export type FuelHistoryPdfItem={date:string;type:string;fuel:string;quantity:string;front:string;equipment:string;origin:string;meter:string;responsible:string};
-export type FuelBalancePdfItem={fuel:string;balance:string;entries:string;exits:string};
+export type FuelBalancePdfItem={fuel:string;balance:string;entries:string;exits:string;split?:string};
 type FuelHistoryPdfInput={items:FuelHistoryPdfItem[];balances:FuelBalancePdfItem[];generatedAt:string;total:number;truncated:boolean;filters:{period:string;front:string;fuel:string;movement:string}};
 
 // Lançamento de Combustível: paisagem, cards de saldo + mesmas colunas do Histórico da tela.
@@ -393,18 +393,18 @@ export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
     content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,"MOVIMENTAÇÃO DE COMBUSTÍVEL",true,"0.08 0.25 0.36");content+=text(130,531,7.5,`PERÍODO ${input.filters.period} · ${input.filters.front}`,false,"0.31 0.46 0.55");
     content+=text(674,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(674,553,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");content+=text(674,536,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
     const width=Math.min(260,Math.floor(786/Math.max(1,input.balances.length))-8);
-    input.balances.forEach((balance,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 447 ${width} 58 re f\n`;content+=text(x+10,491,7,truncate(balance.fuel.toUpperCase(),40),true,"0.34 0.47 0.56");content+=text(x+10,471,13,`Saldo ${balance.balance}`,true,"0.08 0.25 0.36");content+=text(x+10,455,7,`Entradas ${balance.entries} · Saídas ${balance.exits}`,false,"0.31 0.46 0.55");});
+    input.balances.forEach((balance,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 447 ${width} 58 re f\n`;content+=text(x+10,491,7,truncate(balance.fuel.toUpperCase(),40),true,"0.34 0.47 0.56");content+=text(x+10,471,13,`Saldo ${balance.balance}`,true,"0.08 0.25 0.36");content+=text(x+10,457,6.5,truncate(`Entradas ${balance.entries} · Saídas ${balance.exits}${balance.split?` · ${balance.split}`:""}`,Math.floor(width/3.3)),false,"0.31 0.46 0.55");});
     content+="0.91 0.97 0.95 rg 28 413 786 24 re f\n";
     content+=text(39,422,7.5,`LANÇAMENTOS: ${input.total} · COMBUSTÍVEL: ${input.filters.fuel} · TIPO: ${input.filters.movement}`,true,"0.08 0.38 0.29");
     if(input.truncated)content+=text(470,422,7,`Exibindo os primeiros ${input.items.length} — refine os filtros para exportar o restante.`,true,"0.64 0.40 0.05");
     content+="0.06 0.25 0.36 rg 28 380 786 24 re f\n";
-    const columns:[number,string][]=[[35,"DATA"],[88,"TIPO"],[150,"COMBUSTÍVEL"],[232,"QTD. (L)"],[290,"FRENTE"],[392,"VEÍCULO/MÁQUINA"],[512,"ORIGEM"],[618,"HOD./HORÍM."],[694,"RESPONSÁVEL"]];
+    const columns:[number,string][]=[[35,"DATA"],[88,"TIPO"],[166,"COMBUSTÍVEL"],[236,"QTD. (L)"],[290,"FRENTE"],[362,"ORIGEM (ESTOQUE)"],[470,"VEÍCULO/MÁQUINA / TERCEIRO"],[626,"HOD./HORÍM."],[694,"RESPONSÁVEL"]];
     for(const [x,label] of columns)content+=text(x,389,6.5,label,true,"1 1 1");
     if(items.length===0)content+=text(260,330,12,"Nenhum lançamento encontrado para o período e filtros selecionados.",true,"0.33 0.47 0.55");
     items.forEach((item,index)=>{
       const top=362-(index*22);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-8} 786 22 re f\n`;
-      const values:[number,string,number][]=[[35,item.date,10],[88,item.type,12],[150,item.fuel,16],[232,item.quantity,11],[290,item.front,20],[392,item.equipment,23],[512,item.origin,20],[618,item.meter,14],[694,item.responsible,22]];
-      for(const [x,value,max] of values)content+=text(x,top,7,truncate(value,max),x===232);
+      const values:[number,string,number][]=[[35,item.date,10],[88,item.type,18],[166,item.fuel,14],[236,item.quantity,10],[290,item.front,14],[362,item.origin,22],[470,item.equipment,32],[626,item.meter,12],[694,item.responsible,22]];
+      for(const [x,value,max] of values)content+=text(x,top,7,truncate(value,max),x===236);
       content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
     });
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Relatório gerado com os lançamentos atuais de combustível, respeitando os filtros ativos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");

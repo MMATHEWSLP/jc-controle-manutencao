@@ -4,7 +4,7 @@ import { getDb } from "../db";
 import { equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
-import { computeFuelBalances, FUEL_MOVEMENT_LABELS, isFuelMovementType, type FuelMovementType } from "./fuel-rules";
+import { computeFuelBalances, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
@@ -18,7 +18,8 @@ export function monthStart(day: string) {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | null; frontId: number | null; q: string };
+// movementType "TERCEIROS" = só as saídas para terceiros. location = estoque Frente/Porto (origem ou destino).
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | null; location: FuelLocation | null; frontId: number | null; q: string };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -26,9 +27,11 @@ export function parseFuelFilters(params: URLSearchParams): FuelFilters {
   const from = DATE.test(params.get("from") ?? "") ? params.get("from")! : monthStart(today);
   const to = DATE.test(params.get("to") ?? "") ? params.get("to")! : today;
   const fuelTypeId = Number(params.get("fuelTypeId")) || null;
-  const movementType = isFuelMovementType(params.get("movementType")) ? params.get("movementType") as FuelMovementType : null;
+  const rawType = params.get("movementType");
+  const movementType = rawType === "TERCEIROS" ? "TERCEIROS" : isFuelMovementType(rawType) ? rawType : null;
+  const location = isFuelLocation(params.get("location")) ? params.get("location") as FuelLocation : null;
   const frontId = Number(params.get("frontId")) || null;
-  return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, frontId, q: (params.get("q") ?? "").trim() };
+  return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim() };
 }
 
 export async function activeFuelTypes(db: Db) {
@@ -53,8 +56,8 @@ export function fuelScopeFronts(visibleIds: number[], displayed: number[] | "ALL
 export async function fuelBalances(db: Db, scopeFronts: number[], from: string, to: string) {
   if (scopeFronts.length === 0) return computeFuelBalances([], { fronts: [], from, to });
   const rows = await db.select({
-    serviceFrontId: fuelMovements.serviceFrontId, destinationFrontId: fuelMovements.destinationFrontId, fuelTypeId: fuelMovements.fuelTypeId,
-    movementType: fuelMovements.movementType, movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity,
+    serviceFrontId: fuelMovements.serviceFrontId, stockLocation: fuelMovements.stockLocation, destinationFrontId: fuelMovements.destinationFrontId,
+    destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType, movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity,
   }).from(fuelMovements).where(and(isNull(fuelMovements.deletedAt), or(inArray(fuelMovements.serviceFrontId, scopeFronts), inArray(fuelMovements.destinationFrontId, scopeFronts))));
   return computeFuelBalances(rows, { fronts: scopeFronts, from, to });
 }
@@ -71,10 +74,12 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
     lte(fuelMovements.movementDate, filters.to),
   ];
   if (filters.fuelTypeId) conditions.push(eq(fuelMovements.fuelTypeId, filters.fuelTypeId));
-  if (filters.movementType) conditions.push(eq(fuelMovements.movementType, filters.movementType));
+  if (filters.movementType === "TERCEIROS") conditions.push(eq(fuelMovements.thirdParty, true));
+  else if (filters.movementType) conditions.push(eq(fuelMovements.movementType, filters.movementType));
+  if (filters.location) conditions.push(or(eq(fuelMovements.stockLocation, filters.location), and(eq(fuelMovements.movementType, "TRANSFERENCIA"), eq(fuelMovements.destinationLocation, filters.location))));
   if (filters.q) {
     const like = `%${filters.q}%`;
-    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like)));
+    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.thirdPartyDescription, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like)));
   }
   return and(...conditions);
 }
@@ -86,7 +91,8 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       id: fuelMovements.id, serviceFrontId: fuelMovements.serviceFrontId, frontName: serviceFronts.name,
       fuelTypeId: fuelMovements.fuelTypeId, fuelName: fuelTypes.name, unit: fuelTypes.unit,
       movementType: fuelMovements.movementType, movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity,
-      origin: fuelMovements.origin, equipmentId: fuelMovements.equipmentId, equipmentPrefix: equipment.prefix,
+      origin: fuelMovements.origin, stockLocation: fuelMovements.stockLocation, destinationLocation: fuelMovements.destinationLocation,
+      thirdParty: fuelMovements.thirdParty, thirdPartyDescription: fuelMovements.thirdPartyDescription, equipmentId: fuelMovements.equipmentId, equipmentPrefix: equipment.prefix,
       equipmentModel: sql<string | null>`trim(concat(${equipment.brand}, ' ', ${equipment.model}))`,
       meterReading: fuelMovements.meterReading, meterUnit: fuelMovements.meterUnit,
       destinationFrontId: fuelMovements.destinationFrontId, destinationFrontName: destinationFront.name,
@@ -100,7 +106,15 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       .where(where).orderBy(desc(fuelMovements.movementDate), desc(fuelMovements.id)).limit(limit).offset(offset),
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
-  return { rows: rows.map((row) => ({ ...row, movementLabel: FUEL_MOVEMENT_LABELS[row.movementType] })), total };
+  return {
+    rows: rows.map((row) => ({
+      ...row,
+      movementLabel: fuelMovementLabel(row),
+      stockLocationLabel: FUEL_LOCATION_LABELS[row.stockLocation],
+      destinationLocationLabel: row.destinationLocation ? FUEL_LOCATION_LABELS[row.destinationLocation] : null,
+    })),
+    total,
+  };
 }
 
 export type FuelHistoryRow = Awaited<ReturnType<typeof fuelHistory>>["rows"][number];
@@ -137,16 +151,21 @@ const text = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 // Campos do formulário "Novo Registro" (a frente é resolvida à parte, por resolveFuelFront).
 export function readFuelMovementBody(body: Record<string, unknown>) {
   const movementType = isFuelMovementType(body.movementType) ? body.movementType : ("" as FuelMovementType);
-  const equipmentId = Number(body.equipmentId) || null;
+  const thirdParty = movementType === "SAIDA" && body.thirdParty === true;
+  const transfer = movementType === "TRANSFERENCIA";
   return {
     fuelTypeId: Number(body.fuelTypeId) || 0,
     movementType,
     movementDate: typeof body.movementDate === "string" ? body.movementDate.slice(0, 10) : "",
     quantity: numberOrNull(body.quantity) ?? NaN,
-    origin: text(body.origin),
-    equipmentId,
-    meterReading: numberOrNull(body.meterReading),
-    destinationFrontId: movementType === "TRANSFERENCIA" ? Number(body.destinationFrontId) || null : null,
+    stockLocation: (isFuelLocation(body.stockLocation) ? body.stockLocation : "") as FuelLocation,
+    thirdParty,
+    thirdPartyDescription: thirdParty ? text(body.thirdPartyDescription) : null,
+    equipmentId: thirdParty || transfer ? null : Number(body.equipmentId) || null,
+    meterReading: thirdParty || transfer ? null : numberOrNull(body.meterReading),
+    // Destino da transferência: sem filial escolhida = mesma frente (Frente ↔ Porto).
+    destinationFrontId: transfer ? Number(body.destinationFrontId) || null : null,
+    destinationLocation: transfer && isFuelLocation(body.destinationLocation) ? body.destinationLocation : null,
     responsible: text(body.responsible),
     notes: text(body.notes),
   };

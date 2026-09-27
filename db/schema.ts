@@ -641,8 +641,8 @@ export const materialRequests = pgTable("material_requests", {
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   requestedAt: text("requested_at").notNull().default(isoNow),
   // PENDING/IN_SEPARATION são os estados ativos "em espera"; SENT/PARTIALLY_SENT/NOT_FULFILLED/
-  // CANCELLED são terminais (só aparecem no Histórico — seção 10 da especificação). PARTIALLY_SENT
-  // fica ativo (segue exigindo ação sobre os itens não atendidos) até virar SENT/NOT_FULFILLED.
+  // CANCELLED são terminais (só aparecem no Histórico — seção 10 da especificação). PARTIALLY_SENT só
+  // é gravado quando todos os itens já foram decididos, por isso também é terminal.
   status: text("status", { enum:["PENDING","IN_SEPARATION","SENT","PARTIALLY_SENT","NOT_FULFILLED","CANCELLED"] }).notNull().default("PENDING"),
   notes: text("notes"),
   shippedBy: integer("shipped_by").references(() => users.id),
@@ -890,12 +890,21 @@ export const fuelMovements = pgTable("fuel_movements", {
   movementType: text("movement_type", { enum:["ENTRADA","SAIDA","TRANSFERENCIA"] }).notNull(),
   movementDate: text("movement_date").notNull(),
   quantity: doublePrecision("quantity").notNull(),
+  // Texto livre da versão anterior do formulário (antes do "Origem" virar seleção). Só leitura.
   origin: text("origin"),
+  // Estoque onde o lançamento acontece: cada frente tem dois saldos independentes, o da Frente e o
+  // do Porto. Na TRANSFERÊNCIA é o estoque de origem.
+  stockLocation: text("stock_location", { enum:["FRENTE","PORTO"] }).notNull().default("FRENTE"),
+  // Saída para terceiros (fora da frota): sem equipamento, com descrição livre de quem recebeu.
+  thirdParty: boolean("third_party").notNull().default(false),
+  thirdPartyDescription: text("third_party_description"),
   equipmentId: integer("equipment_id").references(() => equipment.id),
   meterReading: doublePrecision("meter_reading"),
   meterUnit: text("meter_unit", { enum:["HOURS","KM"] }),
-  // Filial destino: só na TRANSFERÊNCIA (soma no saldo da frente destino).
+  // Destino da TRANSFERÊNCIA (frente + estoque). Frente↔Porto da mesma frente usa a própria frente
+  // como destino; transferência para outra filial usa a frente destino.
   destinationFrontId: integer("destination_front_id").references(() => serviceFronts.id),
+  destinationLocation: text("destination_location", { enum:["FRENTE","PORTO"] }),
   responsible: text("responsible"),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
