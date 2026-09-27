@@ -1,0 +1,51 @@
+name: Importar funcionários
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "dry-run (simulação, não grava nada) ou confirmar (grava de verdade)"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - confirmar
+      arquivo:
+        description: "Arquivo da relação em scripts/import-funcionarios/data/"
+        required: true
+        default: "arapiuns-2026-09-27.tsv"
+      frente:
+        description: "Frente de serviço dos funcionários da relação"
+        required: true
+        default: "Arapiuns"
+      data:
+        description: "Data da relação (AAAA-MM-DD) — início das folgas/afastamentos em aberto"
+        required: true
+        default: "2026-09-27"
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Rodar importação
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODO: ${{ github.event.inputs.modo }}
+          ARQUIVO: ${{ github.event.inputs.arquivo }}
+          FRENTE: ${{ github.event.inputs.frente }}
+          DATA: ${{ github.event.inputs.data }}
+        run: |
+          case "$ARQUIVO" in */*|*..*) echo "Informe só o nome do arquivo."; exit 1;; esac
+          FLAG=""
+          if [ "$MODO" = "confirmar" ]; then FLAG="--confirmar"; fi
+          node importar-funcionarios.mjs $FLAG "--arquivo=scripts/import-funcionarios/data/$ARQUIVO" "--frente=$FRENTE" "--data=$DATA"
