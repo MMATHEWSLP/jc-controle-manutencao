@@ -198,3 +198,20 @@ html[data-theme="dark"] .hierarchy-user-card strong{color:#ecebe8}
 html[data-theme="dark"] .task-detail-modal .modal-form>div:not(.full)>span,html[data-theme="dark"] .task-notification-item small,html[data-theme="dark"] .task-summary-grid span,html[data-theme="dark"] .hierarchy-group>header span,html[data-theme="dark"] .hierarchy-user-card small{color:#c6c4c1}
 html[data-theme="dark"] .task-card-subtasks-toggle,html[data-theme="dark"] .task-notification-dropdown header button,html[data-theme="dark"] .hierarchy-user-card button{color:#bdb8af}
 html[data-theme="dark"] .task-card-footer .danger-action,html[data-theme="dark"] .task-summary-grid>div.danger-text strong{color:#FF6B6B}
+
+/* Itens vinculados a produto x manuais (Solicitação de Materiais) */
+.material-item-kind{display:inline-block;margin-right:4px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap;vertical-align:middle}
+.material-item-kind.linked{background:#e3f5ee;color:#11704f}.material-item-kind.manual{background:#eef1f3;color:#66737d}
+.material-item-mode{display:inline-flex;margin-left:auto;margin-right:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.material-item-mode button{border:0!important;border-radius:0!important;padding:6px 10px!important;background:transparent;font-size:11px;font-weight:700;color:var(--muted)}
+.material-item-mode button.active{background:#e3f5ee;color:#11704f}
+.material-item-hint{display:block;margin:4px 0 0;color:var(--muted);font-size:11px}
+.material-product-picker{position:relative}.material-product-picker ul{position:absolute;z-index:20;left:0;right:0;top:100%;max-height:240px;overflow:auto;margin:4px 0 0;padding:4px;list-style:none;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 10px 24px rgba(15,48,68,.14)}
+.material-product-picker li button{width:100%;text-align:left;border:0;background:none;padding:8px;border-radius:6px;font-size:12px}.material-product-picker li button:hover{background:#eef7fc}
+.material-product-picker small{color:var(--muted)}.material-product-empty{margin:4px 0 0;color:var(--muted);font-size:11px}
+.material-product-chip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border:1px solid #b9dccd;border-radius:8px;background:#f2faf7;font-weight:400}
+.material-product-chip small{color:var(--muted)}.material-product-chip button{margin-left:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 8px;font-size:11px}
+.material-origin{margin-bottom:10px}.material-short{border-color:#f1c4c6!important}.material-short-warning{margin:0 0 6px;color:#b83e43;font-size:12px;font-weight:700}
+html[data-theme="dark"] .material-item-kind.linked,html[data-theme="dark"] .material-item-mode button.active,html[data-theme="dark"] .material-product-chip{background:#14352c;color:#7bd7b2;border-color:#285e4b}
+html[data-theme="dark"] .material-item-kind.manual{background:#2b2926;color:#b1aea9}
+.fleet-order-editor header .material-item-mode button{color:#5f6f7a}.fleet-order-editor header .material-item-mode button.active{color:#11704f}

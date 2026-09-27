@@ -179,3 +179,78 @@ html[data-theme="dark"] .fuel-equipment-results li.other-front em,html[data-them
 html[data-theme="dark"] .fuel-type-pill.prestador,html[data-theme="dark"] .employee-absence-badge{background:#3a2a14;color:#ffc27a}
 html[data-theme="dark"] .employee-absence-current td{background:#2a2419}
 .employee-sheet-actions .transfer-from-details{margin-top:0}
+
+/* ---- Funcionários: ciclo de folga, lote, perfil ---- */
+.employee-tabs .nav-badge.soft{background:#e3ebef;color:#35556a}
+.employee-alert-banner{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:12px 16px;border:1px solid #f1c4c6;border-radius:12px;background:#fff5f5;color:#8e2429}
+.employee-alert-banner>span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#d94a4d;color:#fff;font-weight:900}
+.employee-alert-banner div{flex:1}.employee-alert-banner strong{font-size:13px}.employee-alert-banner p{margin:2px 0 0;font-size:12px;color:#9b4b4f}
+.employee-alert-banner button{border:1px solid #e3a7aa;background:#fff;color:#a52d33;border-radius:8px;padding:8px 12px;font-weight:700}
+.employee-summary-cards article.danger strong{color:#c83e43}
+.employee-alert-chip{display:inline-block;margin:2px 0;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}
+.employee-alert-chip.level-5{background:#fff5dc;color:#9a6b05}.employee-alert-chip.level-3{background:#ffeadc;color:#c34f0a}.employee-alert-chip.level-1{background:#ffe0d2;color:#b33d0c}
+.employee-alert-chip.danger{background:#d94a4d;color:#fff}
+.employee-row-danger td{background:#fff6f6}.employee-row-warning td{background:#fffbf1}.employee-row-selected td{background:#eef7fc}
+.employee-check{width:34px;text-align:center}.employee-check input{width:16px;height:16px;min-height:0}
+.employee-progress{display:flex;flex-direction:column;gap:3px;min-width:120px}.employee-progress>span{height:6px;border-radius:4px;background:#e6ecef;overflow:hidden}.employee-progress>span b{display:block;height:100%;background:#1f946d}
+.employee-progress small{font-size:11px;color:var(--muted);font-weight:700}
+.employee-batch-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;padding:10px 14px;border:1px solid #bfdcec;border-radius:10px;background:#eef7fc}
+.employee-batch-bar strong{margin-right:auto;color:#1d5f84}
+.equipment-row-actions .primary-lite{border-color:#b7dfcf;background:#edfaf5;color:#167457}
+.employee-step-names{margin:4px 22px 0;padding:10px 14px 10px 30px;max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:8px;font-size:12px;columns:2}
+.employee-step-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:14px 22px 4px}
+.employee-step-fields label{display:flex;flex-direction:column;gap:5px;font-weight:700}
+.employee-step-hint{margin:6px 22px 0;color:var(--muted);font-size:12px}
+.employee-modal .equipment-form-error{margin:10px 22px 0}
+.employee-form{grid-template-columns:repeat(3,minmax(0,1fr))}.employee-form .span-2{grid-column:span 2}
+.employee-cycle-config{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0;padding:10px;border:1px solid var(--line);border-radius:8px}
+.employee-cycle-config legend{padding:0 5px;font-size:12px;font-weight:800;color:#1d658c}.employee-cycle-config small{grid-column:1/-1;color:var(--muted);font-size:11px}
+.employee-restricted-box{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.employee-restricted-match{display:flex;flex-direction:column;gap:4px;width:100%;padding:10px 12px;border:1px solid #f1c4c6;border-radius:8px;background:#fff5f5;color:#8e2429;font-size:12px}
+.employee-restricted-match label{display:flex;gap:6px;align-items:center;font-weight:700}.employee-restricted-match input{width:15px;height:15px;min-height:0}
+.transfer-modal .employee-restricted-match{margin:12px 22px 0;width:auto}
+.employee-restricted-list{width:100%;max-height:200px;overflow:auto;margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:8px}
+.employee-restricted-list li{padding:7px 10px;border-bottom:1px solid var(--line)}.employee-restricted-list strong,.employee-restricted-list small{display:block}.employee-restricted-list small{color:var(--muted);font-size:11px}
+.employee-rehire-choice{margin:12px 22px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.employee-rehire-choice legend{padding:0 5px;font-weight:800;font-size:12px}.employee-rehire-choice label{display:flex;gap:8px;align-items:center;margin:6px 0;font-weight:600}.employee-rehire-choice input{width:15px;height:15px;min-height:0}
+button.danger-action,.primary.danger-action{border-color:#e3aeb1;color:#b83e43;background:#fff6f6}.primary.danger-action{background:#c83e43;color:#fff;box-shadow:none}
+.employee-company-add{display:flex;gap:8px;padding:14px 22px 0}.employee-company-add input{flex:1}
+.employee-company-list{list-style:none;margin:12px 22px 18px;padding:0;border:1px solid var(--line);border-radius:8px;max-height:360px;overflow:auto}
+.employee-company-list li{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line)}.employee-company-list li div{flex:1}.employee-company-list li.inactive{opacity:.6}
+.employee-company-list strong,.employee-company-list small{display:block}.employee-company-list small{color:var(--muted);font-size:11px}
+.employee-company-list button{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:11px;font-weight:700}
+.employee-history-filters{align-items:flex-end}.employee-pdf-link{display:inline-flex;align-items:center;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:700}
+.employee-tab-hint{margin:0 0 12px;color:var(--muted);font-size:12px}
+.employee-profile-actions{flex-wrap:wrap}
+.employee-dismissed-banner{display:flex;flex-direction:column;gap:3px;margin-bottom:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#f4f6f7}
+.employee-dismissed-banner.restricted{border-color:#f1c4c6;background:#fff5f5;color:#8e2429}
+.employee-counters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.employee-counters article{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.employee-counters small,.employee-counters em{display:block;color:var(--muted);font-size:11px;font-style:normal}.employee-counters strong{display:block;margin:4px 0;font-size:16px}
+.employee-current-cycle{margin-bottom:12px}.employee-cycle-head-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.employee-cycle-head-actions button:not(.primary){border:1px solid var(--line)!important;border-radius:6px;padding:7px 10px}
+.employee-cycle-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0;padding:16px;list-style:none}
+.employee-cycle-steps li{position:relative;display:flex;flex-direction:column;gap:3px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fafbfc}
+.employee-cycle-steps li.done{border-color:#b9dccd;background:#eff8f4}.employee-cycle-steps li.next{border-color:#80b8d8;border-style:dashed;background:#f2f8fb}
+.employee-cycle-steps b{font-size:11px;color:var(--muted)}.employee-cycle-steps strong{font-size:14px}
+.employee-cycle-span{font-size:12px;font-weight:800;color:#1d658c}.employee-cycle-span small{font-weight:600;color:var(--muted)}
+.employee-cycles-table td,.employee-cycles-table th{white-space:nowrap}
+html[data-theme="dark"] .employee-alert-banner,html[data-theme="dark"] .employee-restricted-match,html[data-theme="dark"] .employee-dismissed-banner.restricted{background:#321f24;border-color:#63363b;color:#ffb3b5}
+html[data-theme="dark"] .employee-alert-banner p{color:#e79a9d}html[data-theme="dark"] .employee-alert-banner button{background:#23211d;color:#ff9093;border-color:#63363b}
+html[data-theme="dark"] .employee-row-danger td{background:#2c1f20}html[data-theme="dark"] .employee-row-warning td{background:#2a2619}html[data-theme="dark"] .employee-row-selected td{background:#1d2a31}
+html[data-theme="dark"] .employee-batch-bar{background:#1d2a31;border-color:#2f4a58}html[data-theme="dark"] .employee-batch-bar strong{color:#9fcfe8}
+html[data-theme="dark"] .employee-cycle-steps li{background:#1f1d19}html[data-theme="dark"] .employee-cycle-steps li.done{background:#14352c;border-color:#285e4b}html[data-theme="dark"] .employee-cycle-steps li.next{background:#1d2a31;border-color:#3b6479}
+html[data-theme="dark"] .employee-dismissed-banner{background:#23211d}html[data-theme="dark"] .employee-tabs .nav-badge.soft{background:#35322c;color:#cfcac2}
+html[data-theme="dark"] .employee-alert-chip.level-5,html[data-theme="dark"] .employee-alert-chip.level-3,html[data-theme="dark"] .employee-alert-chip.level-1{background:#3a2a14;color:#ffc27a}
+@media(max-width:900px){.employee-form{grid-template-columns:1fr 1fr}.employee-counters{grid-template-columns:repeat(2,minmax(0,1fr))}.employee-cycle-steps{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.employee-form{grid-template-columns:1fr}.employee-form .span-2{grid-column:auto}.employee-step-names{columns:1}}
+.equipment-management-filters.employee-filters{display:flex;flex-wrap:wrap;align-items:flex-end}
+.employee-filters>.page-search{flex:2 1 280px;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.employee-filters>label:not(.page-search):not(.products-review-toggle){flex:1 1 150px}
+.employee-filters>.products-review-toggle{flex:0 0 auto;flex-direction:row}
+.employee-filters>button,.employee-filters>a{flex:0 0 auto;min-height:44px}
+.employee-batch-bar button:not(.link-button){min-height:36px;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:12px;font-weight:800}
+.employee-batch-bar button.primary{border-color:#007e5b;background:linear-gradient(135deg,#00a879,#05845f);color:#fff}
+.employee-batch-bar .link-button{font-size:12px}
+.sheet-card-head .employee-cycle-head-actions button{min-height:32px;padding:7px 12px;border:1px solid var(--line);border-radius:7px;font-size:12px}
+.sheet-card-head .employee-cycle-head-actions button.primary{border-color:#007e5b;background:linear-gradient(135deg,#00a879,#05845f);color:#fff}

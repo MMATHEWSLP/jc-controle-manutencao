@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { materialRequestItems, materialRequests } from "../../../../db/schema";
+import { materialRequestItems, materialRequests, serviceFronts } from "../../../../db/schema";
+import { frentesVisiveis } from "../../../../lib/access";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { loadMaterialRequestHistory, logMaterialRequestAudit } from "../../../../lib/material-request-audit";
+import { moveProductStock, reverseMaterialRequestStock, stockShortages } from "../../../../lib/products-data";
 import { ACTIVE_STATUSES, canSeeAllRequests, loadRequests, requestNumber } from "../route";
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -71,9 +73,13 @@ export async function PUT(request: Request, { params }: Context) {
     if (action === "REOPEN") {
       if (!canSeeAllRequests(auth.user!)) return Response.json({ error: "Você não possui permissão para reabrir solicitações." }, { status: 403 });
       if ((ACTIVE_STATUSES as string[]).includes(found.status)) return Response.json({ error: "Esta solicitação já está ativa." }, { status: 400 });
-      await db.update(materialRequests).set({ status: "PENDING", reopenedAt: now, reopenedBy: auth.user!.id, updatedAt: now }).where(eq(materialRequests.id, id));
-      await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_REOPENED", { status: found.status }, { status: "PENDING" });
-      return Response.json({ message: `Solicitação ${requestNumber(id)} reaberta e movida para as solicitações ativas.` });
+      // O estoque que o envio movimentou (itens vinculados a produtos) volta para a frente de origem.
+      const reversed = await db.transaction(async (tx) => {
+        await tx.update(materialRequests).set({ status: "PENDING", reopenedAt: now, reopenedBy: auth.user!.id, updatedAt: now }).where(eq(materialRequests.id, id));
+        return reverseMaterialRequestStock(tx, id, auth.user!.id, `Reabertura da solicitação ${requestNumber(id)}`);
+      });
+      await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_REOPENED", { status: found.status }, { status: "PENDING", stockMovementsReversed: reversed });
+      return Response.json({ message: `Solicitação ${requestNumber(id)} reaberta e movida para as solicitações ativas.${reversed ? " O estoque movimentado no envio foi estornado." : ""}` });
     }
 
     if (!auth.user!.permissions.includes("materials.ship")) return Response.json({ error: "Você não possui permissão para separar/enviar materiais." }, { status: 403 });
@@ -87,14 +93,13 @@ export async function PUT(request: Request, { params }: Context) {
     const updates = rawItems.map(normalizeItemUpdate).filter((update) => validIds.has(update.id));
     if (updates.length === 0) return Response.json({ error: "Informe ao menos um item para atualizar." }, { status: 400 });
 
-    for (const update of updates) {
-      await db.update(materialRequestItems).set({ itemStatus: update.itemStatus, quantitySent: update.quantitySent, notes: update.notes, updatedAt: now }).where(eq(materialRequestItems.id, update.id));
-    }
-
     const updatedById = new Map(updates.map((update) => [update.id, update]));
-    const finalItems = found.items.map((item) => updatedById.get(item.id) ?? { itemStatus: item.itemStatus, quantitySent: item.quantitySent });
+    const finalItems = found.items.map((item) => ({ ...item, ...(updatedById.get(item.id) ?? {}) }));
 
     if (!confirm) {
+      for (const update of updates) {
+        await db.update(materialRequestItems).set({ itemStatus: update.itemStatus, quantitySent: update.quantitySent, notes: update.notes, updatedAt: now }).where(eq(materialRequestItems.id, update.id));
+      }
       await db.update(materialRequests).set({ status: "IN_SEPARATION", updatedAt: now }).where(eq(materialRequests.id, id));
       await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_ITEMS_UPDATED", { status: found.status }, { status: "IN_SEPARATION", items: updates });
       return Response.json({ message: `Progresso da solicitação ${requestNumber(id)} salvo.` });
@@ -103,9 +108,36 @@ export async function PUT(request: Request, { params }: Context) {
     if (finalItems.some((item) => item.itemStatus === "PENDING")) return Response.json({ error: "Marque todos os itens (enviado ou não disponível) antes de confirmar o envio." }, { status: 400 });
     const sentCount = finalItems.filter((item) => item.itemStatus === "SENT").length;
     const finalStatus = sentCount === 0 ? "NOT_FULFILLED" : sentCount === finalItems.length ? "SENT" : "PARTIALLY_SENT";
-    await db.update(materialRequests).set({ status: finalStatus, shippedBy: auth.user!.id, shippedAt: now, shipmentNotes: shipmentNotes || null, updatedAt: now }).where(eq(materialRequests.id, id));
-    await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_SHIPPED", { status: found.status }, { status: finalStatus, shipmentNotes: shipmentNotes || null });
-    return Response.json({ message: `Envio da solicitação ${requestNumber(id)} confirmado.` });
+
+    // Itens vinculados a produtos e enviados movimentam o estoque: saem da frente de origem (escolhida
+    // por quem envia) e entram na frente que pediu. Itens manuais não mexem em estoque.
+    const stockLines = finalItems.filter((item) => item.productId && item.itemStatus === "SENT" && item.quantitySent)
+      .map((item) => ({ itemId: item.id, productId: item.productId!, quantity: item.quantitySent!, label: `${item.productTag ?? ""} ${item.description}`.trim() }));
+    let originFrontId: number | null = null;
+    if (stockLines.length) {
+      originFrontId = Number(body.originServiceFrontId);
+      if (!found.serviceFrontId) return Response.json({ error: "A solicitação não tem frente de destino para receber o estoque." }, { status: 400 });
+      const visible = frentesVisiveis(auth.user!);
+      const origin = Number.isInteger(originFrontId) && originFrontId > 0 ? (await db.select({ id: serviceFronts.id }).from(serviceFronts).where(and(eq(serviceFronts.id, originFrontId), eq(serviceFronts.active, true))).limit(1))[0] : undefined;
+      if (!origin) return Response.json({ error: "Escolha a frente de origem do estoque (de onde os produtos saem)." }, { status: 400 });
+      if (visible !== "ALL" && !visible.includes(origin.id)) return Response.json({ error: "Você não tem acesso ao estoque da frente de origem escolhida." }, { status: 403 });
+      if (origin.id === found.serviceFrontId) return Response.json({ error: "A frente de origem do estoque precisa ser diferente da frente que pediu." }, { status: 400 });
+      const shortages = await stockShortages(db, origin.id, stockLines);
+      if (shortages.length && body.allowNegative !== true)
+        return Response.json({ error: "Saldo insuficiente na frente de origem para alguns produtos.", shortages }, { status: 409 });
+    }
+
+    await db.transaction(async (tx) => {
+      for (const update of updates) {
+        await tx.update(materialRequestItems).set({ itemStatus: update.itemStatus, quantitySent: update.quantitySent, notes: update.notes, updatedAt: now }).where(eq(materialRequestItems.id, update.id));
+      }
+      await tx.update(materialRequests).set({ status: finalStatus, shippedBy: auth.user!.id, shippedAt: now, shipmentNotes: shipmentNotes || null, originServiceFrontId: originFrontId, updatedAt: now }).where(eq(materialRequests.id, id));
+      for (const line of stockLines) {
+        await moveProductStock(tx, { productId: line.productId, fromFrontId: originFrontId!, toFrontId: found.serviceFrontId!, quantity: line.quantity, reason: `Envio da solicitação ${requestNumber(id)}`, materialRequestId: id, materialRequestItemId: line.itemId, userId: auth.user!.id });
+      }
+    });
+    await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_SHIPPED", { status: found.status }, { status: finalStatus, shipmentNotes: shipmentNotes || null, originServiceFrontId: originFrontId, stockItems: stockLines.length });
+    return Response.json({ message: `Envio da solicitação ${requestNumber(id)} confirmado.${stockLines.length ? ` Estoque de ${stockLines.length} produto(s) movimentado.` : ""}` });
   } catch (error) {
     if (error instanceof Error && error.message === "ITEM_ID") return Response.json({ error: "Item inválido." }, { status: 400 });
     if (error instanceof Error && error.message === "ITEM_STATUS") return Response.json({ error: "Marcação de item inválida." }, { status: 400 });

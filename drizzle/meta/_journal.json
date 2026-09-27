@@ -113,6 +113,13 @@
       "when": 1790521440963,
       "tag": "0015_fuel_costs_and_employees",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790541938142,
+      "tag": "0016_employees_cycles_and_material_stock",
+      "breakpoints": true
     }
   ]
 }

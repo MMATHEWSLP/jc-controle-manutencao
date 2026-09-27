@@ -19,7 +19,8 @@ export async function GET(request: Request) {
     const base = {
       requestNumber: found.requestNumber, requester: found.requester, serviceFront: found.serviceFront,
       requestedAt: formatPdfDate(found.requestedAt), statusLabel: found.statusLabel, notes: found.notes || "Sem observações.",
-      items: found.items.map((item) => ({ description: item.description, quantityRequested: item.quantityRequested, reference: item.reference, itemStatus: item.itemStatus, quantitySent: item.quantitySent })),
+      items: found.items.map((item) => ({ description: item.description, quantityRequested: item.quantityRequested, reference: item.reference, itemStatus: item.itemStatus, quantitySent: item.quantitySent, productTag: item.productTag })),
+      originFront: found.originServiceFront,
       generatedAt: formatPdfDate(new Date().toISOString()),
     };
     const pdf = kind === "SHIPMENT"

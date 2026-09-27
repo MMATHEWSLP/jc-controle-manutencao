@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, equipmentModels, productEquipmentModels, productFrontStock, productPhotos, productReferences, products, serviceFronts } from "../db/schema";
+import { auditLogs, equipmentModels, productEquipmentModels, productFrontStock, productPhotos, productReferences, products, productStockMovements, serviceFronts } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { joinReferences, normalizeReference, normalizeTag } from "./product-rules";
@@ -154,4 +154,59 @@ export async function resolveCreationFront(db: DbLike, user: SessionUser, reques
   if (user.serviceFrontId && ids.includes(user.serviceFrontId)) return user.serviceFrontId;
   if (ids.length === 1) return ids[0];
   throw new ProductRuleError("Escolha em qual frente de serviço o produto será ativado.");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Movimentação de estoque entre frentes (hoje usada pelo envio da Solicitação de Materiais). O saldo
+// é sempre o de product_front_stock; cada movimento fica em product_stock_movements para poder ser
+// desfeito (reabertura da solicitação).
+// ---------------------------------------------------------------------------------------------
+
+// Saldo atual por frente dos produtos informados: Map<productId, Map<frontId, quantidade>>.
+export async function productStockByFront(db: DbLike, productIds: number[]) {
+  const map = new Map<number, Map<number, number>>();
+  if (productIds.length === 0) return map;
+  const rows = await db.select({ productId: productFrontStock.productId, serviceFrontId: productFrontStock.serviceFrontId, quantity: productFrontStock.quantity })
+    .from(productFrontStock).where(inArray(productFrontStock.productId, [...new Set(productIds)]));
+  for (const row of rows) map.set(row.productId, (map.get(row.productId) ?? new Map()).set(row.serviceFrontId, Number(row.quantity)));
+  return map;
+}
+
+// Itens que ficariam com saldo negativo na frente de origem (quantidade somada por produto).
+export async function stockShortages(db: DbLike, originFrontId: number, lines: Array<{ productId: number; quantity: number; label: string }>) {
+  const stock = await productStockByFront(db, lines.map((line) => line.productId));
+  const totals = new Map<number, { quantity: number; label: string }>();
+  for (const line of lines) totals.set(line.productId, { quantity: (totals.get(line.productId)?.quantity ?? 0) + line.quantity, label: line.label });
+  return [...totals].map(([productId, total]) => ({ productId, label: total.label, requested: total.quantity, available: stock.get(productId)?.get(originFrontId) ?? 0 }))
+    .filter((line) => line.available < line.requested);
+}
+
+async function applyStockDelta(db: DbLike, productId: number, serviceFrontId: number, delta: number, userId: number) {
+  const now = new Date().toISOString();
+  // Frente que ainda não tinha o produto passa a tê-lo ativo (mesma regra de "Ativar nesta frente").
+  await activateInFront(db, productId, serviceFrontId, userId);
+  await db.update(productFrontStock).set({ quantity: sql`${productFrontStock.quantity} + ${delta}`, updatedAt: now })
+    .where(and(eq(productFrontStock.productId, productId), eq(productFrontStock.serviceFrontId, serviceFrontId)));
+}
+
+// Transfere quantidade de um produto de uma frente para outra, registrando os dois movimentos.
+export async function moveProductStock(db: DbLike, input: { productId: number; fromFrontId: number; toFrontId: number; quantity: number; reason: string; materialRequestId?: number; materialRequestItemId?: number; userId: number }) {
+  await applyStockDelta(db, input.productId, input.fromFrontId, -input.quantity, input.userId);
+  await applyStockDelta(db, input.productId, input.toFrontId, input.quantity, input.userId);
+  const base = { productId: input.productId, reason: input.reason, materialRequestId: input.materialRequestId ?? null, materialRequestItemId: input.materialRequestItemId ?? null, createdBy: input.userId };
+  await db.insert(productStockMovements).values([{ ...base, serviceFrontId: input.fromFrontId, delta: -input.quantity }, { ...base, serviceFrontId: input.toFrontId, delta: input.quantity }]);
+  await productAudit(db, input.userId, input.productId, "ESTOQUE MOVIMENTADO", undefined, { from: input.fromFrontId, to: input.toFrontId, quantity: input.quantity, reason: input.reason });
+}
+
+// Desfaz os movimentos ainda válidos de uma solicitação (estorno ao reabrir). Devolve quantos foram
+// estornados.
+export async function reverseMaterialRequestStock(db: DbLike, materialRequestId: number, userId: number, reason: string) {
+  const movements = await db.select().from(productStockMovements).where(and(eq(productStockMovements.materialRequestId, materialRequestId), isNull(productStockMovements.reversedAt)));
+  const now = new Date().toISOString();
+  for (const movement of movements) {
+    await applyStockDelta(db, movement.productId, movement.serviceFrontId, -movement.delta, userId);
+    await db.update(productStockMovements).set({ reversedAt: now, updatedAt: now }).where(eq(productStockMovements.id, movement.id));
+    if (movement.delta < 0) await productAudit(db, userId, movement.productId, "ESTOQUE ESTORNADO", undefined, { serviceFrontId: movement.serviceFrontId, quantity: -movement.delta, reason });
+  }
+  return movements.length;
 }

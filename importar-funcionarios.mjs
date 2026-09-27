@@ -15,10 +15,10 @@ import pg from "pg";
 //
 // Regras da carga:
 // - Situação "Trabalhando" -> Ativo.
-// - "De folga"  -> Ativo + folga em aberto a partir da data da relação (badge "De folga").
+// - "De folga"  -> De folga + ciclo de folga nº 1 já na etapa "Chegada em casa" (data da relação).
 // - "Afastado"  -> Afastado + afastamento em aberto a partir da data da relação.
 //   (A relação não traz o início real da folga/afastamento; a data usada é a do documento.)
-// - Cidade vai para as observações (o cadastro não tem campo de cidade).
+// - Cidade vai para o campo Cidade; empresa em maiúsculas (e entra na lista de empresas).
 // - Linhas marcadas como duplicata na própria relação "(DUP…" são ignoradas.
 // - Nome cortado na relação (terminado em "…") é importado sem o "…" e sinalizado para correção.
 // ---------------------------------------------------------------------------
@@ -68,8 +68,8 @@ async function main() {
       seen.add(key);
       if (existing.has(key)) { plan.jaExiste.push({ ...row, cadastro: existing.get(key) }); continue; }
       const city = row.cidade.replace(/…$/, "").trim();
-      const notes = [city ? `Cidade: ${city}${row.cidade.endsWith("…") ? " (nome da cidade cortado na relação)" : ""}` : null, ORIGEM, truncated ? "ATENÇÃO: nome cortado na relação original — conferir e completar." : null].filter(Boolean).join(" · ");
-      const item = { ...row, name, notes, status: row.situacao === "Afastado" ? "AFASTADO" : "ATIVO", absence: row.situacao === "De folga" ? "FOLGA" : row.situacao === "Afastado" ? "AFASTAMENTO" : null };
+      const notes = [row.cidade.endsWith("…") ? "Nome da cidade cortado na relação" : null, ORIGEM, truncated ? "ATENÇÃO: nome cortado na relação original — conferir e completar." : null].filter(Boolean).join(" · ");
+      const item = { ...row, name, city: city ? city.toUpperCase() : null, company: row.empresa.trim().toUpperCase(), notes, status: row.situacao === "Afastado" ? "AFASTADO" : row.situacao === "De folga" ? "FOLGA" : "ATIVO", absence: row.situacao === "De folga" ? "FOLGA" : row.situacao === "Afastado" ? "AFASTAMENTO" : null };
       plan.inserir.push(item);
       if (truncated) plan.nomeCortado.push(item);
     }
@@ -102,14 +102,20 @@ async function main() {
       await client.query("BEGIN");
       for (const item of plan.inserir) {
         const { rows: [created] } = await client.query(
-          `INSERT INTO employees (name, job_title, company, admission_date, service_front_id, status, notes) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-          [item.name, item.funcao, item.empresa, item.admissao, front.id, item.status, item.notes],
+          `INSERT INTO employees (name, job_title, company, admission_date, service_front_id, status, city, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, cycle_work_days, cycle_off_days`,
+          [item.name, item.funcao, item.company, item.admissao, front.id, item.status, item.city, item.notes],
         );
+        await client.query(`INSERT INTO companies (name) VALUES ($1) ON CONFLICT DO NOTHING`, [item.company]);
         await client.query(
           `INSERT INTO employee_transfers (employee_id, previous_service_front_id, new_service_front_id, transfer_date, note) VALUES ($1, NULL, $2, $3, $4)`,
           [created.id, front.id, item.admissao, `Frente inicial (${ORIGEM.toLowerCase()})`],
         );
-        if (item.absence) {
+        if (item.absence === "FOLGA") {
+          await client.query(
+            `INSERT INTO employee_leave_cycles (employee_id, cycle_number, service_front_id, home_arrival, work_days_target, off_days_target, notes) VALUES ($1, 1, $2, $3, $4, $5, $6)`,
+            [created.id, front.id, DATA_RELACAO, created.cycle_work_days, created.cycle_off_days, `Situação "De folga" na relação de ${DATA_RELACAO.split("-").reverse().join("/")} (datas anteriores do ciclo não informadas).`],
+          );
+        } else if (item.absence) {
           await client.query(
             `INSERT INTO employee_absences (employee_id, kind, start_date, end_date, notes) VALUES ($1,$2,$3,NULL,$4)`,
             [created.id, item.absence, DATA_RELACAO, `Situação "${item.situacao}" na relação de ${DATA_RELACAO.split("-").reverse().join("/")} (data de início real não informada). Informe o retorno na ficha.`],

@@ -94,7 +94,9 @@ export const PERMISSION_GROUPS = [
   ]},
   { label:"Funcionários", items:[
     ["employees.view","Visualizar funcionários, transferências e afastamentos"],
-    ["employees.manage","Cadastrar, editar, transferir e registrar folgas/afastamentos de funcionários"],
+    ["employees.manage","Cadastrar, editar, transferir, demitir e controlar o ciclo de folga dos funcionários"],
+    ["employees.salary","Ver e informar o salário de carteira dos funcionários"],
+    ["employees.companies","Gerenciar a lista de empresas dos funcionários"],
   ]},
   { label:"Usuários", items:[
     ["users.view","Visualizar usuários"],
