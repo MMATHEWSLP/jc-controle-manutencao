@@ -87,6 +87,11 @@ export const PERMISSION_GROUPS = [
     ["suppliers.edit","Editar fornecedor"],
     ["suppliers.delete","Excluir fornecedor"],
   ]},
+  { label:"Combustível", items:[
+    ["fuel.view","Visualizar saldos e histórico de combustível"],
+    ["fuel.register","Registrar lançamento de combustível"],
+    ["fuel.manage","Editar e excluir lançamentos de combustível"],
+  ]},
   { label:"Usuários", items:[
     ["users.view","Visualizar usuários"],
     ["users.create","Criar usuários"],

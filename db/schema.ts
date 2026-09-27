@@ -757,7 +757,7 @@ export const taskNotifications = pgTable("task_notifications", {
 ]);
 
 // Módulo Produtos (peças, insumos, EPI e mantimentos). Lista usada pelo campo "Aplicação" no
-// cadastro de produto (vínculo 1:1 — cada produto aponta para no máximo um modelo) e também pela
+// cadastro de produto (multi-select, via product_equipment_models) e também pela
 // rotina best-effort de `equipment.equipmentModelId` acima.
 export const equipmentModels = pgTable("equipment_models", {
   id: serial("id").primaryKey(),
@@ -793,8 +793,8 @@ export const products = pgTable("products", {
   price: doublePrecision("price").notNull().default(0),
   supplierId: integer("supplier_id").references(() => suppliers.id),
   brand: text("brand"),
-  // A Aplicação (vínculo 1:1 com um modelo de equipamento). NULL = produto de uso geral
-  // (parafuso, abraçadeira, EPI, mantimento).
+  // Primeiro modelo da Aplicação (a lista completa fica em product_equipment_models). NULL = produto
+  // de uso geral (parafuso, abraçadeira, EPI, mantimento).
   equipmentModelId: integer("equipment_model_id").references(() => equipmentModels.id),
   // Marca linhas que vieram incompletas da importação (sem preço, sem referência, aplicação
   // genérica ainda sem modelo definido, TAG provisória, etc.) para revisão manual posterior.
@@ -809,8 +809,104 @@ export const products = pgTable("products", {
   index("products_needs_review_idx").on(table.needsReview),
 ]);
 
-// Preparado para uma futura tabela de estoque (product_stock: productId, unitId/serviceFrontId,
-// quantity) — não implementada agora por pedido explícito da especificação do módulo.
+// Estoque por frente SEM duplicar o cadastro: a ficha do produto (acima) é uma só; cada frente tem
+// no máximo uma linha aqui com a sua quantidade. `active` = o produto "existe" naquela frente
+// (aparece normal na listagem). Sem linha, ou com active=FALSE, o produto aparece apagado
+// (opacidade reduzida) e pode ser "ativado" pela frente — ativar só cria/reativa esta linha,
+// começando com quantidade zerada, nunca copia o produto.
+export const productFrontStock = pgTable("product_front_stock", {
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  activatedAt: text("activated_at"),
+  activatedBy: integer("activated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.productId, table.serviceFrontId] }),
+  index("product_front_stock_front_idx").on(table.serviceFrontId, table.active),
+]);
+
+// Várias referências por produto. `normalized` (maiúsculas, sem espaço/traço/ponto/barra) é a chave
+// da validação de duplicidade GLOBAL feita na aplicação (lib/product-rules.ts). O índice não é
+// UNIQUE de propósito: a base histórica importada já traz referências repetidas entre produtos, e
+// um índice único impediria a migração — a regra vale para todo cadastro/edição daqui em diante.
+// `products.reference` continua existindo (exportações, importação CSV, telas antigas) e passa a
+// guardar a lista unida por " / ".
+export const productReferences = pgTable("product_references", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
+  reference: text("reference").notNull(),
+  normalized: text("normalized").notNull(),
+  position: integer("position").notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("product_references_product_normalized_unique").on(table.productId, table.normalized),
+  index("product_references_normalized_idx").on(table.normalized),
+]);
+
+// Aplicação multi-select: um produto pode servir a vários modelos de equipamento.
+// `products.equipmentModelId` continua preenchido com o primeiro modelo, só por compatibilidade.
+export const productEquipmentModels = pgTable("product_equipment_models", {
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
+  equipmentModelId: integer("equipment_model_id").notNull().references(() => equipmentModels.id),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.productId, table.equipmentModelId] }),
+  index("product_equipment_models_model_idx").on(table.equipmentModelId),
+]);
+
+// Fotos do produto (uma ou mais). Arquivo em uploads/product-photos, mesmo esquema da foto do
+// equipamento (otimizada para WebP no navegador; o servidor só valida a assinatura binária).
+export const productPhotos = pgTable("product_photos", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
+  storageKey: text("storage_key").notNull(),
+  position: integer("position").notNull().default(0),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("product_photos_product_idx").on(table.productId, table.position)]);
+
+// ---------------------------------------------------------------------------
+// Lançamento de Combustível. Tipos em tabela (não enum) para permitir incluir ARLA 32 etc. depois
+// só com um INSERT. O saldo nunca é gravado: é sempre a soma dos lançamentos da frente
+// (lib/fuel.ts), então editar/excluir um lançamento corrige o saldo automaticamente.
+// ---------------------------------------------------------------------------
+export const fuelTypes = pgTable("fuel_types", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  unit: text("unit").notNull().default("L"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [uniqueIndex("fuel_types_code_unique").on(table.code)]);
+
+export const fuelMovements = pgTable("fuel_movements", {
+  id: serial("id").primaryKey(),
+  // Frente dona do lançamento (a que tem o saldo alterado). Na TRANSFERÊNCIA é a frente de origem.
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  movementType: text("movement_type", { enum:["ENTRADA","SAIDA","TRANSFERENCIA"] }).notNull(),
+  movementDate: text("movement_date").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
+  origin: text("origin"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  meterReading: doublePrecision("meter_reading"),
+  meterUnit: text("meter_unit", { enum:["HOURS","KM"] }),
+  // Filial destino: só na TRANSFERÊNCIA (soma no saldo da frente destino).
+  destinationFrontId: integer("destination_front_id").references(() => serviceFronts.id),
+  responsible: text("responsible"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
+  index("fuel_movements_destination_idx").on(table.destinationFrontId),
+  index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),
+]);
 
 // ---------------------------------------------------------------------------
 // Controle Diário do equipamento. user_id vem sempre da sessão = a conta que EFETIVAMENTE fez o

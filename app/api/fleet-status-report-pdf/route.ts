@@ -3,6 +3,7 @@ import { authorize } from "../../../lib/auth";
 import { FLEET_STATUS_LABELS, fleetDayWindow, fleetLocalDay, type FleetStatus } from "../../../lib/fleet-status";
 import { createFleetStatusPdf, type FleetPdfItem } from "../../../lib/fleet-pdf";
 import { allowedEquipmentIds } from "../../../lib/front-scope";
+import { frentesEmExibicao } from "../../../lib/active-front";
 
 type Row = Record<string, unknown>;
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
       d1.prepare(`SELECT equipment_id,new_status FROM (
         SELECT equipment_id,new_status,ROW_NUMBER() OVER (PARTITION BY equipment_id ORDER BY occurred_at DESC,created_at DESC) AS position
         FROM fleet_status_events WHERE occurred_at<?) WHERE position=1`).bind(end).all<Row>(),
-      allowedEquipmentIds(d1,auth.user!,"OPERATIONAL"),
+      allowedEquipmentIds(d1,auth.user!,"OPERATIONAL",frentesEmExibicao(auth.user!,request)),
     ]);
     fleetResult.results=fleetResult.results.filter((row)=>allowed.has(Number(row.id)));occurrenceResult.results=occurrenceResult.results.filter((row)=>allowed.has(Number(row.equipment_id)));
 

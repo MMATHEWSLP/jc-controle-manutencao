@@ -6,6 +6,7 @@ import { naturalSortKey } from "../../../lib/equipment-sort";
 import { activeServiceFronts, allowedEquipmentIds, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
 import { canonicalEquipmentPrefix, reconcileEquipmentMeasurement } from "../../../lib/maintenance-history";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
+import { frentesEmExibicao } from "../../../lib/active-front";
 
 type ControlType = "HOURS" | "KM" | "HOURS_KM";
 type EquipmentStatus = "ACTIVE" | "STOPPED" | "MAINTENANCE" | "INACTIVE";
@@ -73,7 +74,7 @@ export async function GET(request:Request) {
     const [rows, applicableMap, typeRows,fronts,allowed] = await Promise.all([
       getEquipmentRows(), getApplicableMap(),
       db.select({ name:maintenanceTypes.name, category:maintenanceTypes.category }).from(maintenanceTypes).where(and(eq(maintenanceTypes.active, true),eq(maintenanceTypes.category,"OIL"))).orderBy(maintenanceTypes.name),
-      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode),
+      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,frentesEmExibicao(auth.user!,request)),
     ]);
     return Response.json({
       equipment:rows.filter((row)=>allowed.has(row.id)).map((row)=>normalize(row,applicableMap[row.id] ?? [])),

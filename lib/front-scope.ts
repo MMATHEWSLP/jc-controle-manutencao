@@ -14,7 +14,9 @@ export function canBrowseAllEquipment(user:SessionUser,mode:EquipmentScopeMode){
   return isAdministrator(user)||(mode==="MANAGEMENT"&&user.permissions.includes("equipment.transfer"));
 }
 
-export function equipmentScopeSql(user:SessionUser,mode:EquipmentScopeMode,alias="e"){
+// `displayed` = frentes em exibição no seletor global (lib/active-front.ts). Só restringe: o
+// resultado nunca passa do que frentesVisiveis() já permite.
+export function equipmentScopeSql(user:SessionUser,mode:EquipmentScopeMode,alias="e",displayed:number[]|"ALL"="ALL"){
   const clauses:string[]=[];const values:unknown[]=[];
   if(mode==="OIL")clauses.push(`${alias}.oil_change_enabled=1`);
   if(!canBrowseAllEquipment(user,mode)){
@@ -24,6 +26,10 @@ export function equipmentScopeSql(user:SessionUser,mode:EquipmentScopeMode,alias
       else {clauses.push(`${alias}.service_front_id=ANY(?)`);values.push(fronts);}
     }
   }
+  if(displayed!=="ALL"){
+    if(displayed.length===0)clauses.push("1=0");
+    else {clauses.push(`${alias}.service_front_id=ANY(?)`);values.push(displayed);}
+  }
   return {clause:clauses.length?clauses.join(" AND "):"1=1",values};
 }
 
@@ -32,8 +38,8 @@ export async function activeServiceFronts(d1:D1DatabaseLike){
   return result.results.map((row)=>({id:Number(row.id),name:String(row.name),location:row.location==null?null:String(row.location),active:Number(row.active)===1}));
 }
 
-export async function allowedEquipmentIds(d1:D1DatabaseLike,user:SessionUser,mode:EquipmentScopeMode){
-  const scope=equipmentScopeSql(user,mode,"e");
+export async function allowedEquipmentIds(d1:D1DatabaseLike,user:SessionUser,mode:EquipmentScopeMode,displayed:number[]|"ALL"="ALL"){
+  const scope=equipmentScopeSql(user,mode,"e",displayed);
   const result=await d1.prepare(`SELECT e.id FROM equipment e WHERE ${scope.clause}`).bind(...scope.values).all<Row>();
   return new Set(result.results.map((row)=>Number(row.id)));
 }

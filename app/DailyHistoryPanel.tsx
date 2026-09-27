@@ -28,8 +28,9 @@ function readUrl() { const params=new URLSearchParams(window.location.search); r
 
 async function api<T>(url:string):Promise<T> { const response=await fetch(url,{ cache:"no-store" }); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 
-export default function DailyHistoryPanel({ fronts, onEdit }:{ fronts:Front[]; onEdit:(recordId:number)=>Promise<void> }) {
-  const [initial]=useState(()=>typeof window==="undefined"?{ filters:emptyFilters, page:1 }:readUrl());
+// defaultFrontId = frente do seletor global do topo: vira o filtro padrão quando o link não traz outro.
+export default function DailyHistoryPanel({ fronts, onEdit, defaultFrontId=null }:{ fronts:Front[]; onEdit:(recordId:number)=>Promise<void>; defaultFrontId?:number|null }) {
+  const [initial]=useState(()=>{ const value=typeof window==="undefined"?{ filters:emptyFilters, page:1 }:readUrl(); return value.filters.frontId||!defaultFrontId||!fronts.some((front)=>front.id===defaultFrontId)?value:{ ...value, filters:{ ...value.filters, frontId:defaultFrontId } }; });
   const [filters,setFilters]=useState<DailyHistoryFilters>(initial.filters);
   const [page,setPage]=useState(initial.page);
   // Texto digitado na lupa: aplicado com um pequeno atraso para não consultar a cada tecla.

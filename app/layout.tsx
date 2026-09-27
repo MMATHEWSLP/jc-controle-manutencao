@@ -6,6 +6,7 @@ import "./fleet-status.css";
 import "./materials-tasks.css";
 import "./task-roles.css";
 import "./daily-control.css";
+import "./products-fuel.css";
 import "./app-runtime.css";
 import AppRuntime from "./AppRuntime";
 

@@ -12,6 +12,7 @@ import {
   type FleetStatus,
 } from "../../../lib/fleet-status";
 import { allowedEquipmentIds,equipmentAccessResponse,requireEquipmentAccess } from "../../../lib/front-scope";
+import { frentesEmExibicao } from "../../../lib/active-front";
 
 type Row = Record<string, unknown>;
 type FleetOrderInput = {
@@ -153,7 +154,7 @@ export async function GET(request: Request) {
       d1.prepare(`SELECT name FROM fleet_mechanics WHERE active=1 UNION SELECT name FROM users WHERE status='ACTIVE' AND role='OFICINA' ORDER BY name`).all<Row>(),
       d1.prepare(`SELECT attention_hours,high_hours,critical_hours FROM fleet_settings WHERE id=1`).all<Row>(),
       d1.prepare(`SELECT id,equipment_id FROM fleet_occurrences WHERE ended_at>=? AND ended_at<?`).bind(start, end).all<Row>(),
-      allowedEquipmentIds(d1,auth.user!,"OPERATIONAL"),
+      allowedEquipmentIds(d1,auth.user!,"OPERATIONAL",frentesEmExibicao(auth.user!,request)),
     ]);
 
     const mechanicsByOccurrence = new Map(currentMechanicsResult.results.map((row) => [String(row.occurrence_id), clean(row.mechanic_names).split(",").filter(Boolean)]));

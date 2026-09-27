@@ -92,6 +92,13 @@
       "when": 1790459337259,
       "tag": "0012_daily_records_manual_entry",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790508571388,
+      "tag": "0013_products_by_front_and_fuel",
+      "breakpoints": true
     }
   ]
 }

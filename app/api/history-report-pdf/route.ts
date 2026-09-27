@@ -4,6 +4,7 @@ import { loadHistoryEntries } from "../../../lib/history-data";
 import { createCategorizedMaintenanceReportPdf,formatPdfDate,type CategorizedReportItem,type ReportStatus } from "../../../lib/pdf";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
 import { allowedEquipmentIds,isAdministrator } from "../../../lib/front-scope";
+import { frentesEmExibicao } from "../../../lib/active-front";
 
 type Row=Record<string,unknown>;
 const validStatuses=new Set<ReportStatus>(["OK","WARNING","NEAR","OVERDUE"]);
@@ -24,7 +25,7 @@ export async function GET(request:Request){
     const [rawHistory,statusResult,allowed]=await Promise.all([
       loadHistoryEntries(d1),
       d1.prepare(`SELECT p.equipment_id,p.maintenance_type_id,a.level FROM alerts a INNER JOIN maintenance_plans p ON p.id=a.plan_id WHERE a.status='OPEN' AND p.active=1`).all<Row>(),
-      allowedEquipmentIds(d1,auth.user!,"OIL"),
+      allowedEquipmentIds(d1,auth.user!,"OIL",frentesEmExibicao(auth.user!,request)),
     ]);
     const history=rawHistory.filter((item)=>item.equipmentId!==null?allowed.has(item.equipmentId):isAdministrator(auth.user!));
     const statusByCycle=new Map<string,ReportStatus>();for(const row of statusResult.results)statusByCycle.set(`${row.equipment_id}:${row.maintenance_type_id}`,String(row.level) as ReportStatus);
