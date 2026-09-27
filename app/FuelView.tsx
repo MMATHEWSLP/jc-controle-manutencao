@@ -3,18 +3,22 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 type MovementType = "ENTRADA" | "SAIDA" | "TRANSFERENCIA";
+type Location = "FRENTE" | "PORTO";
 type Front = { id: number; name: string };
 type FuelType = { id: number; code: string; name: string; unit: string };
 type Totals = { balance: number; entries: number; exits: number };
-type Balance = Totals & { fuelTypeId: number; code: string; name: string; unit: string; byFront: Array<Totals & { serviceFrontId: number; name: string }> };
+type LocationTotals = Totals & { byLocation: Record<Location, Totals> };
+type Balance = LocationTotals & { fuelTypeId: number; code: string; name: string; unit: string; byFront: Array<LocationTotals & { serviceFrontId: number; name: string }> };
 type Summary = {
   today: string; period: { from: string; to: string }; fuelTypes: FuelType[]; fronts: Front[]; destinationFronts: Front[];
   scopeFrontIds: number[]; allFronts: boolean; multiFront: boolean; defaultFrontId: number | null; balances: Balance[];
 };
 type Movement = {
   id: number; serviceFrontId: number; frontName: string; fuelTypeId: number; fuelName: string; unit: string; movementType: MovementType; movementLabel: string;
-  movementDate: string; quantity: number; origin: string | null; equipmentId: number | null; equipmentPrefix: string | null; equipmentModel: string | null;
+  movementDate: string; quantity: number; origin: string | null; stockLocation: Location; stockLocationLabel: string;
+  thirdParty: boolean; thirdPartyDescription: string | null; equipmentId: number | null; equipmentPrefix: string | null; equipmentModel: string | null;
   meterReading: number | null; meterUnit: "HOURS" | "KM" | null; destinationFrontId: number | null; destinationFrontName: string | null;
+  destinationLocation: Location | null; destinationLocationLabel: string | null;
   responsible: string | null; notes: string | null; createdByName: string | null; createdAt: string;
 };
 type HistoryResponse = { movements: Movement[]; total: number; page: number; pageSize: number };
@@ -25,9 +29,11 @@ type EquipmentOption = {
 type User = { name: string; permissions: string[] };
 
 const MOVEMENT_OPTIONS: Array<[MovementType, string, string]> = [["ENTRADA", "Entrada", "↓"], ["SAIDA", "Saída", "↑"], ["TRANSFERENCIA", "Transferência", "⇄"]];
+const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"]];
+const locationLabel = (value: Location) => (value === "PORTO" ? "Porto" : "Frente");
 const liters = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`;
 const brDay = (value: string) => value.split("-").reverse().join("/");
-function defaultPeriod() {
+function monthPeriod() {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   return { from: `${today.slice(0, 7)}-01`, to: today };
 }
@@ -45,23 +51,18 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
   const [tab, setTab] = useState<"new" | "history">(canRegister ? "new" : "history");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
-  // Período padrão = mês corrente (mesmo padrão do servidor, lib/fuel.ts).
-  const [period, setPeriod] = useState(defaultPeriod);
-  const [frontFilter, setFrontFilter] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
 
+  // Cards: saldo atual + entradas/saídas do mês corrente, independentes do filtro do Histórico.
   const loadSummary = useCallback(async () => {
     setError("");
-    const params = new URLSearchParams({ from: period.from, to: period.to });
-    if (frontFilter) params.set("frontId", frontFilter);
     try {
-      const result = await api<Summary>(`/api/fuel?${params.toString()}`);
-      setSummary(result);
+      setSummary(await api<Summary>("/api/fuel"));
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Não foi possível carregar os saldos.");
     }
-  }, [period, frontFilter]);
+  }, []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
   if (error && !summary) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o módulo de combustível</strong><p>{error}</p></div><button onClick={loadSummary}>Tentar novamente</button></div>;
@@ -81,59 +82,63 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <div>
           <p className="eyebrow">COMBUSTÍVEL · {scopeLabel.toUpperCase()}</p>
           <h1>Registro de Movimentação de Combustível</h1>
-          <span>Entradas, saídas e transferências de Diesel e Gasolina, com saldo por frente de serviço.</span>
+          <span>Entradas, saídas e transferências de Diesel e Gasolina, com saldo separado em Frente e Porto.</span>
         </div>
       </div>
       <section className="fuel-balance-grid" aria-label="Saldos por tipo de combustível">
         {summary.balances.map((balance) => (
           <article key={balance.fuelTypeId} className={`fuel-balance-card fuel-${balance.code.toLowerCase().replace(/_/g, "-")} ${balance.balance < 0 ? "negative" : ""}`}>
-            <header><span>⛽</span><div><p>{balance.name.toUpperCase()}</p><small>{scopeLabel}</small></div></header>
-            <strong>{liters(balance.balance)}</strong>
-            <small className="fuel-balance-caption">Saldo atual</small>
+            <header>
+              <div><p>{balance.name.toUpperCase()}</p><small>{scopeLabel}</small></div>
+              <div className="fuel-balance-total"><strong>{liters(balance.balance)}</strong><small>saldo atual</small></div>
+            </header>
+            <div className="fuel-balance-locations">
+              {LOCATIONS.map(([key, label]) => (
+                <span key={key} className={balance.byLocation[key].balance < 0 ? "negative" : ""}><small>{label}</small><b>{liters(balance.byLocation[key].balance)}</b></span>
+              ))}
+            </div>
             <div className="fuel-balance-period">
-              <span className="in"><b>{liters(balance.entries)}</b>Entradas no período</span>
-              <span className="out"><b>{liters(balance.exits)}</b>Saídas no período</span>
+              <span className="in"><b>{liters(balance.entries)}</b>Entradas no mês</span>
+              <span className="out"><b>{liters(balance.exits)}</b>Saídas no mês</span>
             </div>
             {balance.byFront.length > 1 && (
-              <ul className="fuel-balance-fronts" aria-label="Saldo por frente">
-                {balance.byFront.map((front) => <li key={front.serviceFrontId}><span>{front.name}</span><b className={front.balance < 0 ? "negative" : ""}>{liters(front.balance)}</b></li>)}
+              <ul className="fuel-balance-fronts" aria-label="Saldo por frente (Frente / Porto)">
+                {balance.byFront.map((front) => (
+                  <li key={front.serviceFrontId}>
+                    <span>{front.name}</span>
+                    {LOCATIONS.map(([key, label]) => <b key={key} title={label} className={front.byLocation[key].balance < 0 ? "negative" : ""}><i>{label[0]}</i>{liters(front.byLocation[key].balance)}</b>)}
+                  </li>
+                ))}
               </ul>
             )}
           </article>
         ))}
       </section>
-      <div className="fuel-period-bar">
-        <span>Período dos cards e do histórico:</span>
-        <label>De<input type="date" value={period.from} max={period.to} onChange={(event) => event.target.value && setPeriod({ ...period, from: event.target.value })} /></label>
-        <label>Até<input type="date" value={period.to} min={period.from} onChange={(event) => event.target.value && setPeriod({ ...period, to: event.target.value })} /></label>
-        {summary.multiFront && summary.scopeFrontIds.length + (frontFilter ? 1 : 0) > 1 && (
-          <label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}>
-            <option value="">Todas em exibição</option>
-            {summary.fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
-          </select></label>
-        )}
-      </div>
       <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do módulo Combustível">
         {canRegister && <button className={tab === "new" ? "active" : ""} onClick={() => { setTab("new"); setEditing(null); }}>{editing ? "Editar registro" : "Novo Registro"}</button>}
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button>
       </div>
       {tab === "new" && (canRegister || editing)
-        ? <FuelForm key={editing ? `edit-${editing.id}` : "new"} summary={summary} authUser={authUser} editing={editing} onSaved={async (message) => { await afterSave(message); setTab(editing ? "history" : "new"); }} onCancel={editing ? () => { setEditing(null); setTab("history"); } : undefined} />
-        : <FuelHistory key={historyVersion} summary={summary} period={period} frontFilter={frontFilter} canManage={canManage} flash={flash}
-          onEdit={(movement) => { setEditing(movement); setTab("new"); }} onDeleted={async (message) => { await afterSave(message); }} />}
+        ? <FuelForm key={editing ? `edit-${editing.id}` : "new"} summary={summary} authUser={authUser} editing={editing} onSaved={async (message) => { const wasEditing = Boolean(editing); await afterSave(message); setTab(wasEditing ? "history" : "new"); }} onCancel={editing ? () => { setEditing(null); setTab("history"); } : undefined} />
+        : <FuelHistory key={historyVersion} summary={summary} canManage={canManage} flash={flash}
+          onEdit={(movement) => { setEditing(movement); setTab("new"); }} onDeleted={afterSave} />}
     </>
   );
 }
 
 function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: Summary; authUser: User; editing: Movement | null; onSaved: (message: string) => Promise<void>; onCancel?: () => void }) {
   const [movementType, setMovementType] = useState<MovementType>(editing?.movementType ?? "SAIDA");
+  const [thirdParty, setThirdParty] = useState(editing?.thirdParty ?? false);
   const [frontId, setFrontId] = useState<number | null>(editing?.serviceFrontId ?? summary.defaultFrontId ?? (summary.fronts.length === 1 ? summary.fronts[0].id : null));
+  const [stockLocation, setStockLocation] = useState<Location>(editing?.stockLocation ?? "FRENTE");
   const [fuelTypeId, setFuelTypeId] = useState<number>(editing?.fuelTypeId ?? summary.fuelTypes[0]?.id ?? 0);
   const [movementDate, setMovementDate] = useState(editing?.movementDate ?? summary.today);
   const [quantity, setQuantity] = useState(editing ? String(editing.quantity).replace(".", ",") : "");
-  const [origin, setOrigin] = useState(editing?.origin ?? "");
   const [meterReading, setMeterReading] = useState(editing?.meterReading != null ? String(editing.meterReading).replace(".", ",") : "");
-  const [destinationFrontId, setDestinationFrontId] = useState<number | null>(editing?.destinationFrontId ?? null);
+  // Destino da transferência: "" = mesma frente (Frente ↔ Porto); ou outra filial.
+  const [destinationFrontId, setDestinationFrontId] = useState<string>(editing?.destinationFrontId && editing.destinationFrontId !== editing.serviceFrontId ? String(editing.destinationFrontId) : "");
+  const [destinationLocation, setDestinationLocation] = useState<Location>(editing?.destinationLocation ?? (editing?.stockLocation === "PORTO" ? "FRENTE" : "PORTO"));
+  const [thirdPartyDescription, setThirdPartyDescription] = useState(editing?.thirdPartyDescription ?? "");
   const [responsible, setResponsible] = useState(editing?.responsible ?? authUser.name);
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [equipment, setEquipment] = useState<EquipmentOption | null>(editing?.equipmentId ? {
@@ -143,14 +148,25 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const isTransfer = movementType === "TRANSFERENCIA";
+  const isThirdParty = movementType === "SAIDA" && thirdParty;
+  const showEquipment = !isTransfer && !isThirdParty;
   const frontName = summary.fronts.find((front) => front.id === frontId)?.name ?? null;
-  const wrongFront = equipment !== null && frontId !== null && equipment.serviceFrontId !== frontId;
-  const needsEquipment = movementType === "SAIDA";
-  const showEquipment = movementType !== "TRANSFERENCIA";
+  const wrongFront = showEquipment && equipment !== null && frontId !== null && equipment.serviceFrontId !== frontId;
   const meterLabel = equipment?.controlType === "KM" ? "Hodômetro (km)" : equipment?.controlType === "HOURS_KM" ? "Horímetro / Hodômetro" : "Horímetro (h)";
-  const balanceHere = summary.balances.find((balance) => balance.fuelTypeId === fuelTypeId)?.byFront.find((front) => front.serviceFrontId === frontId)?.balance;
+  const fuelBalance = summary.balances.find((balance) => balance.fuelTypeId === fuelTypeId);
+  const balanceHere = fuelBalance?.byFront.find((front) => front.serviceFrontId === frontId)?.byLocation[stockLocation].balance;
   const quantityValue = Number(quantity.replace(/\./g, "").replace(",", "."));
-  const lowBalance = movementType !== "ENTRADA" && balanceHere !== undefined && Number.isFinite(quantityValue) && quantityValue > balanceHere + (editing && editing.fuelTypeId === fuelTypeId && editing.serviceFrontId === frontId && editing.movementType !== "ENTRADA" ? editing.quantity : 0);
+  const sameAsEditing = editing && editing.fuelTypeId === fuelTypeId && editing.serviceFrontId === frontId && editing.stockLocation === stockLocation && editing.movementType !== "ENTRADA";
+  const lowBalance = movementType !== "ENTRADA" && balanceHere !== undefined && Number.isFinite(quantityValue) && quantityValue > balanceHere + (sameAsEditing ? editing.quantity : 0);
+  const internalTransfer = isTransfer && !destinationFrontId;
+  const sameStock = internalTransfer && destinationLocation === stockLocation;
+
+  function changeOrigin(value: Location) {
+    setStockLocation(value);
+    // Transferência interna: o destino natural é o outro estoque da mesma frente.
+    if (isTransfer && !destinationFrontId && destinationLocation === value) setDestinationLocation(value === "FRENTE" ? "PORTO" : "FRENTE");
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -159,13 +175,16 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
     setError("");
     try {
       const payload = {
-        serviceFrontId: frontId, fuelTypeId, movementType, movementDate, quantity, origin, meterReading: showEquipment ? meterReading : "",
-        equipmentId: showEquipment ? equipment?.id ?? null : null, destinationFrontId, responsible, notes,
+        serviceFrontId: frontId, fuelTypeId, movementType, movementDate, quantity, stockLocation, responsible, notes,
+        thirdParty: isThirdParty, thirdPartyDescription: isThirdParty ? thirdPartyDescription : "",
+        equipmentId: showEquipment ? equipment?.id ?? null : null, meterReading: showEquipment ? meterReading : "",
+        destinationFrontId: isTransfer && destinationFrontId ? Number(destinationFrontId) : null,
+        destinationLocation: isTransfer ? destinationLocation : null,
       };
       const result = await api<{ message: string }>(editing ? `/api/fuel/movements/${editing.id}` : "/api/fuel/movements", {
         method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
-      if (!editing) { setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setOrigin(""); }
+      if (!editing) { setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription(""); }
       await onSaved(result.message);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Não foi possível salvar o lançamento.");
@@ -176,16 +195,25 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
 
   return (
     <article className="panel module-panel fuel-form-panel">
-      <form className="modal-form fuel-form" onSubmit={submit}>
-        <fieldset className="full fuel-movement-type">
-          <legend>Tipo de Movimentação</legend>
-          {MOVEMENT_OPTIONS.map(([value, label, icon]) => (
-            <button type="button" key={value} className={`${movementType === value ? "active" : ""} ${value.toLowerCase()}`} onClick={() => setMovementType(value)} aria-pressed={movementType === value}>
-              <span>{icon}</span>{label}
-            </button>
-          ))}
-        </fieldset>
-        {summary.multiFront ? (
+      <form className="fuel-form" onSubmit={submit}>
+        <div className="fuel-form-top full">
+          <fieldset className="fuel-movement-type">
+            <legend>Tipo de Movimentação</legend>
+            {MOVEMENT_OPTIONS.map(([value, label, icon]) => (
+              <button type="button" key={value} className={`${movementType === value ? "active" : ""} ${value.toLowerCase()}`} onClick={() => setMovementType(value)} aria-pressed={movementType === value}>
+                <span>{icon}</span>{label}
+              </button>
+            ))}
+          </fieldset>
+          {movementType === "SAIDA" && (
+            <fieldset className="fuel-exit-kind">
+              <legend>Tipo de saída</legend>
+              <button type="button" className={!thirdParty ? "active" : ""} aria-pressed={!thirdParty} onClick={() => setThirdParty(false)}>Frota (veículo/máquina)</button>
+              <button type="button" className={thirdParty ? "active" : ""} aria-pressed={thirdParty} onClick={() => { setThirdParty(true); setEquipment(null); }}>Saída para terceiros</button>
+            </fieldset>
+          )}
+        </div>
+        {summary.multiFront && (
           <label>
             Frente de Serviço
             <select required value={frontId ?? ""} onChange={(event) => setFrontId(event.target.value ? Number(event.target.value) : null)}>
@@ -193,7 +221,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
               {summary.fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
             </select>
           </label>
-        ) : null}
+        )}
         <label>
           Data
           <input type="date" required value={movementDate} max={summary.today} onChange={(event) => setMovementDate(event.target.value)} />
@@ -205,35 +233,50 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
           </select>
         </label>
         <label>
-          Quantidade (litros)
-          <input required inputMode="decimal" placeholder="0,00" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-          {balanceHere !== undefined && <small className={`fuel-hint ${lowBalance ? "warning" : ""}`}>{lowBalance ? "Atenção: o saldo desta frente ficará negativo. " : ""}Saldo em {frontName}: {liters(balanceHere)}</small>}
+          Origem
+          <select required value={stockLocation} onChange={(event) => changeOrigin(event.target.value as Location)}>
+            {LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}{frontName ? ` ${frontName}` : ""}</option>)}
+          </select>
         </label>
         <label>
-          Origem
-          <input placeholder={movementType === "ENTRADA" ? "Ex.: Posto / NF / fornecedor" : "Ex.: Tanque da frente, comboio"} value={origin} onChange={(event) => setOrigin(event.target.value)} />
+          Quantidade (litros)
+          <input required inputMode="decimal" placeholder="0,00" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+          {balanceHere !== undefined && <small className={`fuel-hint ${lowBalance ? "warning" : ""}`}>{lowBalance ? "Atenção: o saldo ficará negativo. " : ""}Saldo {locationLabel(stockLocation)} {frontName}: {liters(balanceHere)}</small>}
         </label>
-        {movementType === "TRANSFERENCIA" && (
-          <label>
-            Filial Destino
-            <select required value={destinationFrontId ?? ""} onChange={(event) => setDestinationFrontId(event.target.value ? Number(event.target.value) : null)}>
-              <option value="">Selecione a filial destino...</option>
-              {summary.destinationFronts.filter((front) => front.id !== frontId).map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
-            </select>
-          </label>
+        {isTransfer && (
+          <>
+            <label>
+              Destino
+              <select required value={destinationLocation} onChange={(event) => setDestinationLocation(event.target.value as Location)}>
+                {LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <label>
+              Filial Destino
+              <select value={destinationFrontId} onChange={(event) => setDestinationFrontId(event.target.value)}>
+                <option value="">Mesma frente{frontName ? ` (${frontName})` : ""}</option>
+                {summary.destinationFronts.filter((front) => front.id !== frontId).map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
+              </select>
+              <small className="fuel-hint">{internalTransfer ? `${locationLabel(stockLocation)} → ${locationLabel(destinationLocation)} da mesma frente.` : "Transferência para outra filial."}</small>
+            </label>
+          </>
         )}
-        {showEquipment && (
-          <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required={needsEquipment} />
-        )}
+        {showEquipment && <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required={movementType === "SAIDA"} />}
         {showEquipment && (
           <label>
             {meterLabel}
             <input inputMode="decimal" placeholder={equipment ? (equipment.controlType === "KM" ? `Atual: ${equipment.currentKm.toLocaleString("pt-BR")} km` : `Atual: ${equipment.currentHours.toLocaleString("pt-BR")} h`) : "Opcional"} value={meterReading} onChange={(event) => setMeterReading(event.target.value)} />
           </label>
         )}
+        {isThirdParty && (
+          <label className="fuel-span-2">
+            Destino/Descrição
+            <input required value={thirdPartyDescription} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: prestador de serviço, placa do veículo de terceiro, comunidade ou pessoa atendida" />
+          </label>
+        )}
         <label>
           Responsável
-          <input value={responsible} onChange={(event) => setResponsible(event.target.value)} />
+          <input required={isThirdParty} value={responsible} onChange={(event) => setResponsible(event.target.value)} />
         </label>
         <label className="full">
           Observações
@@ -243,10 +286,11 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         {wrongFront && (
           <div className="equipment-form-error full"><span>!</span><strong>O equipamento {equipment!.prefix} está em {equipment!.frontName ?? "outra frente"}, não em {frontName}. Transfira o equipamento ou lance pela frente correta.</strong></div>
         )}
+        {sameStock && <div className="equipment-form-error full"><span>!</span><strong>Escolha um destino diferente da origem (ex.: Frente → Porto).</strong></div>}
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
         <div className="modal-footer full">
           {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}
-          <button className="primary" disabled={busy || wrongFront || !frontId}>{busy ? "Salvando..." : editing ? "Salvar alterações" : "Registrar lançamento"}</button>
+          <button className="primary" disabled={busy || wrongFront || sameStock || !frontId}>{busy ? "Salvando..." : editing ? "Salvar alterações" : "Registrar lançamento"}</button>
         </div>
       </form>
     </article>
@@ -276,8 +320,7 @@ function EquipmentPicker({ frontId, frontName, value, onChange, required }: { fr
     return (
       <div className={`fuel-equipment-selected ${other ? "other-front" : ""}`}>
         <span>Veículo/Máquina{required ? " *" : ""}</span>
-        <div><strong>{value.prefix}</strong><small>{`${value.brand} ${value.model}`.trim()}</small>{other && <em>está em {value.frontName ?? "outra frente"}</em>}</div>
-        <button type="button" onClick={() => { onChange(null); setOpen(true); }}>Trocar</button>
+        <div><strong>{value.prefix}</strong><small>{`${value.brand} ${value.model}`.trim()}</small>{other && <em>está em {value.frontName ?? "outra frente"}</em>}<button type="button" onClick={() => { onChange(null); setOpen(true); }}>Trocar</button></div>
       </div>
     );
   }
@@ -285,7 +328,7 @@ function EquipmentPicker({ frontId, frontName, value, onChange, required }: { fr
     <div className="fuel-equipment-picker">
       <label>
         Veículo/Máquina{required ? " *" : ""}
-        <div className="page-search"><span>⌕</span><input value={query} required={required} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 180)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder={frontName ? `Prefixo, modelo ou placa (frente ${frontName})` : "Prefixo, modelo ou placa"} /></div>
+        <div className="page-search"><span>⌕</span><input value={query} required={required} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 180)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder={frontName ? `Prefixo, modelo ou placa (${frontName})` : "Prefixo, modelo ou placa"} /></div>
       </label>
       {open && (
         <ul className="fuel-equipment-results" role="listbox">
@@ -306,12 +349,15 @@ function EquipmentPicker({ frontId, frontName, value, onChange, required }: { fr
   );
 }
 
-function FuelHistory({ summary, period, frontFilter, canManage, flash, onEdit, onDeleted }: {
-  summary: Summary; period: { from: string; to: string }; frontFilter: string; canManage: boolean; flash: (message: string) => void;
+function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
+  summary: Summary; canManage: boolean; flash: (message: string) => void;
   onEdit: (movement: Movement) => void; onDeleted: (message: string) => Promise<void>;
 }) {
+  const [period, setPeriod] = useState(monthPeriod);
+  const [frontFilter, setFrontFilter] = useState("");
   const [fuelTypeId, setFuelTypeId] = useState("");
   const [movementType, setMovementType] = useState("");
+  const [location, setLocation] = useState("");
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
@@ -319,15 +365,16 @@ function FuelHistory({ summary, period, frontFilter, canManage, flash, onEdit, o
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => { const timer = window.setTimeout(() => setDebounced(query), 300); return () => window.clearTimeout(timer); }, [query]);
-  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, debounced, period.from, period.to, frontFilter]);
+  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, location, debounced, period.from, period.to, frontFilter]);
   const params = useMemo(() => {
     const value = new URLSearchParams({ from: period.from, to: period.to });
     if (fuelTypeId) value.set("fuelTypeId", fuelTypeId);
     if (movementType) value.set("movementType", movementType);
+    if (location) value.set("location", location);
     if (debounced) value.set("q", debounced);
     if (frontFilter) value.set("frontId", frontFilter);
     return value;
-  }, [period, fuelTypeId, movementType, debounced, frontFilter]);
+  }, [period, fuelTypeId, movementType, location, debounced, frontFilter]);
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -345,14 +392,28 @@ function FuelHistory({ summary, period, frontFilter, canManage, flash, onEdit, o
     } catch (problem) { flash(problem instanceof Error ? problem.message : "Não foi possível excluir."); }
   }
 
+  const originText = (movement: Movement) => {
+    if (movement.movementType !== "TRANSFERENCIA") return movement.stockLocationLabel;
+    const otherFront = movement.destinationFrontId && movement.destinationFrontId !== movement.serviceFrontId;
+    return `${movement.stockLocationLabel} → ${movement.destinationLocationLabel ?? "Frente"}${otherFront ? ` ${movement.destinationFrontName ?? ""}` : ""}`;
+  };
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const exportUrl = (format: "pdf" | "xlsx") => `/api/fuel/export?${params.toString()}&formato=${format}`;
   return (
     <article className="panel module-panel fuel-history-panel">
       <div className="products-filters fuel-history-filters">
-        <label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Equipamento, origem, responsável..." /></label>
+        <label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Equipamento, terceiro, responsável..." /></label>
+        <label>De<input type="date" value={period.from} max={period.to} onChange={(event) => event.target.value && setPeriod({ ...period, from: event.target.value })} /></label>
+        <label>Até<input type="date" value={period.to} min={period.from} onChange={(event) => event.target.value && setPeriod({ ...period, to: event.target.value })} /></label>
+        {summary.multiFront && summary.scopeFrontIds.length > 1 && (
+          <label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}>
+            <option value="">Todas em exibição</option>
+            {summary.fronts.filter((front) => summary.scopeFrontIds.includes(front.id)).map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
+          </select></label>
+        )}
         <label>Combustível<select value={fuelTypeId} onChange={(event) => setFuelTypeId(event.target.value)}><option value="">Todos</option>{summary.fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
-        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída para terceiros</option></select></label>
+        <label>Estoque<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">Frente e Porto</option>{LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <div className="fuel-export-actions">
           <a className="secondary" href={exportUrl("pdf")} target="_blank" rel="noopener noreferrer">Exportar PDF</a>
           <a className="secondary" href={exportUrl("xlsx")}>Exportar Excel</a>
@@ -363,18 +424,18 @@ function FuelHistory({ summary, period, frontFilter, canManage, flash, onEdit, o
         <>
           <div className="table-scroll">
             <table className="products-table fuel-history-table">
-              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Frente</th><th>Veículo/Máquina</th><th>Hod./Horím.</th><th>Origem</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Destino</th><th>Hod./Horím.</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
               <tbody>
                 {data?.movements.map((movement) => (
                   <tr key={movement.id}>
                     <td>{brDay(movement.movementDate)}</td>
-                    <td><span className={`fuel-type-pill ${movement.movementType.toLowerCase()}`}>{movement.movementLabel}</span></td>
+                    <td><span className={`fuel-type-pill ${movement.thirdParty ? "terceiros" : movement.movementType.toLowerCase()}`}>{movement.movementLabel}</span></td>
                     <td>{movement.fuelName}</td>
                     <td className="price-cell">{liters(movement.quantity)}</td>
-                    <td>{movement.frontName}{movement.movementType === "TRANSFERENCIA" && <small className="fuel-transfer"> → {movement.destinationFrontName ?? "—"}</small>}</td>
-                    <td>{movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
+                    <td>{movement.frontName}</td>
+                    <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}</td>
+                    <td>{movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
                     <td>{movement.meterReading === null ? "—" : `${movement.meterReading.toLocaleString("pt-BR")} ${movement.meterUnit === "KM" ? "km" : "h"}`}</td>
-                    <td>{movement.origin ?? "—"}</td>
                     <td title={movement.notes ?? undefined}>{movement.responsible ?? "—"}{movement.createdByName && movement.createdByName !== movement.responsible && <small className="fuel-created-by"> · lançado por {movement.createdByName}</small>}</td>
                     {canManage && <td><div className="equipment-row-actions"><button onClick={() => onEdit(movement)}>Editar</button><button onClick={() => remove(movement)}>Excluir</button></div></td>}
                   </tr>

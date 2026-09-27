@@ -49,31 +49,51 @@ html[data-theme="dark"] .front-selector.scoped{border-color:#35d6a2;background:#
 @media(max-width:640px){.products-filters.products-filters-two-search{grid-template-columns:1fr}}
 
 /* -------------------------------------------------------------- Combustível */
-.fuel-balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px}
-.fuel-balance-card{position:relative;padding:16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 8px 20px rgba(16,42,58,.05);overflow:hidden}
-.fuel-balance-card::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:#e0a21b}
+.fuel-balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-bottom:10px}
+.fuel-balance-card{position:relative;padding:10px 14px 10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 6px 16px rgba(16,42,58,.05);overflow:hidden}
+.fuel-balance-card::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:#e0a21b}
 .fuel-balance-card.fuel-gasolina-comum::before{background:#d6453d}
-.fuel-balance-card header{display:flex;align-items:center;gap:10px}
-.fuel-balance-card header>span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#fff3d6;font-size:17px}
-.fuel-balance-card header p{margin:0;font-size:11px;font-weight:900;letter-spacing:.06em;color:#34505f}
-.fuel-balance-card header small{color:var(--muted);font-size:10px}
-.fuel-balance-card>strong{display:block;margin-top:12px;font-size:28px;line-height:1.1;color:#0f3346}
-.fuel-balance-card.negative>strong{color:#c0392b}
-.fuel-balance-caption{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
-.fuel-balance-period{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.fuel-balance-period span{padding:8px 10px;border-radius:9px;font-size:10px;color:#4a6272}
-.fuel-balance-period span b{display:block;font-size:14px}
+.fuel-balance-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.fuel-balance-card header p{margin:0;font-size:10px;font-weight:900;letter-spacing:.06em;color:#34505f}
+.fuel-balance-card header small{color:var(--muted);font-size:9px}
+.fuel-balance-total{text-align:right}
+.fuel-balance-total strong{display:block;font-size:22px;line-height:1.05;color:#0f3346}
+.fuel-balance-card.negative .fuel-balance-total strong{color:#c0392b}
+.fuel-balance-locations{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.fuel-balance-locations span{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:5px 8px;border:1px solid var(--line);border-radius:7px}
+.fuel-balance-locations small{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.fuel-balance-locations b{font-size:13px}
+.fuel-balance-locations .negative b{color:#c0392b}
+.fuel-balance-period{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.fuel-balance-period span{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:4px 8px;border-radius:7px;font-size:9px;color:#4a6272}
+.fuel-balance-period span b{font-size:11px;order:2}
 .fuel-balance-period .in{background:#e9f8f2}.fuel-balance-period .in b{color:#0a7755}
 .fuel-balance-period .out{background:#fdeeee}.fuel-balance-period .out b{color:#b53a30}
-.fuel-balance-fronts{margin:10px 0 0;padding:8px 0 0;border-top:1px dashed var(--line);list-style:none;display:grid;gap:3px}
-.fuel-balance-fronts li{display:flex;justify-content:space-between;font-size:11px;color:#4a6272}
+.fuel-balance-fronts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 14px;margin:6px 0 0;padding:6px 0 0;border-top:1px dashed var(--line);list-style:none;font-size:10px;color:#4a6272}
+.fuel-balance-fronts li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:baseline}
+.fuel-balance-fronts li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fuel-balance-fronts b{font-weight:700;white-space:nowrap}
+.fuel-balance-fronts b i{margin-right:3px;font-style:normal;font-size:8px;color:var(--muted)}
 .fuel-balance-fronts b.negative{color:#c0392b}
-.fuel-period-bar{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin-bottom:10px;font-size:11px;color:var(--muted)}
-.fuel-period-bar label{display:flex;flex-direction:column;gap:4px;font-weight:700}
-.fuel-period-bar input,.fuel-period-bar select{margin:0;height:36px}
-.fuel-form .fuel-movement-type{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;border:0}
+@media(max-width:560px){.fuel-balance-fronts{grid-template-columns:1fr}}
+/* Novo Registro: grade de até 3 campos por linha. */
+.fuel-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px;padding:16px 18px}
+.fuel-form>label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700}
+.fuel-form>label input,.fuel-form>label select,.fuel-form>label textarea{margin:0}
+.fuel-form .full{grid-column:1/-1}
+.fuel-form .fuel-span-2{grid-column:span 2}
+.fuel-form-top{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-end}
+.fuel-exit-kind{display:flex;gap:6px;margin:0;padding:0;border:0}
+.fuel-exit-kind legend{width:100%;margin-bottom:6px;font-size:12px;font-weight:700}
+.fuel-exit-kind button{padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:12px;font-weight:800;cursor:pointer}
+.fuel-exit-kind button.active{border-color:#7a4bc2;background:#f3edfb;color:#5b2f9e}
+.fuel-type-pill.terceiros{background:#f3edfb;color:#5b2f9e}
+.fuel-third-party{font-style:italic}
+@media(max-width:900px){.fuel-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.fuel-form{grid-template-columns:1fr;padding:12px}.fuel-form .fuel-span-2{grid-column:1/-1}}
+.fuel-form .fuel-movement-type{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;border:0}
 .fuel-form .fuel-movement-type legend{width:100%;margin-bottom:6px;font-size:12px;font-weight:700}
-.fuel-movement-type button{display:inline-flex;align-items:center;gap:8px;min-width:150px;padding:11px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:800;cursor:pointer}
+.fuel-movement-type button{display:inline-flex;align-items:center;gap:8px;min-width:130px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:800;cursor:pointer}
 .fuel-movement-type button span{font-size:16px}
 .fuel-movement-type button.active.entrada{border-color:#0a8f67;background:#e9f8f2;color:#0a7755}
 .fuel-movement-type button.active.saida{border-color:#c0392b;background:#fdeeee;color:#a3342a}
@@ -94,11 +114,11 @@ html[data-theme="dark"] .front-selector.scoped{border-color:#35d6a2;background:#
 .fuel-equipment-results li.other-front em,.fuel-equipment-selected em{color:#b2600a;font-style:normal;font-weight:800}
 .fuel-equipment-selected{display:flex;flex-direction:column;gap:5px}
 .fuel-equipment-selected>span{font-size:12px;font-weight:700}
-.fuel-equipment-selected>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:9px 12px;border:1px solid #0a8f67;border-radius:8px;background:#f1fbf7}
+.fuel-equipment-selected>div{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 10px;border:1px solid #0a8f67;border-radius:8px;background:#f1fbf7}
 .fuel-equipment-selected.other-front>div{border-color:#e08a1e;background:#fff6ea}
 .fuel-equipment-selected small{color:var(--muted)}
-.fuel-equipment-selected button{align-self:flex-start;padding:4px 10px;border-radius:7px;font-size:11px;cursor:pointer}
-.fuel-history-filters{grid-template-columns:minmax(220px,2fr) repeat(2,minmax(140px,1fr)) auto!important}
+.fuel-equipment-selected button{margin-left:auto;padding:3px 9px;border-radius:7px;font-size:11px;cursor:pointer}
+.fuel-history-filters{grid-template-columns:minmax(200px,1.6fr) repeat(auto-fit,minmax(120px,1fr))!important}
 .fuel-export-actions{display:flex;gap:8px;align-self:end}
 .fuel-type-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:800}
 .fuel-type-pill.entrada{background:#e9f8f2;color:#0a7755}
@@ -106,7 +126,7 @@ html[data-theme="dark"] .front-selector.scoped{border-color:#35d6a2;background:#
 .fuel-type-pill.transferencia{background:#e8f1f7;color:#16435e}
 .fuel-transfer,.fuel-created-by{color:var(--muted)}
 @media(max-width:900px){.fuel-history-filters{grid-template-columns:1fr 1fr!important}.fuel-movement-type button{min-width:0;flex:1}}
-@media(max-width:560px){.fuel-history-filters{grid-template-columns:1fr!important}.fuel-balance-card>strong{font-size:24px}}
+@media(max-width:560px){.fuel-history-filters{grid-template-columns:1fr!important}}
 
 /* ------------------------------------------------------------- Tema escuro */
 html[data-theme="dark"] .product-front-badge{background:#16302a;color:#8ff0cc}
@@ -118,9 +138,10 @@ html[data-theme="dark"] .product-similar-actions button{background:#23211d;color
 html[data-theme="dark"] .product-reference-chip{background:#26343d;color:#cfe3ef}
 html[data-theme="dark"] .product-reference-chip button{background:rgba(255,255,255,.12);color:#fff}
 html[data-theme="dark"] .product-application-list label.selected{background:#16302a}
-html[data-theme="dark"] .fuel-balance-card>strong{color:#f4f3f1}
+html[data-theme="dark"] .fuel-balance-total strong{color:#f4f3f1}
+html[data-theme="dark"] .fuel-exit-kind button.active,html[data-theme="dark"] .fuel-type-pill.terceiros{background:#2d2340;color:#d4bfff;border-color:#8e6ad6}
+html[data-theme="dark"] .fuel-balance-fronts{color:#c9c6c0}
 html[data-theme="dark"] .fuel-balance-card header p{color:#d8d5cf}
-html[data-theme="dark"] .fuel-balance-card header>span{background:#3a2f16}
 html[data-theme="dark"] .fuel-balance-period .in,html[data-theme="dark"] .fuel-type-pill.entrada,html[data-theme="dark"] .fuel-movement-type button.active.entrada{background:#16302a;color:#8ff0cc}
 html[data-theme="dark"] .fuel-balance-period .out,html[data-theme="dark"] .fuel-type-pill.saida,html[data-theme="dark"] .fuel-movement-type button.active.saida{background:#3a1d1b;color:#ffadb2}
 html[data-theme="dark"] .fuel-type-pill.transferencia,html[data-theme="dark"] .fuel-movement-type button.active.transferencia{background:#26343d;color:#cfe3ef}
@@ -137,3 +158,4 @@ html[data-theme="dark"] .fuel-equipment-results li.other-front em,html[data-them
 .fuel-equipment-picker .page-search input{width:100%;padding-left:6px;font-size:13px}
 .fuel-equipment-picker .page-search span{position:static}
 @media(max-width:560px){.fuel-movement-type button{padding:10px 6px;gap:4px;font-size:12px;justify-content:center}}
+.product-stock-readonly{font-weight:800;font-size:13px}

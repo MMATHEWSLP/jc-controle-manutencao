@@ -9,7 +9,9 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type DbLike = Db | Tx;
 
-export type ProductFrontInfo = { serviceFrontId: number; name: string; active: boolean; quantity: number | null };
+// `editable` = frente que a pessoa enxerga (pode alterar o estoque). As demais vêm só para consulta:
+// quem é de uma frente só vê a quantidade das outras frentes, mas não altera.
+export type ProductFrontInfo = { serviceFrontId: number; name: string; active: boolean; quantity: number; editable: boolean };
 export type ProductExtras = {
   references: string[];
   equipmentModelIds: number[];
@@ -38,7 +40,7 @@ export async function visibleFrontList(db: DbLike, user: SessionUser) {
 }
 
 // Referências, aplicações, fotos e estoque por frente dos produtos da página, em poucas consultas.
-// Quantidade de frente que o usuário não enxerga volta como null (ele vê só o nome da frente).
+// Quantidade de frente que o usuário não enxerga volta marcada como editable=false (só leitura).
 export async function loadProductExtras(db: DbLike, ids: number[], user: SessionUser) {
   const map = new Map<number, ProductExtras>();
   for (const id of ids) map.set(id, { references: [], equipmentModelIds: [], applicationNames: [], photoIds: [], fronts: [] });
@@ -65,7 +67,7 @@ export async function loadProductExtras(db: DbLike, ids: number[], user: Session
   for (const row of photos) map.get(row.productId)?.photoIds.push(row.id);
   for (const row of stocks) {
     const canSee = visible === "ALL" || visible.includes(row.serviceFrontId);
-    map.get(row.productId)?.fronts.push({ serviceFrontId: row.serviceFrontId, name: row.name, active: row.active, quantity: canSee ? row.quantity : null });
+    map.get(row.productId)?.fronts.push({ serviceFrontId: row.serviceFrontId, name: row.name, active: row.active, quantity: row.quantity, editable: canSee });
   }
   return map;
 }
@@ -73,7 +75,7 @@ export async function loadProductExtras(db: DbLike, ids: number[], user: Session
 // Situação do produto nas frentes em exibição: ativo lá? quanto tem somando essas frentes?
 export function scopeSummary(fronts: ProductFrontInfo[], displayed: number[] | "ALL") {
   const inScope = fronts.filter((front) => front.active && (displayed === "ALL" || displayed.includes(front.serviceFrontId)));
-  return { activeHere: inScope.length > 0, quantityHere: inScope.reduce((sum, front) => sum + (front.quantity ?? 0), 0) };
+  return { activeHere: inScope.length > 0, quantityHere: inScope.reduce((sum, front) => sum + front.quantity, 0) };
 }
 
 // ---------------------------------------------------------------------------

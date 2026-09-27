@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { optimizePhoto } from "../lib/photo-client";
 
-type ProductFront = { serviceFrontId: number; name: string; active: boolean; quantity: number | null };
+type ProductFront = { serviceFrontId: number; name: string; active: boolean; quantity: number; editable: boolean };
 type Product = {
   id: number;
   tag: string;
@@ -293,7 +293,7 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
                 <tbody>
                   {data.products.map((product) => {
                     const activeFronts = product.fronts.filter((front) => front.active);
-                    const breakdown = data.scope.multiFront && activeFronts.filter((front) => front.quantity !== null).length > 1;
+                    const breakdown = data.scope.multiFront && activeFronts.filter((front) => front.editable).length > 1;
                     return (
                       <tr key={product.id} className={product.activeHere ? "" : "product-inactive-here"} title={product.activeHere ? undefined : `Não está ativo em ${scopeLabel}. Ative para dar entrada nesta frente.`}>
                         <td className="product-thumb-cell">
@@ -316,7 +316,7 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
                         <td>{product.applicationName ?? "Uso geral"}</td>
                         <td className="product-stock-cell">
                           {product.activeHere ? <strong>{quantityFormat(product.quantityHere)}</strong> : <span>—</span>}
-                          {breakdown && <small>{activeFronts.filter((front) => front.quantity !== null).map((front) => `${front.name}: ${quantityFormat(front.quantity ?? 0)}`).join(" / ")}</small>}
+                          {breakdown && <small>{activeFronts.filter((front) => front.editable).map((front) => `${front.name}: ${quantityFormat(front.quantity)}`).join(" / ")}</small>}
                         </td>
                         <td>
                           <div className="equipment-row-actions">
@@ -577,7 +577,7 @@ function ProductModal({
       setStockRows((current) => {
         const existing = current.find((row) => row.serviceFrontId === front.id);
         if (existing) return current.map((row) => (row.serviceFrontId === front.id ? { ...row, active } : row));
-        return [...current, { serviceFrontId: front.id, name: front.name, active, quantity: 0 }];
+        return [...current, { serviceFrontId: front.id, name: front.name, active, quantity: 0, editable: true }];
       });
       return true;
     } catch (problem) {
@@ -826,7 +826,7 @@ function ProductModal({
                     );
                   })}
                   {stockRows.filter((row) => row.active && !fronts.some((front) => front.id === row.serviceFrontId)).map((row) => (
-                    <tr key={row.serviceFrontId} className="product-other-front"><th>{row.name}</th><td>Ativo (outra frente)</td><td>—</td><td /></tr>
+                    <tr key={row.serviceFrontId} className="product-other-front"><th>{row.name}</th><td>Ativo (outra frente)</td><td><span className="product-stock-readonly" title="Somente leitura — estoque de outra frente">{quantityFormat(row.quantity)}</span></td><td /></tr>
                   ))}
                 </tbody>
               </table>
