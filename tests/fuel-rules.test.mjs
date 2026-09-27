@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeFuelBalances, fuelMovementLabel, validateFuelMovement } from "../lib/fuel-rules.ts";
+import { computeFuelBalances, computeFuelCosts, fuelMovementLabel, validateFuelMovement } from "../lib/fuel-rules.ts";
 
 const DIESEL = 1;
 const GASOLINA = 2;
@@ -59,7 +59,8 @@ test("Frente e Porto da mesma frente têm saldos independentes; transferência F
 
 const base = {
   serviceFrontId: 1, stockLocation: "FRENTE", fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-09-10", quantity: 60, equipmentId: 9,
-  meterReading: 1200, destinationFrontId: null, destinationLocation: null, thirdParty: false, thirdPartyDescription: null, responsible: "João",
+  meterReading: 1200, destinationFrontId: null, destinationLocation: null, thirdParty: false, thirdPartyKind: null, thirdPartyDescription: null,
+  providerCompany: null, providerEquipment: null, unitPrice: null, responsible: "João",
 };
 const today = "2026-09-27";
 
@@ -71,7 +72,7 @@ test("bloqueia lançamento para equipamento de outra frente", () => {
 
 test("saída exige equipamento; saída para terceiros exige descrição e responsável", () => {
   assert.match(validateFuelMovement({ ...base, equipmentId: null }, null, today), /veículo\/máquina/);
-  const third = { ...base, equipmentId: null, meterReading: null, thirdParty: true };
+  const third = { ...base, equipmentId: null, meterReading: null, thirdParty: true, thirdPartyKind: "GERAL" };
   assert.match(validateFuelMovement({ ...third, thirdPartyDescription: " " }, null, today), /Destino\/Descrição/);
   assert.match(validateFuelMovement({ ...third, thirdPartyDescription: "Comunidade X", responsible: "" }, null, today), /responsável/);
   assert.equal(validateFuelMovement({ ...third, thirdPartyDescription: "Comunidade X" }, null, today), null);
@@ -83,6 +84,7 @@ test("transferência: destino obrigatório e diferente da origem (Frente ↔ Por
   assert.match(validateFuelMovement(transfer, null, today), /estoque de destino/);
   assert.match(validateFuelMovement({ ...transfer, destinationLocation: "FRENTE" }, null, today), /diferente da origem/);
   assert.equal(validateFuelMovement({ ...transfer, destinationLocation: "PORTO" }, null, today), null);
+  assert.match(validateFuelMovement({ ...transfer, destinationLocation: "PORTO", responsible: "" }, null, today), /responsável/);
   assert.equal(validateFuelMovement({ ...transfer, destinationFrontId: 2, destinationLocation: "FRENTE" }, null, today), null);
 });
 
@@ -91,4 +93,39 @@ test("quantidade positiva e data não futura", () => {
   assert.match(validateFuelMovement({ ...base, quantity: 0 }, equipment, today), /quantidade/);
   assert.match(validateFuelMovement({ ...base, movementDate: "2026-10-01" }, equipment, today), /futura/);
   assert.match(validateFuelMovement({ ...base, movementDate: "2026-13-45" }, equipment, today), /data válida/);
+});
+
+test("entrada exige valor por litro e responsável, e não aceita equipamento", () => {
+  const entry = { ...base, movementType: "ENTRADA", equipmentId: null, meterReading: null, unitPrice: 6.1 };
+  assert.equal(validateFuelMovement(entry, null, today), null);
+  assert.match(validateFuelMovement({ ...entry, unitPrice: null }, null, today), /valor por litro/);
+  assert.match(validateFuelMovement({ ...entry, responsible: " " }, null, today), /recebeu o combustível/);
+  assert.match(validateFuelMovement({ ...entry, equipmentId: 9 }, { id: 9, prefix: "X", serviceFrontId: 1, frontName: "A" }, today), /não é vinculada/);
+});
+
+test("prestador de serviço exige empresa e descrição do equipamento", () => {
+  const provider = { ...base, equipmentId: null, meterReading: null, thirdParty: true, thirdPartyKind: "PRESTADOR", providerCompany: "Transportes Silva", providerEquipment: "Caminhão placa ABC1D23" };
+  assert.equal(validateFuelMovement(provider, null, today), null);
+  assert.match(validateFuelMovement({ ...provider, providerCompany: "" }, null, today), /empresa/);
+  assert.match(validateFuelMovement({ ...provider, providerEquipment: "" }, null, today), /equipamento do prestador/);
+  assert.equal(fuelMovementLabel(provider), "Saída — Prestador de Serviço");
+});
+
+test("custo das saídas pelo custo médio ponderado do estoque de origem", () => {
+  const ledger = [
+    { id: 1, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-01", quantity: 1000, unitPrice: 6 },
+    { id: 2, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-09-02", quantity: 100 },
+    { id: 3, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-03", quantity: 900, unitPrice: 7 },
+    { id: 4, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: 1, destinationLocation: "PORTO", fuelTypeId: DIESEL, movementType: "TRANSFERENCIA", movementDate: "2026-09-04", quantity: 200 },
+    { id: 5, serviceFrontId: 1, stockLocation: "PORTO", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-09-05", quantity: 50 },
+    { id: 6, serviceFrontId: 2, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-09-05", quantity: 10 },
+  ];
+  const costs = computeFuelCosts(ledger);
+  assert.deepEqual(costs.get(1), { unitCost: 6, cost: 6000 });
+  assert.deepEqual(costs.get(2), { unitCost: 6, cost: 600 });
+  // Média após a 2ª entrada: (900 × 6 + 900 × 7) / 1800 = 6,5
+  assert.equal(costs.get(4).unitCost, 6.5);
+  assert.equal(costs.get(5).unitCost, 6.5); // o Porto herdou o custo médio da Frente
+  assert.equal(costs.get(5).cost, 325);
+  assert.deepEqual(costs.get(6), { unitCost: null, cost: null }); // estoque sem valor informado
 });

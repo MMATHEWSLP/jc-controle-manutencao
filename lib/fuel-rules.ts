@@ -4,6 +4,8 @@ export const FUEL_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "TRANSFERENCIA"] as cons
 export type FuelMovementType = typeof FUEL_MOVEMENT_TYPES[number];
 export const FUEL_MOVEMENT_LABELS: Record<FuelMovementType, string> = { ENTRADA: "Entrada", SAIDA: "Saída", TRANSFERENCIA: "Transferência" };
 export const THIRD_PARTY_LABEL = "Saída para terceiros";
+export const PROVIDER_LABEL = "Saída — Prestador de Serviço";
+export type ThirdPartyKind = "GERAL" | "PRESTADOR";
 
 // Cada frente tem dois estoques independentes: o da Frente e o do Porto.
 export const FUEL_LOCATIONS = ["FRENTE", "PORTO"] as const;
@@ -17,8 +19,9 @@ export function isFuelLocation(value: unknown): value is FuelLocation {
   return typeof value === "string" && (FUEL_LOCATIONS as readonly string[]).includes(value);
 }
 
-export function fuelMovementLabel(movement: { movementType: FuelMovementType; thirdParty?: boolean }) {
-  return movement.movementType === "SAIDA" && movement.thirdParty ? THIRD_PARTY_LABEL : FUEL_MOVEMENT_LABELS[movement.movementType];
+export function fuelMovementLabel(movement: { movementType: FuelMovementType; thirdParty?: boolean; thirdPartyKind?: ThirdPartyKind | null }) {
+  if (movement.movementType !== "SAIDA" || !movement.thirdParty) return FUEL_MOVEMENT_LABELS[movement.movementType];
+  return movement.thirdPartyKind === "PRESTADOR" ? PROVIDER_LABEL : THIRD_PARTY_LABEL;
 }
 
 export type LedgerMovement = {
@@ -108,7 +111,11 @@ export type FuelMovementInput = {
   destinationFrontId: number | null;
   destinationLocation: FuelLocation | null;
   thirdParty: boolean;
+  thirdPartyKind: ThirdPartyKind | null;
   thirdPartyDescription: string | null;
+  providerCompany: string | null;
+  providerEquipment: string | null;
+  unitPrice: number | null;
   responsible: string | null;
 };
 
@@ -127,11 +134,19 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
   if (input.movementDate > today) return "A data do lançamento não pode ser futura.";
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) return "Informe a quantidade em litros (maior que zero).";
   if (input.meterReading !== null && (!Number.isFinite(input.meterReading) || input.meterReading < 0)) return "Informe um hodômetro/horímetro válido (zero ou mais).";
+  // Responsável é obrigatório em todos os tipos (na Entrada é quem recebeu o combustível).
+  if (!input.responsible?.trim()) return input.movementType === "ENTRADA" ? "Informe o responsável que recebeu o combustível." : "Informe o responsável.";
+  if (input.movementType === "ENTRADA") {
+    if (input.unitPrice === null || !Number.isFinite(input.unitPrice) || input.unitPrice <= 0) return "Informe o valor por litro (R$) desta entrada.";
+    if (input.equipmentId) return "A entrada não é vinculada a veículo/máquina.";
+  }
   if (input.thirdParty) {
     if (input.movementType !== "SAIDA") return "Saída para terceiros só vale para o tipo Saída.";
-    if (!input.thirdPartyDescription?.trim()) return "Na saída para terceiros, informe o Destino/Descrição (quem recebeu o combustível).";
-    if (!input.responsible?.trim()) return "Informe o responsável pela saída para terceiros.";
     if (input.equipmentId) return "Saída para terceiros não usa equipamento da frota.";
+    if (input.thirdPartyKind === "PRESTADOR") {
+      if (!input.providerCompany?.trim()) return "Informe a empresa do prestador de serviço.";
+      if (!input.providerEquipment?.trim()) return "Informe a descrição do equipamento do prestador.";
+    } else if (!input.thirdPartyDescription?.trim()) return "Na saída para terceiros, informe o Destino/Descrição (quem recebeu o combustível).";
   } else if (input.movementType === "SAIDA" && !input.equipmentId) return "Na saída, informe o veículo/máquina abastecido (ou use Saída para terceiros).";
   if (input.movementType === "TRANSFERENCIA") {
     if (!isFuelLocation(input.destinationLocation)) return "Na transferência, informe o estoque de destino (Frente ou Porto).";
@@ -144,4 +159,51 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
       return `O equipamento ${equipment.prefix} está em ${equipment.frontName ?? "outra frente"}, não na frente deste lançamento. Transfira o equipamento ou lance pela frente correta.`;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Custo das saídas: custo médio ponderado de cada estoque (frente + Frente/Porto + combustível).
+// Entrada com valor por litro recalcula a média; transferência leva o custo médio da origem para
+// o destino; saída custa quantidade × média vigente do estoque de origem naquele momento.
+// Calculado ao vivo (nunca gravado), na ordem data + id — editar/excluir uma entrada corrige o
+// custo de todas as saídas seguintes. Entrada antiga sem valor soma litros sem mexer na média;
+// estoque que nunca teve valor informado deixa o custo da saída como null ("sem valor").
+// ---------------------------------------------------------------------------
+export type CostMovement = LedgerMovement & { id: number; unitPrice?: number | null };
+export type FuelCost = { unitCost: number | null; cost: number | null };
+
+export function computeFuelCosts(movements: CostMovement[]) {
+  const ordered = [...movements].sort((a, b) => a.movementDate.localeCompare(b.movementDate) || a.id - b.id);
+  const stocks = new Map<string, { quantity: number; average: number | null }>();
+  const stock = (frontId: number, location: FuelLocation, fuelTypeId: number) => {
+    const key = `${frontId}:${location}:${fuelTypeId}`;
+    let value = stocks.get(key);
+    if (!value) { value = { quantity: 0, average: null }; stocks.set(key, value); }
+    return value;
+  };
+  const receive = (target: { quantity: number; average: number | null }, quantity: number, unitCost: number | null) => {
+    if (unitCost !== null) {
+      const base = Math.max(target.quantity, 0);
+      target.average = target.average === null || base === 0 ? unitCost : (base * target.average + quantity * unitCost) / (base + quantity);
+    }
+    target.quantity += quantity;
+  };
+  const costs = new Map<number, FuelCost>();
+  const money = (value: number) => Math.round(value * 100) / 100;
+  for (const movement of ordered) {
+    const origin = stock(movement.serviceFrontId, movement.stockLocation ?? "FRENTE", movement.fuelTypeId);
+    if (movement.movementType === "ENTRADA") {
+      const price = movement.unitPrice != null && movement.unitPrice > 0 ? movement.unitPrice : null;
+      receive(origin, movement.quantity, price);
+      costs.set(movement.id, { unitCost: price, cost: price === null ? null : money(price * movement.quantity) });
+      continue;
+    }
+    const unitCost = origin.average;
+    origin.quantity -= movement.quantity;
+    costs.set(movement.id, { unitCost, cost: unitCost === null ? null : money(unitCost * movement.quantity) });
+    if (movement.movementType === "TRANSFERENCIA") {
+      receive(stock(movement.destinationFrontId ?? movement.serviceFrontId, movement.destinationLocation ?? "FRENTE", movement.fuelTypeId), movement.quantity, unitCost);
+    }
+  }
+  return costs;
 }

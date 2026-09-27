@@ -1,10 +1,10 @@
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
+import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
-import { computeFuelBalances, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
+import { computeFuelBalances, computeFuelCosts, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
@@ -19,7 +19,7 @@ export function monthStart(day: string) {
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // movementType "TERCEIROS" = só as saídas para terceiros. location = estoque Frente/Porto (origem ou destino).
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | null; location: FuelLocation | null; frontId: number | null; q: string };
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -28,7 +28,7 @@ export function parseFuelFilters(params: URLSearchParams): FuelFilters {
   const to = DATE.test(params.get("to") ?? "") ? params.get("to")! : today;
   const fuelTypeId = Number(params.get("fuelTypeId")) || null;
   const rawType = params.get("movementType");
-  const movementType = rawType === "TERCEIROS" ? "TERCEIROS" : isFuelMovementType(rawType) ? rawType : null;
+  const movementType = rawType === "TERCEIROS" || rawType === "PRESTADORES" ? rawType : isFuelMovementType(rawType) ? rawType : null;
   const location = isFuelLocation(params.get("location")) ? params.get("location") as FuelLocation : null;
   const frontId = Number(params.get("frontId")) || null;
   return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim() };
@@ -74,12 +74,14 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
     lte(fuelMovements.movementDate, filters.to),
   ];
   if (filters.fuelTypeId) conditions.push(eq(fuelMovements.fuelTypeId, filters.fuelTypeId));
-  if (filters.movementType === "TERCEIROS") conditions.push(eq(fuelMovements.thirdParty, true));
+  // TERCEIROS = saída para terceiros geral; PRESTADORES = prestadores de serviço.
+  if (filters.movementType === "TERCEIROS") conditions.push(and(eq(fuelMovements.thirdParty, true), sql`coalesce(${fuelMovements.thirdPartyKind}, 'GERAL') <> 'PRESTADOR'`));
+  else if (filters.movementType === "PRESTADORES") conditions.push(and(eq(fuelMovements.thirdParty, true), eq(fuelMovements.thirdPartyKind, "PRESTADOR")));
   else if (filters.movementType) conditions.push(eq(fuelMovements.movementType, filters.movementType));
   if (filters.location) conditions.push(or(eq(fuelMovements.stockLocation, filters.location), and(eq(fuelMovements.movementType, "TRANSFERENCIA"), eq(fuelMovements.destinationLocation, filters.location))));
   if (filters.q) {
     const like = `%${filters.q}%`;
-    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.thirdPartyDescription, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like)));
+    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.thirdPartyDescription, like), ilike(fuelMovements.providerCompany, like), ilike(fuelMovements.providerEquipment, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like)));
   }
   return and(...conditions);
 }
@@ -92,7 +94,9 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       fuelTypeId: fuelMovements.fuelTypeId, fuelName: fuelTypes.name, unit: fuelTypes.unit,
       movementType: fuelMovements.movementType, movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity,
       origin: fuelMovements.origin, stockLocation: fuelMovements.stockLocation, destinationLocation: fuelMovements.destinationLocation,
-      thirdParty: fuelMovements.thirdParty, thirdPartyDescription: fuelMovements.thirdPartyDescription, equipmentId: fuelMovements.equipmentId, equipmentPrefix: equipment.prefix,
+      thirdParty: fuelMovements.thirdParty, thirdPartyKind: fuelMovements.thirdPartyKind, thirdPartyDescription: fuelMovements.thirdPartyDescription,
+      providerCompany: fuelMovements.providerCompany, providerEquipment: fuelMovements.providerEquipment, unitPrice: fuelMovements.unitPrice,
+      responsibleEmployeeId: fuelMovements.responsibleEmployeeId, equipmentId: fuelMovements.equipmentId, equipmentPrefix: equipment.prefix,
       equipmentModel: sql<string | null>`trim(concat(${equipment.brand}, ' ', ${equipment.model}))`,
       meterReading: fuelMovements.meterReading, meterUnit: fuelMovements.meterUnit,
       destinationFrontId: fuelMovements.destinationFrontId, destinationFrontName: destinationFront.name,
@@ -106,15 +110,38 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       .where(where).orderBy(desc(fuelMovements.movementDate), desc(fuelMovements.id)).limit(limit).offset(offset),
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
+  const costs = await fuelCosts(db);
   return {
     rows: rows.map((row) => ({
       ...row,
+      unitCost: costs.get(row.id)?.unitCost ?? null,
+      cost: costs.get(row.id)?.cost ?? null,
       movementLabel: fuelMovementLabel(row),
       stockLocationLabel: FUEL_LOCATION_LABELS[row.stockLocation],
       destinationLocationLabel: row.destinationLocation ? FUEL_LOCATION_LABELS[row.destinationLocation] : null,
     })),
     total,
   };
+}
+
+// Custo médio ponderado de todos os estoques (lib/fuel-rules.ts:computeFuelCosts). Replaya o
+// razão inteiro porque transferências levam custo de uma frente para outra.
+export async function fuelCosts(db: Db) {
+  const rows = await db.select({
+    id: fuelMovements.id, serviceFrontId: fuelMovements.serviceFrontId, stockLocation: fuelMovements.stockLocation, destinationFrontId: fuelMovements.destinationFrontId,
+    destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType,
+    movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity, unitPrice: fuelMovements.unitPrice,
+  }).from(fuelMovements).where(isNull(fuelMovements.deletedAt));
+  return computeFuelCosts(rows);
+}
+
+// Responsável escolhido na lista de Funcionários: grava o id e usa o nome do cadastro. Sem id,
+// vale o nome digitado (exceção prevista no formulário).
+export async function resolveResponsible(db: Db, employeeId: number | null, typed: string | null) {
+  if (!employeeId) return { responsibleEmployeeId: null, responsible: typed };
+  const row = (await db.select({ id: employees.id, name: employees.name, status: employees.status }).from(employees).where(eq(employees.id, employeeId)).limit(1))[0];
+  if (!row) throw new Error("RESPONSIBLE_NOT_FOUND");
+  return { responsibleEmployeeId: row.id, responsible: row.name };
 }
 
 export type FuelHistoryRow = Awaited<ReturnType<typeof fuelHistory>>["rows"][number];
@@ -152,7 +179,10 @@ const text = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 export function readFuelMovementBody(body: Record<string, unknown>) {
   const movementType = isFuelMovementType(body.movementType) ? body.movementType : ("" as FuelMovementType);
   const thirdParty = movementType === "SAIDA" && body.thirdParty === true;
+  const provider = thirdParty && body.thirdPartyKind === "PRESTADOR";
   const transfer = movementType === "TRANSFERENCIA";
+  const entry = movementType === "ENTRADA";
+  const noEquipment = thirdParty || transfer || entry;
   return {
     fuelTypeId: Number(body.fuelTypeId) || 0,
     movementType,
@@ -160,12 +190,18 @@ export function readFuelMovementBody(body: Record<string, unknown>) {
     quantity: numberOrNull(body.quantity) ?? NaN,
     stockLocation: (isFuelLocation(body.stockLocation) ? body.stockLocation : "") as FuelLocation,
     thirdParty,
-    thirdPartyDescription: thirdParty ? text(body.thirdPartyDescription) : null,
-    equipmentId: thirdParty || transfer ? null : Number(body.equipmentId) || null,
-    meterReading: thirdParty || transfer ? null : numberOrNull(body.meterReading),
+    thirdPartyKind: thirdParty ? (provider ? "PRESTADOR" as const : "GERAL" as const) : null,
+    thirdPartyDescription: thirdParty && !provider ? text(body.thirdPartyDescription) : null,
+    providerCompany: provider ? text(body.providerCompany) : null,
+    providerEquipment: provider ? text(body.providerEquipment) : null,
+    // Valor por litro só existe na Entrada (base do custo das saídas).
+    unitPrice: entry ? numberOrNull(body.unitPrice) : null,
+    equipmentId: noEquipment ? null : Number(body.equipmentId) || null,
+    meterReading: noEquipment ? null : numberOrNull(body.meterReading),
     // Destino da transferência: sem filial escolhida = mesma frente (Frente ↔ Porto).
     destinationFrontId: transfer ? Number(body.destinationFrontId) || null : null,
     destinationLocation: transfer && isFuelLocation(body.destinationLocation) ? body.destinationLocation : null,
+    responsibleEmployeeId: Number(body.responsibleEmployeeId) || null,
     responsible: text(body.responsible),
     notes: text(body.notes),
   };

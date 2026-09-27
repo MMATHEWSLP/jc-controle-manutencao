@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { auditLogs, fuelMovements, fuelTypes, serviceFronts } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
-import { fuelEquipmentContext, fuelLocalDay, fuelVisibleFronts, readFuelMovementBody } from "../../../../../lib/fuel";
+import { fuelEquipmentContext, resolveResponsible, fuelLocalDay, fuelVisibleFronts, readFuelMovementBody } from "../../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../../lib/fuel-rules";
 
 type Context = { params: Promise<{ id: string }> };
@@ -27,7 +27,10 @@ export async function PUT(request: Request, { params }: Context) {
   const { db, user, current, visibleIds } = loaded;
   try {
     const body = (await request.json()) as Record<string, unknown>;
-    const input = readFuelMovementBody(body);
+    const parsed = readFuelMovementBody(body);
+    let input: typeof parsed;
+    try { input = { ...parsed, ...(await resolveResponsible(await getDb(), parsed.responsibleEmployeeId, parsed.responsible)) }; }
+    catch { return Response.json({ error: "Funcionário responsável não encontrado." }, { status: 400 }); }
     const requestedFront = Number(body.serviceFrontId) || current.serviceFrontId;
     if (!visibleIds.includes(requestedFront)) return Response.json({ error: "Você não tem acesso à frente escolhida." }, { status: 403 });
     const fuelType = (await db.select({ id: fuelTypes.id }).from(fuelTypes).where(eq(fuelTypes.id, input.fuelTypeId)).limit(1))[0];

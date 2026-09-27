@@ -898,6 +898,15 @@ export const fuelMovements = pgTable("fuel_movements", {
   // Saída para terceiros (fora da frota): sem equipamento, com descrição livre de quem recebeu.
   thirdParty: boolean("third_party").notNull().default(false),
   thirdPartyDescription: text("third_party_description"),
+  // Subtipo da saída para terceiros: GERAL (texto livre em thirdPartyDescription) ou PRESTADOR
+  // (prestador de serviço: empresa + descrição do equipamento dele).
+  thirdPartyKind: text("third_party_kind", { enum:["GERAL","PRESTADOR"] }),
+  providerCompany: text("provider_company"),
+  providerEquipment: text("provider_equipment"),
+  // Valor por litro informado na ENTRADA (R$). As saídas não gravam custo: ele é calculado ao vivo
+  // pelo custo médio ponderado do estoque (lib/fuel-rules.ts:computeFuelCosts), então editar ou
+  // excluir uma entrada recalcula o custo de todas as saídas seguintes.
+  unitPrice: doublePrecision("unit_price"),
   equipmentId: integer("equipment_id").references(() => equipment.id),
   meterReading: doublePrecision("meter_reading"),
   meterUnit: text("meter_unit", { enum:["HOURS","KM"] }),
@@ -906,6 +915,9 @@ export const fuelMovements = pgTable("fuel_movements", {
   destinationFrontId: integer("destination_front_id").references(() => serviceFronts.id),
   destinationLocation: text("destination_location", { enum:["FRENTE","PORTO"] }),
   responsible: text("responsible"),
+  // Funcionário escolhido na lista (módulo Funcionários). `responsible` guarda o nome exibido e
+  // continua sendo usado quando o nome foi digitado manualmente (exceção).
+  responsibleEmployeeId: integer("responsible_employee_id").references((): AnyPgColumn => employees.id),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
   deletedAt: text("deleted_at"),
@@ -1021,3 +1033,49 @@ export const serviceFrontChangeRequests = pgTable("service_front_change_requests
   index("front_change_requests_status_idx").on(table.status, table.requestedAt),
   index("front_change_requests_equipment_idx").on(table.equipmentId, table.status),
 ]);
+
+// ---------------------------------------------------------------------------
+// Funcionários: cadastro único de pessoas (próprios e terceirizados/prestadores fixos), usado como
+// fonte dos nomes de responsável/operador no resto do sistema. Mesma lógica de frente dos
+// equipamentos: a frente atual só muda pela transferência rastreável (employee_transfers).
+// ---------------------------------------------------------------------------
+export const employees = pgTable("employees", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  jobTitle: text("job_title").notNull(),
+  company: text("company").notNull(),
+  admissionDate: text("admission_date").notNull(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  // Situação cadastral. Folga/férias/atestado do dia a dia ficam em employee_absences (a tela
+  // mostra o badge "De folga"/"Afastado" a partir do período vigente, sem mudar este campo).
+  status: text("status", { enum:["ATIVO","AFASTADO","DESLIGADO"] }).notNull().default("ATIVO"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("employees_front_idx").on(table.serviceFrontId, table.status),
+  index("employees_name_idx").on(table.name),
+]);
+
+export const employeeTransfers = pgTable("employee_transfers", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete:"cascade" }),
+  previousServiceFrontId: integer("previous_service_front_id").references(() => serviceFronts.id),
+  newServiceFrontId: integer("new_service_front_id").notNull().references(() => serviceFronts.id),
+  transferDate: text("transfer_date").notNull(),
+  transferredBy: integer("transferred_by").references(() => users.id),
+  note: text("note"),
+  ...timestamps,
+}, (table) => [index("employee_transfers_employee_idx").on(table.employeeId, table.transferDate)]);
+
+export const employeeAbsences = pgTable("employee_absences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete:"cascade" }),
+  kind: text("kind", { enum:["FOLGA","FERIAS","ATESTADO","AFASTAMENTO","OUTRO"] }).notNull(),
+  startDate: text("start_date").notNull(),
+  // NULL = em aberto (sem data de retorno prevista).
+  endDate: text("end_date"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("employee_absences_employee_idx").on(table.employeeId, table.startDate)]);

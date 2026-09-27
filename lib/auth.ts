@@ -92,6 +92,10 @@ export const PERMISSION_GROUPS = [
     ["fuel.register","Registrar lançamento de combustível"],
     ["fuel.manage","Editar e excluir lançamentos de combustível"],
   ]},
+  { label:"Funcionários", items:[
+    ["employees.view","Visualizar funcionários, transferências e afastamentos"],
+    ["employees.manage","Cadastrar, editar, transferir e registrar folgas/afastamentos de funcionários"],
+  ]},
   { label:"Usuários", items:[
     ["users.view","Visualizar usuários"],
     ["users.create","Criar usuários"],

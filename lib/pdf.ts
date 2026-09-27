@@ -380,7 +380,7 @@ export function createDailyHistoryPdf(input:DailyHistoryPdfInput){
   return buildPdf(pages,{width:842,height:595});
 }
 
-export type FuelHistoryPdfItem={date:string;type:string;fuel:string;quantity:string;front:string;equipment:string;origin:string;meter:string;responsible:string};
+export type FuelHistoryPdfItem={date:string;type:string;fuel:string;quantity:string;cost?:string;front:string;equipment:string;origin:string;meter:string;responsible:string};
 export type FuelBalancePdfItem={fuel:string;balance:string;entries:string;exits:string;split?:string};
 type FuelHistoryPdfInput={items:FuelHistoryPdfItem[];balances:FuelBalancePdfItem[];generatedAt:string;total:number;truncated:boolean;filters:{period:string;front:string;fuel:string;movement:string}};
 
@@ -398,13 +398,13 @@ export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
     content+=text(39,422,7.5,`LANÇAMENTOS: ${input.total} · COMBUSTÍVEL: ${input.filters.fuel} · TIPO: ${input.filters.movement}`,true,"0.08 0.38 0.29");
     if(input.truncated)content+=text(470,422,7,`Exibindo os primeiros ${input.items.length} — refine os filtros para exportar o restante.`,true,"0.64 0.40 0.05");
     content+="0.06 0.25 0.36 rg 28 380 786 24 re f\n";
-    const columns:[number,string][]=[[35,"DATA"],[88,"TIPO"],[166,"COMBUSTÍVEL"],[236,"QTD. (L)"],[290,"FRENTE"],[362,"ORIGEM (ESTOQUE)"],[470,"VEÍCULO/MÁQUINA / TERCEIRO"],[626,"HOD./HORÍM."],[694,"RESPONSÁVEL"]];
+    const columns:[number,string][]=[[35,"DATA"],[82,"TIPO"],[180,"COMBUSTÍVEL"],[240,"QTD. (L)"],[288,"CUSTO"],[346,"FRENTE"],[402,"ORIGEM (ESTOQUE)"],[490,"VEÍCULO / TERCEIRO / PRESTADOR"],[650,"HOD./HOR."],[706,"RESPONSÁVEL"]];
     for(const [x,label] of columns)content+=text(x,389,6.5,label,true,"1 1 1");
     if(items.length===0)content+=text(260,330,12,"Nenhum lançamento encontrado para o período e filtros selecionados.",true,"0.33 0.47 0.55");
     items.forEach((item,index)=>{
       const top=362-(index*22);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-8} 786 22 re f\n`;
-      const values:[number,string,number][]=[[35,item.date,10],[88,item.type,18],[166,item.fuel,14],[236,item.quantity,10],[290,item.front,14],[362,item.origin,22],[470,item.equipment,32],[626,item.meter,12],[694,item.responsible,22]];
-      for(const [x,value,max] of values)content+=text(x,top,7,truncate(value,max),x===236);
+      const values:[number,string,number][]=[[35,item.date,10],[82,item.type,24],[180,item.fuel,11],[240,item.quantity,9],[288,item.cost??"—",11],[346,item.front,11],[402,item.origin,17],[490,item.equipment,32],[650,item.meter,10],[706,item.responsible,20]];
+      for(const [x,value,max] of values)content+=text(x,top,6.8,truncate(value,max),x===240||x===288);
       content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
     });
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Relatório gerado com os lançamentos atuais de combustível, respeitando os filtros ativos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
