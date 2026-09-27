@@ -17,6 +17,7 @@ export async function POST(request: Request, { params }: Context) {
     await requireEmployee(db, auth.user!, id);
     const body = (await request.json()) as Record<string, unknown>;
     const input = { kind: String(body.kind ?? ""), startDate: String(body.startDate ?? ""), endDate: typeof body.endDate === "string" && body.endDate ? body.endDate : null };
+    if (input.kind === "FOLGA") return Response.json({ error: "A folga é registrada pelo ciclo de folga (Saída da frente, Chegada em casa...)." }, { status: 400 });
     const problem = validateAbsence(input);
     if (problem) return Response.json({ error: problem }, { status: 400 });
     const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;

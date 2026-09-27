@@ -648,6 +648,8 @@ export const materialRequests = pgTable("material_requests", {
   shippedBy: integer("shipped_by").references(() => users.id),
   shippedAt: text("shipped_at"),
   shipmentNotes: text("shipment_notes"),
+  // Frente cujo estoque (módulo Produtos) saiu no envio dos itens vinculados a produtos.
+  originServiceFrontId: integer("origin_service_front_id").references((): AnyPgColumn => serviceFronts.id),
   cancelledAt: text("cancelled_at"),
   cancelledBy: integer("cancelled_by").references(() => users.id),
   cancelReason: text("cancel_reason"),
@@ -671,6 +673,9 @@ export const materialRequestItems = pgTable("material_request_items", {
   itemStatus: text("item_status", { enum:["PENDING","SENT","NOT_AVAILABLE"] }).notNull().default("PENDING"),
   quantitySent: doublePrecision("quantity_sent"),
   notes: text("notes"),
+  // Item vinculado a um produto cadastrado (módulo Produtos): o envio movimenta o estoque por frente
+  // (sai da frente de origem, entra na frente que pediu). NULL = item digitado à mão, sem estoque.
+  productId: integer("product_id").references((): AnyPgColumn => products.id, { onDelete:"set null" }),
   ...timestamps,
 }, (table) => [index("material_request_items_request_idx").on(table.requestId)]);
 
@@ -825,6 +830,25 @@ export const productFrontStock = pgTable("product_front_stock", {
 }, (table) => [
   primaryKey({ columns: [table.productId, table.serviceFrontId] }),
   index("product_front_stock_front_idx").on(table.serviceFrontId, table.active),
+]);
+
+// Movimentações de estoque por frente (hoje: envios de Solicitação de Materiais). O saldo continua
+// em product_front_stock; esta tabela é o rastro de cada entrada/saída e permite desfazer o envio
+// quando uma solicitação é reaberta.
+export const productStockMovements = pgTable("product_stock_movements", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  delta: doublePrecision("delta").notNull(),
+  reason: text("reason").notNull(),
+  materialRequestId: integer("material_request_id").references((): AnyPgColumn => materialRequests.id),
+  materialRequestItemId: integer("material_request_item_id").references((): AnyPgColumn => materialRequestItems.id),
+  reversedAt: text("reversed_at"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("product_stock_movements_product_idx").on(table.productId, table.serviceFrontId),
+  index("product_stock_movements_request_idx").on(table.materialRequestId),
 ]);
 
 // Várias referências por produto. `normalized` (maiúsculas, sem espaço/traço/ponto/barra) é a chave
@@ -1046,16 +1070,79 @@ export const employees = pgTable("employees", {
   company: text("company").notNull(),
   admissionDate: text("admission_date").notNull(),
   serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
-  // Situação cadastral. Folga/férias/atestado do dia a dia ficam em employee_absences (a tela
-  // mostra o badge "De folga"/"Afastado" a partir do período vigente, sem mudar este campo).
-  status: text("status", { enum:["ATIVO","AFASTADO","DESLIGADO"] }).notNull().default("ATIVO"),
+  // Situação: ATIVO / FOLGA (controlada pelo ciclo de folga, employee_leave_cycles) / AFASTADO /
+  // DEMITIDO (só pelo botão Demitir, que grava employee_dismissals). Atestados e afastamentos
+  // continuam em employee_absences.
+  status: text("status", { enum:["ATIVO","FOLGA","AFASTADO","DEMITIDO"] }).notNull().default("ATIVO"),
+  // Matrícula numérica e CPF: únicos quando informados (os importados da relação vieram sem).
+  registration: text("registration"),
+  cpf: text("cpf"),
+  birthDate: text("birth_date"),
+  city: text("city"),
+  // Salário de carteira (R$). Visível só com a permissão employees.salary.
+  salary: doublePrecision("salary"),
+  // Ciclo de folga do funcionário: dias trabalhados para ter direito a folga / dias de folga.
+  cycleWorkDays: integer("cycle_work_days").notNull().default(90),
+  cycleOffDays: integer("cycle_off_days").notNull().default(10),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
   index("employees_front_idx").on(table.serviceFrontId, table.status),
   index("employees_name_idx").on(table.name),
+  uniqueIndex("employees_registration_unique").on(table.registration),
+  uniqueIndex("employees_cpf_unique").on(table.cpf),
 ]);
+
+// Empresas dos funcionários (lista do dropdown do cadastro, editável pelo ADMIN).
+export const companies = pgTable("companies", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [uniqueIndex("companies_name_unique").on(table.name)]);
+
+// Ciclo de folga: cada linha é um ciclo do funcionário, com as 5 datas lançadas à mão. Toda a conta
+// de dias (trabalhados, viagem, folga, atraso) é feita em lib/leave-cycle.ts — nunca aqui nem na tela.
+// O ciclo "aberto" é o que ainda não tem frontArrival; ao registrar a chegada na frente, o próximo
+// ciclo nasce com workStart = essa data.
+export const employeeLeaveCycles = pgTable("employee_leave_cycles", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete:"cascade" }),
+  cycleNumber: integer("cycle_number").notNull(),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  workStart: text("work_start"),
+  frontDeparture: text("front_departure"),
+  homeArrival: text("home_arrival"),
+  homeDeparture: text("home_departure"),
+  frontArrival: text("front_arrival"),
+  // Ciclo encerrado sem chegada na frente (demissão): a conta de dias para nesta data.
+  endedAt: text("ended_at"),
+  // Metas do ciclo no momento em que ele começou (mudar o ciclo do funcionário não reescreve o passado).
+  workDaysTarget: integer("work_days_target").notNull(),
+  offDaysTarget: integer("off_days_target").notNull(),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("employee_leave_cycles_number_unique").on(table.employeeId, table.cycleNumber),
+  index("employee_leave_cycles_employee_idx").on(table.employeeId, table.frontArrival),
+]);
+
+// Demissões (e readmissões): histórico preservado no perfil. rehireAllowed=false coloca a pessoa na
+// lista de "Funcionários Restritos", consultada no cadastro de novos funcionários.
+export const employeeDismissals = pgTable("employee_dismissals", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete:"cascade" }),
+  dismissedAt: text("dismissed_at").notNull(),
+  reason: text("reason").notNull(),
+  rehireAllowed: boolean("rehire_allowed").notNull(),
+  previousAdmissionDate: text("previous_admission_date"),
+  rehiredAt: text("rehired_at"),
+  rehiredBy: integer("rehired_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("employee_dismissals_employee_idx").on(table.employeeId, table.dismissedAt)]);
 
 export const employeeTransfers = pgTable("employee_transfers", {
   id: serial("id").primaryKey(),

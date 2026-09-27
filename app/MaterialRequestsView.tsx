@@ -4,11 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
-type RequestItem = { id:number; description:string; reference:string|null; quantityRequested:number; itemStatus:ItemStatus; itemStatusLabel:string; quantitySent:number|null; notes:string|null };
+// linked = item vinculado a um produto cadastrado (movimenta estoque no envio); senão, item manual.
+type RequestItem = { id:number; description:string; reference:string|null; quantityRequested:number; itemStatus:ItemStatus; itemStatusLabel:string; quantitySent:number|null; notes:string|null; productId:number|null; productTag:string|null; linked:boolean; stock:Record<number,number> };
+type ProductOption = { id:number; tag:string; name:string; reference:string|null; references:string[] };
+type Shortage = { label:string; requested:number; available:number };
 type MaterialRequest = {
   id:number; requestNumber:string; requesterId:number; requester:string;
   serviceFrontId:number|null; serviceFront:string; requestedAt:string; status:RequestStatus; statusLabel:string; notes:string|null;
   shippedBy:number|null; shippedByName:string|null; shippedAt:string|null; shipmentNotes:string|null;
+  originServiceFrontId:number|null; originServiceFront:string|null;
   cancelledAt:string|null; cancelledBy:number|null; cancelledByName:string|null; cancelReason:string|null;
   reopenedAt:string|null; reopenedBy:number|null; reopenedByName:string|null;
   isActive:boolean; isOwnRequest?:boolean; canCancel?:boolean; canReopen?:boolean;
@@ -19,7 +23,8 @@ type AuthUser = { name:string; permissions:string[] };
 type HistoryEntry = { id:number; userId:number|null; userName:string|null; action:string; previousValue:string|null; newValue:string|null; occurredAt:string };
 type Tab = "received" | "sent" | "history";
 
-async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
+async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw Object.assign(new Error(String(data.error??"A operação não pôde ser concluída.")),{ data }); return data as T; }
+function ItemKind({ row }:{ row:Pick<RequestItem,"linked"|"productTag"> }) { return row.linked ? <span className="material-item-kind linked" title="Item vinculado a produto cadastrado: movimenta o estoque no envio">Produto {row.productTag ?? ""}</span> : <span className="material-item-kind manual" title="Item digitado à mão: não movimenta estoque">Manual</span>; }
 function formatDate(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
 const statusTone:Record<RequestStatus,string> = { PENDING:"gray", IN_SEPARATION:"yellow", SENT:"green", PARTIALLY_SENT:"orange", NOT_FULFILLED:"red", CANCELLED:"gray" };
@@ -41,6 +46,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
   const [canRequest,setCanRequest]=useState(false);
   const [canShip,setCanShip]=useState(false);
   const [canManage,setCanManage]=useState(false);
+  const [originFronts,setOriginFronts]=useState<Array<{id:number;name:string}>>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
@@ -51,7 +57,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
   const [viewing,setViewing]=useState<MaterialRequest|null>(null);
   const [cancelling,setCancelling]=useState<MaterialRequest|null>(null);
 
-  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{requests:MaterialRequest[];canRequest:boolean;canShip:boolean;canManage:boolean}>("/api/material-requests"); setRequests(result.requests); setCanRequest(result.canRequest); setCanShip(result.canShip); setCanManage(result.canManage); if(!initialized.current){ initialized.current=true; if(result.canManage||result.canShip) setTab("received"); } }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as solicitações."); }finally{ setLoading(false); } },[]);
+  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{requests:MaterialRequest[];canRequest:boolean;canShip:boolean;canManage:boolean;originFronts:Array<{id:number;name:string}>}>("/api/material-requests"); setRequests(result.requests); setCanRequest(result.canRequest); setCanShip(result.canShip); setCanManage(result.canManage); setOriginFronts(result.originFronts ?? []); if(!initialized.current){ initialized.current=true; if(result.canManage||result.canShip) setTab("received"); } }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as solicitações."); }finally{ setLoading(false); } },[]);
   useEffect(()=>{ if(tab!=="history") load(); },[load,tab]);
   useEffect(()=>{ api<{fronts:Front[]}>("/api/service-fronts").then((result)=>setFronts(result.fronts)).catch(()=>setFronts([])); },[]);
 
@@ -69,7 +75,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
   const exportPdf=(item:MaterialRequest,kind:"REQUEST"|"SHIPMENT")=>window.open(`/api/material-requests-pdf?id=${item.id}&kind=${kind}`,"_blank","noopener,noreferrer");
 
   async function reopen(item:MaterialRequest) {
-    if(!window.confirm(`Reabrir a solicitação ${item.requestNumber}? Ela voltará para as solicitações ativas.`)) return;
+    if(!window.confirm(`Reabrir a solicitação ${item.requestNumber}? Ela voltará para as solicitações ativas${item.items.some((row)=>row.linked && row.itemStatus==="SENT")?" e o estoque movimentado no envio será estornado":""}.`)) return;
     try{ const result=await api<{message:string}>(`/api/material-requests/${item.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ action:"REOPEN" }) }); await load(); flash(result.message); }
     catch(problem){ flash(problem instanceof Error?problem.message:"Não foi possível reabrir a solicitação."); }
   }
@@ -100,7 +106,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
       </article>
     </>}
     {creating && <CreateRequestModal authUser={authUser} fronts={fronts} close={()=>setCreating(false)} saved={async(message)=>{ setCreating(false); await load(); flash(message); }}/>}
-    {shipping && <ShipmentModal item={shipping} close={()=>setShipping(null)} saved={async(message,confirmed)=>{ const target=shipping; setShipping(null); await load(); flash(message); if(confirmed && target) exportPdf(target,"SHIPMENT"); }}/>}
+    {shipping && <ShipmentModal item={shipping} originFronts={originFronts} close={()=>setShipping(null)} saved={async(message,confirmed)=>{ const target=shipping; setShipping(null); await load(); flash(message); if(confirmed && target) exportPdf(target,"SHIPMENT"); }}/>}
     {cancelling && <CancelRequestModal item={cancelling} close={()=>setCancelling(null)} saved={async(message)=>{ setCancelling(null); await load(); flash(message); }}/>}
     {viewing && <RequestDetailsModal item={viewing} onReopen={viewing.canReopen?()=>{ setViewing(null); reopen(viewing); }:undefined} close={()=>setViewing(null)}/>}
   </>;
@@ -194,22 +200,39 @@ function MaterialHistoryPanel({ canManage, fronts, openDetails }:{ canManage:boo
   </article>;
 }
 
-type DraftItem = { clientId:string; description:string; quantityRequested:string; reference:string };
+type DraftItem = { clientId:string; mode:"PRODUCT"|"MANUAL"; product:ProductOption|null; description:string; quantityRequested:string; reference:string };
+const newDraft=():DraftItem=>({ clientId:crypto.randomUUID(), mode:"PRODUCT", product:null, description:"", quantityRequested:"", reference:"" });
+
+// Busca de produto cadastrado (TAG, nome ou referência) para o item da solicitação.
+function ProductPicker({ value, onPick }:{ value:ProductOption|null; onPick:(product:ProductOption|null)=>void }) {
+  const [query,setQuery]=useState("");
+  const [options,setOptions]=useState<ProductOption[]>([]);
+  const [open,setOpen]=useState(false);
+  useEffect(()=>{ if(query.trim().length<2){ setOptions([]); return; } const timer=window.setTimeout(()=>{ api<{products:ProductOption[]}>(`/api/material-requests/products?q=${encodeURIComponent(query.trim())}`).then((result)=>{ setOptions(result.products); setOpen(true); }).catch(()=>setOptions([])); },250); return ()=>window.clearTimeout(timer); },[query]);
+  if(value) return <div className="material-product-chip"><span className="material-item-kind linked">{value.tag}</span><strong>{value.name}</strong>{value.references.length>0 && <small>Ref.: {value.references.join(", ")}</small>}<button type="button" onClick={()=>onPick(null)}>Trocar</button></div>;
+  return <div className="material-product-picker">
+    <input value={query} onChange={(event)=>setQuery(event.target.value)} onFocus={()=>setOpen(true)} placeholder="Buscar por TAG, nome ou referência..." required/>
+    {open && options.length>0 && <ul>{options.map((option)=><li key={option.id}><button type="button" onClick={()=>{ onPick(option); setQuery(""); setOpen(false); }}><b>{option.tag}</b> {option.name}{option.references.length>0 && <small> · Ref. {option.references.join(", ")}</small>}</button></li>)}</ul>}
+    {open && query.trim().length>=2 && options.length===0 && <p className="material-product-empty">Nenhum produto encontrado — use “Item manual” se não estiver cadastrado.</p>}
+  </div>;
+}
 
 function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUser; fronts:Front[]; close:()=>void; saved:(message:string)=>Promise<void> }) {
   const [serviceFrontId,setServiceFrontId]=useState("");
   const [notes,setNotes]=useState("");
-  const [items,setItems]=useState<DraftItem[]>([{ clientId:crypto.randomUUID(), description:"", quantityRequested:"", reference:"" }]);
+  const [items,setItems]=useState<DraftItem[]>([newDraft()]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
-  const addItem=()=>setItems([...items,{ clientId:crypto.randomUUID(), description:"", quantityRequested:"", reference:"" }]);
+  const addItem=()=>setItems([...items,newDraft()]);
   const patchItem=(clientId:string,patch:Partial<DraftItem>)=>setItems(items.map((item)=>item.clientId===clientId?{ ...item, ...patch }:item));
   const removeItem=(clientId:string)=>setItems(items.filter((item)=>item.clientId!==clientId));
 
   async function submit(event:FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    if(items.some((item)=>item.mode==="PRODUCT" && !item.product)) { setError("Escolha o produto cadastrado de cada item (ou mude para “Item manual”)."); return; }
+    setBusy(true); setError("");
     try {
-      const result=await api<{message:string}>("/api/material-requests",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ serviceFrontId:Number(serviceFrontId), notes, items:items.map((item)=>({ description:item.description, quantityRequested:Number(item.quantityRequested), reference:item.reference })) }) });
+      const result=await api<{message:string}>("/api/material-requests",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ serviceFrontId:Number(serviceFrontId), notes, items:items.map((item)=>item.mode==="PRODUCT" ? { productId:item.product?.id, description:item.product?.name ?? "", quantityRequested:Number(item.quantityRequested), reference:item.product?.references[0] ?? item.product?.reference ?? "" } : { description:item.description, quantityRequested:Number(item.quantityRequested), reference:item.reference }) }) });
       await saved(result.message);
     } catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível enviar a solicitação."); }
     finally { setBusy(false); }
@@ -225,12 +248,15 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
       <section className="fleet-form-section">
         <div className="fleet-section-title"><h3>Itens solicitados</h3><button type="button" onClick={addItem}>＋ ADICIONAR ITEM</button></div>
         {items.map((item,index)=><div className="fleet-order-editor" key={item.clientId}>
-          <header><b>Item {index+1}</b>{items.length>1 && <button type="button" onClick={()=>removeItem(item.clientId)}>Remover</button>}</header>
+          <header><b>Item {index+1}</b><div className="material-item-mode" role="group" aria-label="Tipo do item"><button type="button" className={item.mode==="PRODUCT"?"active":""} onClick={()=>patchItem(item.clientId,{ mode:"PRODUCT" })}>Produto cadastrado</button><button type="button" className={item.mode==="MANUAL"?"active":""} onClick={()=>patchItem(item.clientId,{ mode:"MANUAL", product:null })}>Item manual</button></div>{items.length>1 && <button type="button" onClick={()=>removeItem(item.clientId)}>Remover</button>}</header>
           <div className="fleet-form-grid">
-            <label className="span-2">Descrição do item *<input required value={item.description} onChange={(event)=>patchItem(item.clientId,{ description:event.target.value })}/></label>
+            {item.mode==="PRODUCT" ? <label className="span-2">Produto *<ProductPicker value={item.product} onPick={(product)=>patchItem(item.clientId,{ product })}/></label> : <>
+              <label className="span-2">Descrição do item *<input required value={item.description} onChange={(event)=>patchItem(item.clientId,{ description:event.target.value })}/></label>
+              <label>Referência<input value={item.reference} onChange={(event)=>patchItem(item.clientId,{ reference:event.target.value })}/></label>
+            </>}
             <label>Quantidade solicitada *<input required type="number" min="0.01" step="0.01" value={item.quantityRequested} onChange={(event)=>patchItem(item.clientId,{ quantityRequested:event.target.value })}/></label>
-            <label>Referência<input value={item.reference} onChange={(event)=>patchItem(item.clientId,{ reference:event.target.value })}/></label>
           </div>
+          {item.mode==="MANUAL" && <small className="material-item-hint">Item manual não movimenta estoque.</small>}
         </div>)}
       </section>
       <label className="fleet-notes">Observações gerais<textarea value={notes} onChange={(event)=>setNotes(event.target.value)}/></label>
@@ -240,7 +266,10 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
   </form></div>;
 }
 
-function ShipmentModal({ item, close, saved }:{ item:MaterialRequest; close:()=>void; saved:(message:string,confirmed:boolean)=>Promise<void> }) {
+function ShipmentModal({ item, originFronts, close, saved }:{ item:MaterialRequest; originFronts:Array<{id:number;name:string}>; close:()=>void; saved:(message:string,confirmed:boolean)=>Promise<void> }) {
+  const hasLinked=item.items.some((row)=>row.linked);
+  const originChoices=originFronts.filter((front)=>front.id!==item.serviceFrontId);
+  const [originFrontId,setOriginFrontId]=useState(()=>String(item.originServiceFrontId ?? (originChoices.length===1 ? originChoices[0].id : "")));
   const [statuses,setStatuses]=useState<Record<number,ItemStatus>>(()=>Object.fromEntries(item.items.map((row)=>[row.id,row.itemStatus])));
   const [quantities,setQuantities]=useState<Record<number,string>>(()=>Object.fromEntries(item.items.map((row)=>[row.id,String(row.quantitySent ?? row.quantityRequested)])));
   const [shipmentNotes,setShipmentNotes]=useState(item.shipmentNotes ?? "");
@@ -250,13 +279,25 @@ function ShipmentModal({ item, close, saved }:{ item:MaterialRequest; close:()=>
 
   function mark(itemId:number,status:ItemStatus) { setStatuses((current)=>({ ...current, [itemId]:status })); }
 
-  async function submit(confirm:boolean) {
+  const linkedSent=item.items.filter((row)=>row.linked && statuses[row.id]==="SENT");
+  const available=(row:RequestItem)=>originFrontId ? row.stock[Number(originFrontId)] ?? 0 : null;
+  async function submit(confirm:boolean, allowNegative=false):Promise<void> {
+    if(confirm && linkedSent.length && !originFrontId) { setError("Escolha a frente de origem do estoque (de onde os produtos saem)."); return; }
     setBusy(confirm?"CONFIRM":"SAVE"); setError("");
     try {
-      const payload={ confirm, shipmentNotes, items:item.items.map((row)=>({ id:row.id, itemStatus:statuses[row.id], quantitySent:statuses[row.id]==="SENT"?Number(quantities[row.id]):null })) };
+      const payload={ confirm, shipmentNotes, originServiceFrontId:originFrontId?Number(originFrontId):null, allowNegative, items:item.items.map((row)=>({ id:row.id, itemStatus:statuses[row.id], quantitySent:statuses[row.id]==="SENT"?Number(quantities[row.id]):null })) };
       const result=await api<{message:string}>(`/api/material-requests/${item.id}`,{ method:"PUT", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload) });
       await saved(result.message,confirm);
-    } catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível salvar o envio."); }
+    } catch(problem) {
+      const shortages=(problem as Error & { data?:{ shortages?:Shortage[] } }).data?.shortages;
+      if(shortages?.length && !allowNegative) {
+        setBusy(null);
+        const lines=shortages.map((line)=>`• ${line.label}: saldo ${numberFormat.format(line.available)}, enviando ${numberFormat.format(line.requested)}`).join("\n");
+        if(window.confirm(`Saldo insuficiente na frente de origem:\n${lines}\n\nConfirmar o envio mesmo assim? O saldo da origem ficará negativo.`)) return submit(true,true);
+        return;
+      }
+      setError(problem instanceof Error?problem.message:"Não foi possível salvar o envio.");
+    }
     finally { setBusy(null); }
   }
 
@@ -264,9 +305,14 @@ function ShipmentModal({ item, close, saved }:{ item:MaterialRequest; close:()=>
     <header><div><p>SEPARAÇÃO E ENVIO</p><h2>{item.requestNumber} · {item.requester}</h2><span>{item.serviceFront} · Solicitado em {formatDate(item.requestedAt)}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
     <div className="fleet-modal-body">
       <section className="fleet-form-section">
+        {hasLinked && <div className="fleet-form-grid material-origin">
+          <label className="span-2">Frente de origem do estoque *<select value={originFrontId} onChange={(event)=>setOriginFrontId(event.target.value)}><option value="">Selecione de onde os produtos saem</option>{originChoices.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
+          <p className="material-item-hint">Itens vinculados a produtos saem do estoque desta frente e entram no estoque de {item.serviceFront}. Itens manuais não movimentam estoque.</p>
+        </div>}
         <h3>Itens solicitados</h3>
-        {item.items.map((row)=>{ const status=statuses[row.id]; return <div className="fleet-order-editor" key={row.id}>
-          <header><b>{row.description}</b><span>Solicitado: {numberFormat.format(row.quantityRequested)}{row.reference?` · Ref.: ${row.reference}`:""}</span></header>
+        {item.items.map((row)=>{ const status=statuses[row.id]; const balance=row.linked?available(row):null; const short=balance!==null && status==="SENT" && Number(quantities[row.id])>balance; return <div className={`fleet-order-editor ${short?"material-short":""}`} key={row.id}>
+          <header><b><ItemKind row={row}/> {row.description}</b><span>Solicitado: {numberFormat.format(row.quantityRequested)}{row.reference?` · Ref.: ${row.reference}`:""}{balance!==null && ` · Saldo na origem: ${numberFormat.format(balance)}`}</span></header>
+          {short && <p className="material-short-warning">⚠ Saldo insuficiente na frente de origem ({numberFormat.format(balance!)}). Ao confirmar, o sistema pedirá confirmação.</p>}
           <div className="fleet-form-grid">
             <label>Marcação<div className="fleet-check" style={{ display:"flex", gap:"6px" }}>
               <button type="button" className={status==="SENT"?"primary":"secondary"} onClick={()=>mark(row.id,"SENT")}>✓ Enviado / Tem</button>
@@ -313,9 +359,9 @@ function RequestDetailsModal({ item, onReopen, close }:{ item:MaterialRequest; o
   return <div className="fleet-modal-backdrop" role="presentation"><section className="fleet-modal">
     <header><div><p>DETALHES DO PEDIDO</p><h2>{item.requestNumber} · {item.requester}</h2><span>{item.serviceFront} · Solicitado em {formatDate(item.requestedAt)}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
     <div className="fleet-modal-body">
-      <div className="fleet-current-banner"><span>Status do pedido</span><b className={`status-pill ${statusTone[item.status]}`}>{item.statusLabel}</b>{item.shippedByName && <small>Enviado por {item.shippedByName} em {formatDate(item.shippedAt)}</small>}{item.cancelledByName && <small>Cancelado por {item.cancelledByName} em {formatDate(item.cancelledAt)}</small>}</div>
-      <div className="table-scroll"><table><thead><tr><th>Descrição</th><th>Qtd. solicitada</th><th>Referência</th><th>Status</th><th>Qtd. enviada</th></tr></thead><tbody>
-        {item.items.map((row)=><tr key={row.id}><td>{row.description}</td><td>{numberFormat.format(row.quantityRequested)}</td><td>{row.reference ?? "—"}</td><td><span className={`status-pill ${row.itemStatus==="SENT"?"green":row.itemStatus==="NOT_AVAILABLE"?"red":"gray"}`}>{row.itemStatusLabel}</span></td><td>{row.quantitySent===null?"—":numberFormat.format(row.quantitySent)}</td></tr>)}
+      <div className="fleet-current-banner"><span>Status do pedido</span><b className={`status-pill ${statusTone[item.status]}`}>{item.statusLabel}</b>{item.shippedByName && <small>Enviado por {item.shippedByName} em {formatDate(item.shippedAt)}</small>}{item.cancelledByName && <small>Cancelado por {item.cancelledByName} em {formatDate(item.cancelledAt)}</small>}{item.originServiceFront && <small>Estoque saiu de {item.originServiceFront} → {item.serviceFront}</small>}</div>
+      <div className="table-scroll"><table><thead><tr><th>Tipo</th><th>Descrição</th><th>Qtd. solicitada</th><th>Referência</th><th>Status</th><th>Qtd. enviada</th></tr></thead><tbody>
+        {item.items.map((row)=><tr key={row.id}><td><ItemKind row={row}/></td><td>{row.description}</td><td>{numberFormat.format(row.quantityRequested)}</td><td>{row.reference ?? "—"}</td><td><span className={`status-pill ${row.itemStatus==="SENT"?"green":row.itemStatus==="NOT_AVAILABLE"?"red":"gray"}`}>{row.itemStatusLabel}</span></td><td>{row.quantitySent===null?"—":numberFormat.format(row.quantitySent)}</td></tr>)}
       </tbody></table></div>
       {item.notes && <p><strong>Observações:</strong> {item.notes}</p>}
       {item.shipmentNotes && <p><strong>Observações do envio:</strong> {item.shipmentNotes}</p>}

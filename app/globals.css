@@ -520,3 +520,8 @@ html[data-theme="dark"] .front-selector{background:#1f1d19;border-color:#45423d;
 .report-shortcut-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .report-shortcut-row button{padding:6px 10px;border:1px solid #d9e3e8;border-radius:6px;background:#f7fafb;color:#3f6175;font-size:8px;font-weight:800}
 html[data-theme="dark"] .report-shortcut-row button{background:#252421;border-color:#47443e;color:#d3d1cd}
+/* Menu agrupado (Equipamentos / Produtos) — mesmo visual do antigo botão Troca de Óleo */
+.nav-group-toggle>b{margin-left:3px}
+.nav-group-toggle>i{min-width:19px;height:19px;display:grid;place-items:center;margin-left:2px;border-radius:50%;background:#e34d52;color:#fff;font-size:10px;font-style:normal}
+.primary-module-nav .nav-group-toggle.expanded{border-color:#1f8065;background:linear-gradient(135deg,#173f5e,#177056);color:#fff}
+.oil-sections-nav{border-top:1px dashed var(--line)}

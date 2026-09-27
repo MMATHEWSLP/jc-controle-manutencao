@@ -215,10 +215,11 @@ export function createMaintenancePdf(input:MaintenancePdfInput){
   return buildPdf([content]);
 }
 
-export type MaterialRequestPdfItem={description:string;quantityRequested:number;reference:string|null;itemStatus:"PENDING"|"SENT"|"NOT_AVAILABLE";quantitySent:number|null};
+// productTag preenchido = item vinculado a produto cadastrado (estoque); null = item manual.
+export type MaterialRequestPdfItem={description:string;quantityRequested:number;reference:string|null;itemStatus:"PENDING"|"SENT"|"NOT_AVAILABLE";quantitySent:number|null;productTag?:string|null};
 export type MaterialRequestPdfInput={
   requestNumber:string;requester:string;serviceFront:string;requestedAt:string;statusLabel:string;notes:string;
-  items:MaterialRequestPdfItem[];generatedAt:string;
+  items:MaterialRequestPdfItem[];generatedAt:string;originFront?:string|null;
 };
 export type MaterialShipmentPdfInput=MaterialRequestPdfInput&{shippedBy:string;shippedAt:string;shipmentNotes:string};
 
@@ -249,7 +250,8 @@ function materialRequestPdfPages(input:MaterialRequestPdfInput,mode:"REQUEST"|"S
     if(mode==="SHIPMENT"&&shipment){
       content+="0.955 0.972 0.98 rg 36 608 523 40 re f\n";
       content+=text(46,638,7,"ENVIADO POR",true,"0.34 0.47 0.56");content+=text(46,622,9,truncate(shipment.shippedBy,42),true);
-      content+=text(310,638,7,"DATA DO ENVIO",true,"0.34 0.47 0.56");content+=text(310,622,9,truncate(shipment.shippedAt,30),true);
+      content+=text(310,638,7,"DATA DO ENVIO",true,"0.34 0.47 0.56");content+=text(310,622,9,truncate(shipment.shippedAt,18),true);
+      if(input.originFront){content+=text(430,638,7,"ESTOQUE SAIU DE",true,"0.34 0.47 0.56");content+=text(430,622,9,truncate(input.originFront,22),true);}
       bandBottom=608;
     }
 
@@ -272,12 +274,14 @@ function materialRequestPdfPages(input:MaterialRequestPdfInput,mode:"REQUEST"|"S
     items.forEach((item,index)=>{
       const top=firstRowTop-(index*30);
       if(index%2===0)content+=`0.968 0.978 0.984 rg 36 ${top-16} 523 30 re f\n`;
+      // Tipo do item logo abaixo da descrição: "PRODUTO <TAG>" (movimenta estoque) ou "ITEM MANUAL".
+      const kind=item.productTag?`PRODUTO ${item.productTag}`:"ITEM MANUAL";const kindColor=item.productTag?"0.08 0.42 0.31":"0.42 0.51 0.58";
       if(mode==="REQUEST"){
-        content+=text(44,top,8,truncate(item.description,46),true);
+        content+=text(44,top,8,truncate(item.description,46),true);content+=text(44,top-10,6,truncate(kind,40),true,kindColor);
         content+=text(400,top,8,materialQuantityFormat.format(item.quantityRequested),false);
         content+=text(470,top,8,truncate(item.reference??"—",18),false);
       }else{
-        content+=text(40,top,7.5,truncate(item.description,34),true);
+        content+=text(40,top,7.5,truncate(item.description,34),true);content+=text(40,top-10,6,truncate(kind,34),true,kindColor);
         content+=text(255,top,7.5,materialQuantityFormat.format(item.quantityRequested),false);
         content+=text(315,top,7.5,truncate(item.reference??"—",14),false);
         content+=text(400,top,7,materialItemStatusLabels[item.itemStatus],true,materialItemStatusColor[item.itemStatus]);
@@ -408,6 +412,31 @@ export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
       content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
     });
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Relatório gerado com os lançamentos atuais de combustível, respeitando os filtros ativos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages,{width:842,height:595});
+}
+
+// Histórico do módulo Funcionários (folgas = ciclos; afastamentos = ausências). Tabela genérica em
+// paisagem: cada coluna diz a posição x, o título e quantos caracteres cabem.
+export type EmployeeHistoryPdfInput={title:string;filters:string;generatedAt:string;total:number;columns:Array<{x:number;label:string;max:number}>;rows:string[][]};
+export function createEmployeeHistoryPdf(input:EmployeeHistoryPdfInput){
+  const perPage=18;const pageCount=Math.max(1,Math.ceil(input.rows.length/perPage));
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const rows=input.rows.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · FUNCIONÁRIOS",true,"0.08 0.49 0.35");content+=text(130,548,16,input.title,true,"0.08 0.25 0.36");content+=text(130,531,7.5,truncate(input.filters,120),false,"0.31 0.46 0.55");
+    content+=text(674,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(674,553,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");content+=text(674,536,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+    content+="0.91 0.97 0.95 rg 28 474 786 24 re f\n";content+=text(39,483,7.5,`REGISTROS: ${input.total}`,true,"0.08 0.38 0.29");
+    content+="0.06 0.25 0.36 rg 28 441 786 24 re f\n";
+    for(const column of input.columns)content+=text(column.x,450,6.3,column.label,true,"1 1 1");
+    if(rows.length===0)content+=text(280,390,12,"Nenhum registro encontrado para os filtros selecionados.",true,"0.33 0.47 0.55");
+    rows.forEach((row,index)=>{
+      const top=423-(index*21);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-8} 786 21 re f\n`;
+      input.columns.forEach((column,columnIndex)=>{content+=text(column.x,top,6.8,truncate(row[columnIndex]??"—",column.max),columnIndex===0);});
+      content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
+    });
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Dias calculados pelo sistema a partir das datas lançadas (etapa em aberto conta até hoje). Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
     return content;
   });
   return buildPdf(pages,{width:842,height:595});

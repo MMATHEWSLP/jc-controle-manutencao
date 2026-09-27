@@ -35,3 +35,22 @@ test("ausência vigente e badge com data de retorno", () => {
   assert.deepEqual(absenceBadge(absences[2]), { label: "Afastado", returnDate: null });
   assert.equal(nextDay("2026-12-31"), "2027-01-01");
 });
+
+test("situações, CPF, matrícula e ciclo configurável", async () => {
+  const { EMPLOYEE_STATUSES, isValidCpf, formatCpf, validateDismissal, nameKey } = await import("../lib/employee-rules.ts");
+  assert.deepEqual([...EMPLOYEE_STATUSES], ["ATIVO", "FOLGA", "AFASTADO", "DEMITIDO"]);
+  assert.equal(isValidCpf("529.982.247-25"), true);
+  assert.equal(isValidCpf("529.982.247-24"), false);
+  assert.equal(isValidCpf("111.111.111-11"), false);
+  assert.equal(formatCpf("52998224725"), "529.982.247-25");
+  assert.equal(validateEmployee({ ...valid, registration: "12345", cpf: "52998224725", birthDate: "1990-01-01", salary: 2500, cycleWorkDays: 60, cycleOffDays: 15 }, { requireFront: true }), null);
+  assert.match(validateEmployee({ ...valid, registration: "12A" }, { requireFront: true }), /matrícula/);
+  assert.match(validateEmployee({ ...valid, cpf: "12345678900" }, { requireFront: true }), /CPF/);
+  assert.match(validateEmployee({ ...valid, birthDate: "2026-01-01" }, { requireFront: true }), /nascimento/);
+  assert.match(validateEmployee({ ...valid, cycleWorkDays: 0 }, { requireFront: true }), /Dias trabalhados/);
+  assert.match(validateEmployee({ ...valid, admissionDate: "2026-10-01" }, { requireFront: true, today: "2026-09-27" }), /futura/);
+  assert.equal(validateDismissal({ dismissedAt: "2026-09-20", reason: "Pedido de demissão", rehireAllowed: true }, "2025-01-01", "2026-09-27"), null);
+  assert.match(validateDismissal({ dismissedAt: "2026-09-20", reason: "x", rehireAllowed: true }, "2025-01-01", "2026-09-27"), /motivo/);
+  assert.match(validateDismissal({ dismissedAt: "2026-09-20", reason: "Justa causa", rehireAllowed: undefined }, "2025-01-01", "2026-09-27"), /recontratado/);
+  assert.equal(nameKey("João  da Silva"), "JOAO DA SILVA");
+});
