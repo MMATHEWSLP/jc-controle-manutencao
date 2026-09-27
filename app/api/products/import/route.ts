@@ -1,7 +1,10 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { equipmentModels, products, suppliers } from "../../../../db/schema";
+import { equipmentModels, productEquipmentModels, products, suppliers } from "../../../../db/schema";
+import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
+import { parseReferenceList } from "../../../../lib/product-rules";
+import { activateInFront, activeFrontList, replaceReferences } from "../../../../lib/products-data";
 import { GARBAGE_TAGS, generalNeedsReview, isGenericApplication, matchEquipmentModel, parsePrice, parseProductsCsv } from "../../../../lib/products-import";
 
 // Rota da tela "Importar CSV" (botão em Produtos, ADMIN via products.import). Diferente do script
@@ -24,6 +27,9 @@ export async function POST(request: Request) {
 
     const db = await getDb();
     const models = await db.select({ id: equipmentModels.id, name: equipmentModels.name }).from(equipmentModels);
+    // Produto NOVO vindo do CSV nasce ativo nas frentes em exibição (todas, se "Todas as frentes").
+    const displayed = frentesEmExibicao(auth.user!, request);
+    const creationFronts = displayed === "ALL" ? (await activeFrontList(db)).map((front) => front.id) : displayed;
 
     let skippedGarbage = 0;
     let inserted = 0;
@@ -42,7 +48,7 @@ export async function POST(request: Request) {
 
         const price = parsePrice(row.preco) ?? 0;
         const name = row.nome.toUpperCase();
-        const reference = row.referencia ? row.referencia.toUpperCase() : null;
+        const references = parseReferenceList(row.referencia);
         const brand = row.marca || null;
 
         let supplierId: number | null = null;
@@ -57,30 +63,42 @@ export async function POST(request: Request) {
           }
         }
 
-        let equipmentModelId: number | null = null;
+        // A exportação junta várias aplicações com ", " — cada uma é casada separadamente.
+        const matchedModelIds: number[] = [];
         const generic = isGenericApplication(row.aplicacao);
         if (row.aplicacao && !generic) {
-          const match = matchEquipmentModel(row.aplicacao, models);
-          if (match) {
-            equipmentModelId = match.id;
-            linkedToModel++;
-          } else {
-            unmatchedApplications.set(row.aplicacao, (unmatchedApplications.get(row.aplicacao) ?? 0) + 1);
+          for (const application of row.aplicacao.split(/,\s+/).map((item) => item.trim()).filter(Boolean)) {
+            const match = matchEquipmentModel(application, models);
+            if (match) {
+              if (!matchedModelIds.includes(match.id)) matchedModelIds.push(match.id);
+            } else {
+              unmatchedApplications.set(application, (unmatchedApplications.get(application) ?? 0) + 1);
+            }
           }
+          if (matchedModelIds.length) linkedToModel++;
         }
+        const equipmentModelId = matchedModelIds[0] ?? null;
 
         const needsReview = generalNeedsReview({ price, applicationIsGeneric: generic });
         if (needsReview) markedNeedsReview++;
 
         const now = new Date().toISOString();
         const existing = await tx.select({ id: products.id }).from(products).where(eq(products.tag, row.tag)).limit(1);
-        await tx
+        const [saved] = await tx
           .insert(products)
-          .values({ tag: row.tag, name, reference, price, supplierId, brand, equipmentModelId, needsReview, updatedAt: now })
+          .values({ tag: row.tag, name, price, supplierId, brand, equipmentModelId, needsReview, updatedAt: now })
           .onConflictDoUpdate({
             target: products.tag,
-            set: { name, reference, price, supplierId, brand, equipmentModelId, needsReview, updatedAt: now },
-          });
+            set: { name, price, supplierId, brand, needsReview, updatedAt: now },
+          })
+          .returning({ id: products.id });
+        await replaceReferences(tx, saved.id, references);
+        // Aplicações do CSV são somadas às já cadastradas (o multi-select manual não é apagado).
+        if (matchedModelIds.length) {
+          await tx.insert(productEquipmentModels).values(matchedModelIds.map((modelId) => ({ productId: saved.id, equipmentModelId: modelId }))).onConflictDoNothing();
+          await tx.update(products).set({ equipmentModelId: sql`coalesce(${products.equipmentModelId}, ${matchedModelIds[0]})` }).where(eq(products.id, saved.id));
+        }
+        if (existing.length === 0) for (const frontId of creationFronts) await activateInFront(tx, saved.id, frontId, auth.user!.id);
         if (existing.length > 0) updated++;
         else inserted++;
       }

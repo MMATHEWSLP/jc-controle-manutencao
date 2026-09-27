@@ -41,7 +41,7 @@ function blankDraft(recordDate:string, equipmentId:number|null, serviceFrontId:n
     hasProblemPhoto:false, hasProductionPhoto:false, operatorName:"" };
 }
 
-export default function DailyControlView({ flash, currentUser }:{ flash:(message:string)=>void; currentUser:CurrentUser }) {
+export default function DailyControlView({ flash, currentUser, activeFrontId=null }:{ flash:(message:string)=>void; currentUser:CurrentUser; activeFrontId?:number|null }) {
   const [context,setContext]=useState<Context|null>(null);
   const [error,setError]=useState("");
   // Link/recarga com os filtros do Histórico na URL abre direto nele.
@@ -74,7 +74,7 @@ export default function DailyControlView({ flash, currentUser }:{ flash:(message
       : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("mine")}/>
       : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
       : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
-      : tab==="history" && context.canViewAll ? <DailyHistoryPanel fronts={context.fronts} onEdit={editFromHistory}/>
+      : tab==="history" && context.canViewAll ? <DailyHistoryPanel fronts={context.fronts} onEdit={editFromHistory} defaultFrontId={activeFrontId}/>
       : <RecordsPanel equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
   </>;
 }
