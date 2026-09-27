@@ -16,7 +16,8 @@ type Summary = {
 type Movement = {
   id: number; serviceFrontId: number; frontName: string; fuelTypeId: number; fuelName: string; unit: string; movementType: MovementType; movementLabel: string;
   movementDate: string; quantity: number; origin: string | null; stockLocation: Location; stockLocationLabel: string;
-  thirdParty: boolean; thirdPartyDescription: string | null; equipmentId: number | null; equipmentPrefix: string | null; equipmentModel: string | null;
+  thirdParty: boolean; thirdPartyKind: "GERAL" | "PRESTADOR" | null; thirdPartyDescription: string | null; providerCompany: string | null; providerEquipment: string | null;
+  unitPrice: number | null; unitCost: number | null; cost: number | null; responsibleEmployeeId: number | null; equipmentId: number | null; equipmentPrefix: string | null; equipmentModel: string | null;
   meterReading: number | null; meterUnit: "HOURS" | "KM" | null; destinationFrontId: number | null; destinationFrontName: string | null;
   destinationLocation: Location | null; destinationLocationLabel: string | null;
   responsible: string | null; notes: string | null; createdByName: string | null; createdAt: string;
@@ -33,6 +34,7 @@ const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "P
 const locationLabel = (value: Location) => (value === "PORTO" ? "Porto" : "Frente");
 const liters = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`;
 const brDay = (value: string) => value.split("-").reverse().join("/");
+const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function monthPeriod() {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   return { from: `${today.slice(0, 7)}-01`, to: today };
@@ -126,41 +128,75 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
   );
 }
 
+type ExitKind = "FROTA" | "TERCEIROS" | "PRESTADOR";
+type EmployeeOption = { id: number; name: string; jobTitle: string; company: string; serviceFrontId: number; frontName: string; inFront: boolean };
+type Responsible = { employeeId: number | null; name: string; manual: boolean };
+
 function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: Summary; authUser: User; editing: Movement | null; onSaved: (message: string) => Promise<void>; onCancel?: () => void }) {
   const [movementType, setMovementType] = useState<MovementType>(editing?.movementType ?? "SAIDA");
-  const [thirdParty, setThirdParty] = useState(editing?.thirdParty ?? false);
+  const [exitKind, setExitKind] = useState<ExitKind>(!editing?.thirdParty ? "FROTA" : editing.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "TERCEIROS");
   const [frontId, setFrontId] = useState<number | null>(editing?.serviceFrontId ?? summary.defaultFrontId ?? (summary.fronts.length === 1 ? summary.fronts[0].id : null));
   const [stockLocation, setStockLocation] = useState<Location>(editing?.stockLocation ?? "FRENTE");
   const [fuelTypeId, setFuelTypeId] = useState<number>(editing?.fuelTypeId ?? summary.fuelTypes[0]?.id ?? 0);
   const [movementDate, setMovementDate] = useState(editing?.movementDate ?? summary.today);
   const [quantity, setQuantity] = useState(editing ? String(editing.quantity).replace(".", ",") : "");
+  const [unitPrice, setUnitPrice] = useState(editing?.unitPrice != null ? String(editing.unitPrice).replace(".", ",") : "");
   const [meterReading, setMeterReading] = useState(editing?.meterReading != null ? String(editing.meterReading).replace(".", ",") : "");
   // Destino da transferência: "" = mesma frente (Frente ↔ Porto); ou outra filial.
   const [destinationFrontId, setDestinationFrontId] = useState<string>(editing?.destinationFrontId && editing.destinationFrontId !== editing.serviceFrontId ? String(editing.destinationFrontId) : "");
   const [destinationLocation, setDestinationLocation] = useState<Location>(editing?.destinationLocation ?? (editing?.stockLocation === "PORTO" ? "FRENTE" : "PORTO"));
   const [thirdPartyDescription, setThirdPartyDescription] = useState(editing?.thirdPartyDescription ?? "");
-  const [responsible, setResponsible] = useState(editing?.responsible ?? authUser.name);
+  const [providerCompany, setProviderCompany] = useState(editing?.providerCompany ?? "");
+  const [providerEquipment, setProviderEquipment] = useState(editing?.providerEquipment ?? "");
+  const [responsible, setResponsible] = useState<Responsible>(editing
+    ? { employeeId: editing.responsibleEmployeeId, name: editing.responsible ?? "", manual: !editing.responsibleEmployeeId && Boolean(editing.responsible) }
+    : { employeeId: null, name: "", manual: false });
+  const [providerDriver, setProviderDriver] = useState(editing?.thirdPartyKind === "PRESTADOR" ? editing.responsible ?? "" : "");
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [equipment, setEquipment] = useState<EquipmentOption | null>(editing?.equipmentId ? {
     id: editing.equipmentId, prefix: editing.equipmentPrefix ?? "", brand: "", model: editing.equipmentModel ?? "", type: "", controlType: editing.meterUnit === "KM" ? "KM" : "HOURS",
     currentHours: 0, currentKm: 0, serviceFrontId: editing.serviceFrontId, frontName: editing.frontName, inActiveFront: true,
   } : null);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const isEntry = movementType === "ENTRADA";
   const isTransfer = movementType === "TRANSFERENCIA";
-  const isThirdParty = movementType === "SAIDA" && thirdParty;
-  const showEquipment = !isTransfer && !isThirdParty;
+  const isExit = movementType === "SAIDA";
+  const isProvider = isExit && exitKind === "PRESTADOR";
+  const isThirdParty = isExit && exitKind !== "FROTA";
+  // Veículo/Máquina só na saída para a frota (entrada nunca é vinculada a equipamento).
+  const showEquipment = isExit && exitKind === "FROTA";
   const frontName = summary.fronts.find((front) => front.id === frontId)?.name ?? null;
   const wrongFront = showEquipment && equipment !== null && frontId !== null && equipment.serviceFrontId !== frontId;
   const meterLabel = equipment?.controlType === "KM" ? "Hodômetro (km)" : equipment?.controlType === "HOURS_KM" ? "Horímetro / Hodômetro" : "Horímetro (h)";
   const fuelBalance = summary.balances.find((balance) => balance.fuelTypeId === fuelTypeId);
   const balanceHere = fuelBalance?.byFront.find((front) => front.serviceFrontId === frontId)?.byLocation[stockLocation].balance;
-  const quantityValue = Number(quantity.replace(/\./g, "").replace(",", "."));
+  const parseDecimal = (value: string) => Number(value.replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+  const quantityValue = parseDecimal(quantity);
+  const unitPriceValue = parseDecimal(unitPrice);
   const sameAsEditing = editing && editing.fuelTypeId === fuelTypeId && editing.serviceFrontId === frontId && editing.stockLocation === stockLocation && editing.movementType !== "ENTRADA";
-  const lowBalance = movementType !== "ENTRADA" && balanceHere !== undefined && Number.isFinite(quantityValue) && quantityValue > balanceHere + (sameAsEditing ? editing.quantity : 0);
+  const lowBalance = !isEntry && balanceHere !== undefined && Number.isFinite(quantityValue) && quantityValue > balanceHere + (sameAsEditing ? editing.quantity : 0);
   const internalTransfer = isTransfer && !destinationFrontId;
   const sameStock = internalTransfer && destinationLocation === stockLocation;
+  const responsibleName = isProvider ? providerDriver.trim() : responsible.name.trim();
+
+  // Campos obrigatórios de cada tipo de movimentação / tipo de saída.
+  const missing: Array<[string, string]> = [];
+  if (summary.multiFront && !frontId) missing.push(["front", "Frente de Serviço"]);
+  if (!movementDate) missing.push(["date", "Data"]);
+  if (!(quantityValue > 0)) missing.push(["quantity", "Quantidade"]);
+  if (isEntry && !(unitPriceValue > 0)) missing.push(["unitPrice", "Valor por litro"]);
+  if (showEquipment && !equipment) missing.push(["equipment", "Veículo/Máquina"]);
+  if (isExit && exitKind === "TERCEIROS" && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
+  if (isProvider && !providerCompany.trim()) missing.push(["company", "Empresa"]);
+  if (isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
+  if (!responsibleName) missing.push(["responsible", isEntry ? "Responsável (quem recebeu)" : "Responsável"]);
+  const missingKeys = new Set(missing.map(([key]) => key));
+  const fieldError = (key: string, message = "Campo obrigatório.") => (touched[key] && missingKeys.has(key) ? <small className="fuel-field-error">{message}</small> : null);
+  const touch = (key: string) => () => setTouched((current) => ({ ...current, [key]: true }));
+  const invalid = (key: string) => (touched[key] && missingKeys.has(key) ? "fuel-invalid" : "");
 
   function changeOrigin(value: Location) {
     setStockLocation(value);
@@ -170,13 +206,19 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (missing.length) { setTouched(Object.fromEntries(missing.map(([key]) => [key, true]))); return; }
     if (wrongFront) { setError(`O equipamento ${equipment!.prefix} está em ${equipment!.frontName ?? "outra frente"}. Não é possível lançar combustível para ele em ${frontName ?? "esta frente"}.`); return; }
     setBusy(true);
     setError("");
     try {
       const payload = {
-        serviceFrontId: frontId, fuelTypeId, movementType, movementDate, quantity, stockLocation, responsible, notes,
-        thirdParty: isThirdParty, thirdPartyDescription: isThirdParty ? thirdPartyDescription : "",
+        serviceFrontId: frontId, fuelTypeId, movementType, movementDate, quantity, stockLocation, notes,
+        unitPrice: isEntry ? unitPrice : "",
+        thirdParty: isThirdParty, thirdPartyKind: isProvider ? "PRESTADOR" : isThirdParty ? "GERAL" : null,
+        thirdPartyDescription: isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
+        providerCompany: isProvider ? providerCompany : "", providerEquipment: isProvider ? providerEquipment : "",
+        responsibleEmployeeId: isProvider || responsible.manual ? null : responsible.employeeId,
+        responsible: responsibleName,
         equipmentId: showEquipment ? equipment?.id ?? null : null, meterReading: showEquipment ? meterReading : "",
         destinationFrontId: isTransfer && destinationFrontId ? Number(destinationFrontId) : null,
         destinationLocation: isTransfer ? destinationLocation : null,
@@ -184,7 +226,10 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
       const result = await api<{ message: string }>(editing ? `/api/fuel/movements/${editing.id}` : "/api/fuel/movements", {
         method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
-      if (!editing) { setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription(""); }
+      if (!editing) {
+        setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription("");
+        setProviderCompany(""); setProviderEquipment(""); setProviderDriver(""); setUnitPrice(""); setTouched({});
+      }
       await onSaved(result.message);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Não foi possível salvar o lançamento.");
@@ -195,59 +240,71 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
 
   return (
     <article className="panel module-panel fuel-form-panel">
-      <form className="fuel-form" onSubmit={submit}>
+      <form className="fuel-form" onSubmit={submit} noValidate>
         <div className="fuel-form-top full">
           <fieldset className="fuel-movement-type">
             <legend>Tipo de Movimentação</legend>
             {MOVEMENT_OPTIONS.map(([value, label, icon]) => (
-              <button type="button" key={value} className={`${movementType === value ? "active" : ""} ${value.toLowerCase()}`} onClick={() => setMovementType(value)} aria-pressed={movementType === value}>
+              <button type="button" key={value} className={`${movementType === value ? "active" : ""} ${value.toLowerCase()}`} onClick={() => { setMovementType(value); setTouched({}); }} aria-pressed={movementType === value}>
                 <span>{icon}</span>{label}
               </button>
             ))}
           </fieldset>
-          {movementType === "SAIDA" && (
+          {isExit && (
             <fieldset className="fuel-exit-kind">
               <legend>Tipo de saída</legend>
-              <button type="button" className={!thirdParty ? "active" : ""} aria-pressed={!thirdParty} onClick={() => setThirdParty(false)}>Frota (veículo/máquina)</button>
-              <button type="button" className={thirdParty ? "active" : ""} aria-pressed={thirdParty} onClick={() => { setThirdParty(true); setEquipment(null); }}>Saída para terceiros</button>
+              {([["FROTA", "Frota (veículo/máquina)"], ["TERCEIROS", "Saída para terceiros"], ["PRESTADOR", "Prestadores de Serviço"]] as Array<[ExitKind, string]>).map(([value, label]) => (
+                <button type="button" key={value} className={exitKind === value ? "active" : ""} aria-pressed={exitKind === value} onClick={() => { setExitKind(value); setTouched({}); if (value !== "FROTA") setEquipment(null); }}>{label}</button>
+              ))}
             </fieldset>
           )}
         </div>
         {summary.multiFront && (
-          <label>
-            Frente de Serviço
-            <select required value={frontId ?? ""} onChange={(event) => setFrontId(event.target.value ? Number(event.target.value) : null)}>
+          <label className={invalid("front")}>
+            Frente de Serviço *
+            <select value={frontId ?? ""} onBlur={touch("front")} onChange={(event) => setFrontId(event.target.value ? Number(event.target.value) : null)}>
               <option value="">Selecione a frente...</option>
               {summary.fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}
             </select>
+            {fieldError("front", "Escolha a frente do lançamento.")}
           </label>
         )}
-        <label>
-          Data
-          <input type="date" required value={movementDate} max={summary.today} onChange={(event) => setMovementDate(event.target.value)} />
+        <label className={invalid("date")}>
+          Data *
+          <input type="date" value={movementDate} max={summary.today} onBlur={touch("date")} onChange={(event) => setMovementDate(event.target.value)} />
+          {fieldError("date")}
         </label>
         <label>
-          Tipo de Combustível
-          <select required value={fuelTypeId} onChange={(event) => setFuelTypeId(Number(event.target.value))}>
+          Tipo de Combustível *
+          <select value={fuelTypeId} onChange={(event) => setFuelTypeId(Number(event.target.value))}>
             {summary.fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
           </select>
         </label>
         <label>
-          Origem
-          <select required value={stockLocation} onChange={(event) => changeOrigin(event.target.value as Location)}>
+          {isEntry ? "Estoque de entrada *" : "Origem *"}
+          <select value={stockLocation} onChange={(event) => changeOrigin(event.target.value as Location)}>
             {LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}{frontName ? ` ${frontName}` : ""}</option>)}
           </select>
         </label>
-        <label>
-          Quantidade (litros)
-          <input required inputMode="decimal" placeholder="0,00" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-          {balanceHere !== undefined && <small className={`fuel-hint ${lowBalance ? "warning" : ""}`}>{lowBalance ? "Atenção: o saldo ficará negativo. " : ""}Saldo {locationLabel(stockLocation)} {frontName}: {liters(balanceHere)}</small>}
+        <label className={invalid("quantity")}>
+          Quantidade (litros) *
+          <input inputMode="decimal" placeholder="0,00" value={quantity} onBlur={touch("quantity")} onChange={(event) => setQuantity(event.target.value)} />
+          {fieldError("quantity", "Informe a quantidade em litros.")}
+          {!missingKeys.has("quantity") && balanceHere !== undefined && <small className={`fuel-hint ${lowBalance ? "warning" : ""}`}>{lowBalance ? "Atenção: o saldo ficará negativo. " : ""}Saldo {locationLabel(stockLocation)} {frontName}: {liters(balanceHere)}</small>}
         </label>
+        {isEntry && (
+          <label className={invalid("unitPrice")}>
+            Valor por litro (R$) *
+            <input inputMode="decimal" placeholder="0,00" value={unitPrice} onBlur={touch("unitPrice")} onChange={(event) => setUnitPrice(event.target.value)} />
+            {fieldError("unitPrice", "Informe o valor pago por litro.")}
+            {unitPriceValue > 0 && quantityValue > 0 && <small className="fuel-hint">Total da entrada: {money(unitPriceValue * quantityValue)}</small>}
+          </label>
+        )}
         {isTransfer && (
           <>
             <label>
-              Destino
-              <select required value={destinationLocation} onChange={(event) => setDestinationLocation(event.target.value as Location)}>
+              Destino *
+              <select value={destinationLocation} onChange={(event) => setDestinationLocation(event.target.value as Location)}>
                 {LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </label>
@@ -261,39 +318,129 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
             </label>
           </>
         )}
-        {showEquipment && <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required={movementType === "SAIDA"} />}
+        {showEquipment && (
+          <div className={invalid("equipment")} onBlur={touch("equipment")}>
+            <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required />
+            {fieldError("equipment", "Selecione o veículo/máquina abastecido.")}
+          </div>
+        )}
         {showEquipment && (
           <label>
             {meterLabel}
             <input inputMode="decimal" placeholder={equipment ? (equipment.controlType === "KM" ? `Atual: ${equipment.currentKm.toLocaleString("pt-BR")} km` : `Atual: ${equipment.currentHours.toLocaleString("pt-BR")} h`) : "Opcional"} value={meterReading} onChange={(event) => setMeterReading(event.target.value)} />
           </label>
         )}
-        {isThirdParty && (
-          <label className="fuel-span-2">
-            Destino/Descrição
-            <input required value={thirdPartyDescription} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: prestador de serviço, placa do veículo de terceiro, comunidade ou pessoa atendida" />
+        {isExit && exitKind === "TERCEIROS" && (
+          <label className={`fuel-span-2 ${invalid("description")}`}>
+            Destino/Descrição *
+            <input value={thirdPartyDescription} onBlur={touch("description")} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: comunidade, pessoa atendida, placa do veículo de terceiro" />
+            {fieldError("description", "Informe quem recebeu o combustível.")}
           </label>
         )}
-        <label>
-          Responsável
-          <input required={isThirdParty} value={responsible} onChange={(event) => setResponsible(event.target.value)} />
-        </label>
+        {isProvider && (
+          <>
+            <label className={invalid("company")}>
+              Empresa *
+              <input value={providerCompany} onBlur={touch("company")} onChange={(event) => setProviderCompany(event.target.value)} placeholder="Nome do prestador / empresa terceirizada" />
+              {fieldError("company", "Informe a empresa do prestador.")}
+            </label>
+            <label className={invalid("providerEquipment")}>
+              Descrição do Equipamento *
+              <input value={providerEquipment} onBlur={touch("providerEquipment")} onChange={(event) => setProviderEquipment(event.target.value)} placeholder="Modelo, placa ou identificação" />
+              {fieldError("providerEquipment", "Descreva o equipamento do prestador.")}
+            </label>
+            <label className={invalid("responsible")}>
+              Responsável *
+              <input value={providerDriver} onBlur={touch("responsible")} onChange={(event) => setProviderDriver(event.target.value)} placeholder="Motorista/operador do prestador que recebeu" />
+              {fieldError("responsible", "Informe quem recebeu o combustível.")}
+            </label>
+          </>
+        )}
+        {!isProvider && (
+          <div className={invalid("responsible")} onBlur={touch("responsible")}>
+            <EmployeePicker label={isEntry ? "Responsável (quem recebeu) *" : "Responsável *"} frontId={frontId} value={responsible} onChange={setResponsible}
+              placeholder={isEntry ? "Motorista ou funcionário que acompanhou o recebimento" : "Buscar funcionário..."} />
+            {fieldError("responsible", isEntry ? "Informe quem recebeu fisicamente o combustível." : "Informe o responsável.")}
+          </div>
+        )}
         <label className="full">
           Observações
-          <textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Informações adicionais deste lançamento." />
+          <textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={isEntry ? "Ex.: nota fiscal, fornecedor, placa do caminhão-tanque." : "Informações adicionais deste lançamento."} />
         </label>
-        {!summary.multiFront && frontName && <p className="full fuel-auto-front">Lançamento da frente <b>{frontName}</b> (frente do seu usuário).</p>}
+        {!summary.multiFront && frontName && <p className="full fuel-auto-front">Lançamento da frente <b>{frontName}</b> (frente do seu usuário). Lançado por {authUser.name}.</p>}
         {wrongFront && (
           <div className="equipment-form-error full"><span>!</span><strong>O equipamento {equipment!.prefix} está em {equipment!.frontName ?? "outra frente"}, não em {frontName}. Transfira o equipamento ou lance pela frente correta.</strong></div>
         )}
         {sameStock && <div className="equipment-form-error full"><span>!</span><strong>Escolha um destino diferente da origem (ex.: Frente → Porto).</strong></div>}
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
         <div className="modal-footer full">
+          {missing.length > 0 && <span className="fuel-missing">Preencha: {missing.map(([, label]) => label).join(", ")}</span>}
           {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancelar edição</button>}
-          <button className="primary" disabled={busy || wrongFront || sameStock || !frontId}>{busy ? "Salvando..." : editing ? "Salvar alterações" : "Registrar lançamento"}</button>
+          <button className="primary" disabled={busy || wrongFront || sameStock || missing.length > 0}>{busy ? "Salvando..." : editing ? "Salvar alterações" : "Registrar lançamento"}</button>
         </div>
       </form>
     </article>
+  );
+}
+
+// Responsável: escolhido da lista de Funcionários (autocomplete). Digitar o nome à mão fica como
+// exceção (ex.: motorista do caminhão-tanque que não é funcionário).
+function EmployeePicker({ label, frontId, value, onChange, placeholder }: { label: string; frontId: number | null; value: Responsible; onChange: (value: Responsible) => void; placeholder: string }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<EmployeeOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    if (!open || value.manual) return;
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      const params = new URLSearchParams({ q: query });
+      if (frontId) params.set("serviceFrontId", String(frontId));
+      api<{ employees: EmployeeOption[] }>(`/api/employees/lookup?${params.toString()}`).then((result) => { setItems(result.employees); setUnavailable(false); })
+        .catch(() => { setItems([]); setUnavailable(true); }).finally(() => setLoading(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, frontId, open, value.manual]);
+
+  const toggleManual = <label className="fuel-manual-toggle"><input type="checkbox" checked={value.manual} onChange={(event) => onChange({ employeeId: null, name: event.target.checked ? query || value.name : "", manual: event.target.checked })} />Digitar nome manualmente</label>;
+  if (value.manual) {
+    return (
+      <label className="fuel-employee-picker">
+        {label}
+        <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} placeholder="Nome de quem recebeu/abasteceu" />
+        {toggleManual}
+      </label>
+    );
+  }
+  if (value.employeeId) {
+    return (
+      <div className="fuel-equipment-selected">
+        <span>{label}</span>
+        <div><strong>{value.name}</strong><button type="button" onClick={() => { onChange({ employeeId: null, name: "", manual: false }); setOpen(true); }}>Trocar</button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="fuel-equipment-picker fuel-employee-picker">
+      <label>
+        {label}
+        <div className="page-search"><span>⌕</span><input value={query} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 180)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder={placeholder} /></div>
+      </label>
+      {toggleManual}
+      {open && (
+        <ul className="fuel-equipment-results" role="listbox">
+          {loading && <li className="muted">Buscando...</li>}
+          {!loading && unavailable && <li className="muted">Lista de funcionários indisponível — use &quot;Digitar nome manualmente&quot;.</li>}
+          {!loading && !unavailable && items.length === 0 && <li className="muted">{query ? "Nenhum funcionário encontrado. Cadastre em Funcionários ou digite o nome manualmente." : "Digite para buscar."}</li>}
+          {!loading && items.map((item) => (
+            <li key={item.id} role="option" aria-selected={false} onMouseDown={(event) => { event.preventDefault(); onChange({ employeeId: item.id, name: item.name, manual: false }); setOpen(false); }}>
+              <strong>{item.name}</strong><span>{item.jobTitle}</span><small>{item.inFront ? item.company : `${item.frontName} · ${item.company}`}</small>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -412,7 +559,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
           </select></label>
         )}
         <label>Combustível<select value={fuelTypeId} onChange={(event) => setFuelTypeId(event.target.value)}><option value="">Todos</option>{summary.fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
-        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída para terceiros</option></select></label>
+        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída para terceiros</option><option value="PRESTADORES">Saída — Prestador de Serviço</option></select></label>
         <label>Estoque<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">Frente e Porto</option>{LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <div className="fuel-export-actions">
           <a className="secondary" href={exportUrl("pdf")} target="_blank" rel="noopener noreferrer">Exportar PDF</a>
@@ -424,17 +571,21 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         <>
           <div className="table-scroll">
             <table className="products-table fuel-history-table">
-              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Destino</th><th>Hod./Horím.</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Custo</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Terceiro · Prestador</th><th>Hod./Horím.</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
               <tbody>
                 {data?.movements.map((movement) => (
                   <tr key={movement.id}>
                     <td>{brDay(movement.movementDate)}</td>
-                    <td><span className={`fuel-type-pill ${movement.thirdParty ? "terceiros" : movement.movementType.toLowerCase()}`}>{movement.movementLabel}</span></td>
+                    <td><span className={`fuel-type-pill ${movement.thirdParty ? (movement.thirdPartyKind === "PRESTADOR" ? "prestador" : "terceiros") : movement.movementType.toLowerCase()}`}>{movement.movementLabel}</span></td>
                     <td>{movement.fuelName}</td>
                     <td className="price-cell">{liters(movement.quantity)}</td>
+                    <td className="price-cell" title={movement.unitCost !== null ? `${money(movement.unitCost)}/L ${movement.movementType === "ENTRADA" ? "(valor da entrada)" : "(custo médio do estoque)"}` : "Estoque sem valor por litro informado"}>
+                      {movement.cost !== null ? money(movement.cost) : <small className="fuel-transfer">sem valor</small>}
+                      {movement.unitCost !== null && <small className="fuel-unit-cost">{money(movement.unitCost)}/L</small>}
+                    </td>
                     <td>{movement.frontName}</td>
                     <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}</td>
-                    <td>{movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
+                    <td>{movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
                     <td>{movement.meterReading === null ? "—" : `${movement.meterReading.toLocaleString("pt-BR")} ${movement.meterUnit === "KM" ? "km" : "h"}`}</td>
                     <td title={movement.notes ?? undefined}>{movement.responsible ?? "—"}{movement.createdByName && movement.createdByName !== movement.responsible && <small className="fuel-created-by"> · lançado por {movement.createdByName}</small>}</td>
                     {canManage && <td><div className="equipment-row-actions"><button onClick={() => onEdit(movement)}>Editar</button><button onClick={() => remove(movement)}>Excluir</button></div></td>}

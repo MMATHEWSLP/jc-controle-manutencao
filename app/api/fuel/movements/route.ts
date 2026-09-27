@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { fuelMovements, fuelTypes, serviceFronts } from "../../../../db/schema";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { fuelEquipmentContext, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, resolveFuelFront } from "../../../../lib/fuel";
+import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, resolveFuelFront } from "../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../lib/fuel-rules";
 
 const PAGE_SIZE = 50;
@@ -35,7 +35,10 @@ export async function POST(request: Request) {
   try {
     const user = auth.user!;
     const body = (await request.json()) as Record<string, unknown>;
-    const input = readFuelMovementBody(body);
+    const parsed = readFuelMovementBody(body);
+    let input: typeof parsed;
+    try { input = { ...parsed, ...(await resolveResponsible(await getDb(), parsed.responsibleEmployeeId, parsed.responsible)) }; }
+    catch { return Response.json({ error: "Funcionário responsável não encontrado." }, { status: 400 }); }
     const db = await getDb();
     const fronts = await fuelVisibleFronts(db, user);
     const visibleIds = fronts.map((front) => front.id);

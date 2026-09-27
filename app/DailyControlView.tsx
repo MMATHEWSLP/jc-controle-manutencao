@@ -101,6 +101,11 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
   const initialEquipment=editing?null:context.equipment.find((item)=>item.id===context.assignedEquipmentId)??null;
   const [draft,setDraft]=useState<DailyRecordDraft>(()=>editing?draftFromRecord(editing):blankDraft(localToday(),initialEquipment?.id??null,initialEquipment?.serviceFrontId??context.defaultServiceFrontId));
   const [fromMemory,setFromMemory]=useState(Boolean(initialEquipment));
+  // Sugestões do nome do operador (lançamento manual) vindas do cadastro de Funcionários — evita o
+  // mesmo nome digitado de jeitos diferentes. Continua aceitando nome livre.
+  const [employeeOptions,setEmployeeOptions]=useState<string[]>([]);
+  const operatorQuery=(draft.operatorName??"").trim();
+  useEffect(()=>{ if(operatorQuery.length<2)return; const timer=window.setTimeout(()=>{ const params=new URLSearchParams({ q:operatorQuery }); if(draft.serviceFrontId)params.set("serviceFrontId",String(draft.serviceFrontId)); api<{ employees:Array<{ name:string }> }>(`/api/employees/lookup?${params.toString()}`).then((result)=>setEmployeeOptions(result.employees.map((item)=>item.name))).catch(()=>setEmployeeOptions([])); },300); return ()=>window.clearTimeout(timer); },[operatorQuery,draft.serviceFrontId]);
   // Fotos já gravadas no registro em edição (mantidas até o usuário remover ou trocar).
   const [keepProblemPhoto,setKeepProblemPhoto]=useState(Boolean(editing?.hasProblemPhoto));
   const [keepProductionPhoto,setKeepProductionPhoto]=useState(Boolean(editing?.hasProductionPhoto));
@@ -251,7 +256,7 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
         : manualOperator ? null : <IdentityCard user={currentUser}/>}
       {manualOperator && <div className="daily-manual-operator">
         <div className="daily-manual-operator-head"><em className="daily-manual-tag">Lançamento manual</em><span>{editing?`Lançado pela conta ${editing.launchedBy}.`:`Você (${currentUser.name}) está lançando em nome de outra pessoa — fica registrado que esta conta fez o lançamento.`}</span></div>
-        <Field label="Nome do operador *" error={errorFor("operatorName")}><input value={draft.operatorName??""} maxLength={OPERATOR_NAME_MAX} onChange={(event)=>patch({ operatorName:event.target.value })} onBlur={()=>touch("operatorName")} placeholder="Nome completo de quem operou o equipamento" autoComplete="off"/></Field>
+        <Field label="Nome do operador *" error={errorFor("operatorName")}><input value={draft.operatorName??""} maxLength={OPERATOR_NAME_MAX} list="daily-employee-options" onChange={(event)=>patch({ operatorName:event.target.value })} onBlur={()=>touch("operatorName")} placeholder="Nome completo de quem operou o equipamento (sugestões do cadastro de Funcionários)" autoComplete="off"/><datalist id="daily-employee-options">{employeeOptions.map((name)=><option key={name} value={name}/>)}</datalist></Field>
       </div>}
       <div className="fleet-form-grid">
         <Field label="Data do registro *" error={errorFor("recordDate")}><input type="date" value={draft.recordDate} max={localToday()} onChange={(event)=>patch({ recordDate:event.target.value })} onBlur={()=>touch("recordDate")}/></Field>

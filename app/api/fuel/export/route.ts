@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { authorize } from "../../../../lib/auth";
 import { activeFuelTypes, fuelBalances, fuelHistory, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters } from "../../../../lib/fuel";
-import { FUEL_LOCATION_LABELS, FUEL_MOVEMENT_LABELS, THIRD_PARTY_LABEL } from "../../../../lib/fuel-rules";
+import { FUEL_LOCATION_LABELS, FUEL_MOVEMENT_LABELS, PROVIDER_LABEL, THIRD_PARTY_LABEL } from "../../../../lib/fuel-rules";
 import { createFuelHistoryPdf, formatPdfDate } from "../../../../lib/pdf";
 
 // Exporta exatamente o Histórico exibido (mesma query string): ?formato=pdf | ?formato=xlsx.
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const [{ rows, total }, balances] = await Promise.all([fuelHistory(db, scope, filters, EXPORT_LIMIT), fuelBalances(db, scope, filters.from, filters.to)]);
     const frontLabel = scope.length === fronts.length && fronts.length > 1 ? "Todas as frentes" : fronts.filter((front) => scope.includes(front.id)).map((front) => front.name).join(", ") || "—";
     const fuelLabel = filters.fuelTypeId ? types.find((type) => type.id === filters.fuelTypeId)?.name ?? "—" : "Todos";
-    const movementLabel = `${filters.movementType === "TERCEIROS" ? THIRD_PARTY_LABEL : filters.movementType ? FUEL_MOVEMENT_LABELS[filters.movementType] : "Todos"}${filters.location ? ` · ${FUEL_LOCATION_LABELS[filters.location]}` : ""}`;
+    const movementLabel = `${filters.movementType === "TERCEIROS" ? THIRD_PARTY_LABEL : filters.movementType === "PRESTADORES" ? PROVIDER_LABEL : filters.movementType ? FUEL_MOVEMENT_LABELS[filters.movementType] : "Todos"}${filters.location ? ` · ${FUEL_LOCATION_LABELS[filters.location]}` : ""}`;
     const meter = (row: (typeof rows)[number]) => row.meterReading === null ? "" : `${liters(row.meterReading)} ${row.meterUnit === "KM" ? "km" : "h"}`;
     type Row = (typeof rows)[number];
     // Origem = estoque (Frente/Porto). Na transferência mostra origem » destino.
@@ -35,7 +35,12 @@ export async function GET(request: Request) {
       const destination = row.destinationFrontId && row.destinationFrontId !== row.serviceFrontId ? `${row.destinationLocationLabel ?? "Frente"} ${row.destinationFrontName ?? ""}`.trim() : row.destinationLocationLabel ?? "Frente";
       return `${row.stockLocationLabel} » ${destination}`;
     };
-    const receiver = (row: Row) => row.thirdParty ? `Terceiro: ${row.thirdPartyDescription ?? "—"}` : row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : "—";
+    const receiver = (row: Row) => row.thirdParty
+      ? row.thirdPartyKind === "PRESTADOR" ? `${row.providerCompany ?? "—"} · ${row.providerEquipment ?? "—"}` : `Terceiro: ${row.thirdPartyDescription ?? "—"}`
+      : row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : "—";
+    const money = (value: number | null) => value === null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    // Entrada = valor total do lote; saída/transferência = custo médio do estoque de origem.
+    const costText = (row: Row) => row.cost === null ? "sem valor" : money(row.cost);
     const now = new Date();
     const stamp = now.toISOString().slice(0, 10);
 
@@ -51,7 +56,7 @@ export async function GET(request: Request) {
           };
         }),
         items: rows.map((row) => ({
-          date: brDay(row.movementDate), type: row.movementLabel, fuel: row.fuelName, quantity: liters(row.quantity), front: row.frontName,
+          date: brDay(row.movementDate), type: row.movementLabel, fuel: row.fuelName, quantity: liters(row.quantity), cost: costText(row), front: row.frontName,
           equipment: receiver(row), origin: originText(row), meter: meter(row) || "—", responsible: row.responsible ?? "—",
         })),
       });
@@ -67,12 +72,16 @@ export async function GET(request: Request) {
       { header: "Tipo de movimentação", key: "type", width: 16 },
       { header: "Combustível", key: "fuel", width: 16 },
       { header: "Quantidade (L)", key: "quantity", width: 14 },
+      { header: "Valor por litro (R$)", key: "unitCost", width: 14 },
+      { header: "Custo / valor total (R$)", key: "cost", width: 16 },
       { header: "Frente de serviço", key: "front", width: 18 },
       { header: "Origem (estoque)", key: "origin", width: 18 },
       { header: "Destino da transferência", key: "destination", width: 22 },
       { header: "Veículo/Máquina", key: "equipment", width: 16 },
       { header: "Modelo", key: "model", width: 24 },
       { header: "Saída para terceiros — destino/descrição", key: "thirdParty", width: 30 },
+      { header: "Prestador — empresa", key: "providerCompany", width: 24 },
+      { header: "Prestador — equipamento", key: "providerEquipment", width: 26 },
       { header: "Hodômetro/Horímetro", key: "meter", width: 16 },
       { header: "Responsável", key: "responsible", width: 22 },
       { header: "Observações", key: "notes", width: 30 },
@@ -84,15 +93,18 @@ export async function GET(request: Request) {
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     for (const row of rows) {
       sheet.addRow({
-        date: new Date(`${row.movementDate}T12:00:00Z`), type: row.movementLabel, fuel: row.fuelName, quantity: row.quantity, front: row.frontName,
+        date: new Date(`${row.movementDate}T12:00:00Z`), type: row.movementLabel, fuel: row.fuelName, quantity: row.quantity, unitCost: row.unitCost, cost: row.cost, front: row.frontName,
         origin: `${row.stockLocationLabel}${row.origin ? ` (${row.origin})` : ""}`,
         destination: row.movementType === "TRANSFERENCIA" ? `${row.destinationFrontName ?? row.frontName} — ${row.destinationLocationLabel ?? "Frente"}` : "",
-        equipment: row.equipmentPrefix ?? "", model: row.equipmentModel ?? "", thirdParty: row.thirdParty ? row.thirdPartyDescription ?? "" : "", meter: meter(row),
+        equipment: row.equipmentPrefix ?? "", model: row.equipmentModel ?? "", thirdParty: row.thirdParty && row.thirdPartyKind !== "PRESTADOR" ? row.thirdPartyDescription ?? "" : "",
+        providerCompany: row.providerCompany ?? "", providerEquipment: row.providerEquipment ?? "", meter: meter(row),
         responsible: row.responsible ?? "", notes: row.notes ?? "", createdBy: row.createdByName ?? "",
       });
     }
     sheet.getColumn("date").numFmt = "dd/mm/yyyy";
     sheet.getColumn("quantity").numFmt = "#,##0.00";
+    sheet.getColumn("unitCost").numFmt = "#,##0.0000";
+    sheet.getColumn("cost").numFmt = "#,##0.00";
     const summary = workbook.addWorksheet("Saldos");
     summary.columns = [
       { header: "Combustível", key: "fuel", width: 18 }, { header: "Frente", key: "front", width: 20 }, { header: "Estoque", key: "location", width: 12 },
