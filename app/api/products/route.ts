@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { equipmentModels, products, suppliers } from "../../../db/schema";
 import { frentesEmExibicao, seesMultipleFronts } from "../../../lib/active-front";
+import { ensureBrand } from "../../../lib/catalog";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { nextSequentialTag, normalizeTag, parseReferenceList } from "../../../lib/product-rules";
 import {
@@ -140,7 +141,8 @@ export async function POST(request: Request) {
     const serviceFrontId = await resolveCreationFront(db, user, body.serviceFrontId, frentesEmExibicao(user, request));
 
     const created = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(products).values({ tag, name, price, brand, supplierId }).returning();
+      // Marca pela lista única (a mesma da cotação/recebimento das Compras), com a grafia já cadastrada.
+      const [row] = await tx.insert(products).values({ tag, name, price, brand: await ensureBrand(tx, brand, user.id), supplierId }).returning();
       await replaceReferences(tx, row.id, references);
       await replaceModels(tx, row.id, modelIds);
       // Nasce ativo só na frente de quem cadastrou, com estoque zerado. Nas outras frentes ele já

@@ -9,8 +9,8 @@ const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
 export async function GET(request:Request){
   const auth=await authorize(request,"equipment.view");if(auth.response)return auth.response;
   try{
-    const d1=await getD1();const allowed=await allowedEquipmentIds(d1,auth.user!,"MANAGEMENT");const requested=Number(new URL(request.url).searchParams.get("equipmentId"));
-    if(Number.isInteger(requested)&&requested>0)await requireEquipmentAccess(d1,auth.user!,requested,"MANAGEMENT");
+    const d1=await getD1();const allowed=await allowedEquipmentIds(d1,auth.user!,"REGISTRY");const requested=Number(new URL(request.url).searchParams.get("equipmentId"));
+    if(Number.isInteger(requested)&&requested>0)await requireEquipmentAccess(d1,auth.user!,requested,"REGISTRY");
     const result=await d1.prepare(`SELECT tr.id,tr.equipment_id,e.prefix,tr.previous_service_front_id,tr.new_service_front_id,
       previous.name AS previous_front,next.name AS new_front,tr.transferred_at,tr.note,u.name AS responsible
       FROM equipment_transfers tr INNER JOIN equipment e ON e.id=tr.equipment_id

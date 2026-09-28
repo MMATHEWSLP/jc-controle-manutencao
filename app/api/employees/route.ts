@@ -3,7 +3,7 @@ import { employees, employeeTransfers } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { showsRegistryFrontButtons } from "../../../lib/active-front";
 import { validateEmployee } from "../../../lib/employee-rules";
-import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSalary, employeeAlerts, employeeAudit, employeeErrorResponse, employeeScope, employeeToday, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
+import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, employeeAlerts, employeeAudit, employeeErrorResponse, employeeScope, employeeToday, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
 
 // Listagem do módulo Funcionários: frentes em exibição (seletor global) ∩ frentes que a pessoa enxerga.
 export async function GET(request: Request) {
@@ -15,11 +15,11 @@ export async function GET(request: Request) {
     const db = await getDb();
     const { fronts, scope } = await employeeScope(db, user, request);
     const [items, companies] = await Promise.all([
-      listEmployees(db, scope, { includeDismissed: url.searchParams.get("includeDismissed") === "1", showSalary: canSeeSalary(user) }),
+      listEmployees(db, scope, { includeDismissed: url.searchParams.get("includeDismissed") === "1", showSalary: canSeeSalary(user), salaryFronts: employeeChangeFronts(user) }),
       listCompanies(db, { includeInactive: user.permissions.includes("employees.companies") }),
     ]);
     return Response.json({
-      employees: items, fronts, scopeFrontIds: scope, companies, today: employeeToday(), alerts: employeeAlerts(items), frontButtons: showsRegistryFrontButtons(user),
+      employees: items, fronts, scopeFrontIds: scope, companies, today: employeeToday(), alerts: employeeAlerts(items), frontButtons: showsRegistryFrontButtons(user), changeFrontIds: employeeChangeFronts(user),
       canManage: user.permissions.includes("employees.manage"), canSeeSalary: canSeeSalary(user), canManageCompanies: user.permissions.includes("employees.companies"),
     });
   } catch (error) {

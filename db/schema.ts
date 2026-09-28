@@ -796,6 +796,16 @@ export const suppliers = pgTable("suppliers", {
   index("suppliers_active_idx").on(table.active),
 ]);
 
+// Lista única de marcas (cadastro de Produtos, cotação e recebimento das Compras usam a mesma).
+// O nome é gravado em MAIÚSCULAS e `key` (sem acentos, espaços e pontuação) impede grafias duplicadas.
+export const productBrands = pgTable("product_brands", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  key: text("key").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("product_brands_key_unique").on(table.key)]);
+
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   tag: text("tag").notNull(),
@@ -1212,8 +1222,20 @@ export const purchaseOrders = pgTable("purchase_orders", {
   // Frente que pede (a do login; escolha obrigatória para quem tem mais de uma) — é onde o estoque entra.
   serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
   requestedAt: text("requested_at").notNull(),
-  status: text("status", { enum:["AGUARDANDO_APROVACAO","RECUSADO","EM_COTACAO","ANALISE_PAGAMENTO","PAGO","ENVIADO","RECEBIDO","CANCELADO"] }).notNull().default("AGUARDANDO_APROVACAO"),
+  // Situação GERAL, calculada a partir dos itens (lib/purchases.ts:orderStatusFromItems) e gravada
+  // para listar/filtrar; EM_ANDAMENTO = itens em etapas diferentes.
+  status: text("status", { enum:["AGUARDANDO_APROVACAO","RECUSADO","EM_COTACAO","ANALISE_PAGAMENTO","PAGO","ENVIADO","RECEBIDO","CANCELADO","EM_ANDAMENTO"] }).notNull().default("AGUARDANDO_APROVACAO"),
   notes: text("notes"),
+  // Cabeçalho do pedido (igual à referência "Nova Solicitação de Compra").
+  company: text("company"),
+  branch: text("branch"),
+  title: text("title"),
+  department: text("department"),
+  orderDate: text("order_date"),
+  // Nome de quem pede (pode ser diferente de quem lançou, requester_id = "criado por").
+  requesterName: text("requester_name"),
+  urgency: text("urgency", { enum:["BAIXA","NORMAL","ALTA","URGENTE"] }).notNull().default("NORMAL"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
   approvedBy: integer("approved_by").references(() => users.id),
   approvedAt: text("approved_at"),
   rejectedBy: integer("rejected_by").references(() => users.id),
@@ -1249,6 +1271,29 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   reference: text("reference"),
   quantity: doublePrecision("quantity").notNull(),
   fiscalUnit: text("fiscal_unit").notNull(),
+  // Observações do item (itens digitados à mão).
+  notes: text("notes"),
+  // Situação do ITEM no fluxo (cada item anda sozinho; o pedido mostra a combinação).
+  status: text("status", { enum:["AGUARDANDO_APROVACAO","RECUSADO","EM_COTACAO","ANALISE_PAGAMENTO","PAGO","ENVIADO","RECEBIDO","REMOVIDO","CANCELADO"] }).notNull().default("AGUARDANDO_APROVACAO"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: text("approved_at"),
+  rejectedBy: integer("rejected_by").references(() => users.id),
+  rejectedAt: text("rejected_at"),
+  rejectReason: text("reject_reason"),
+  paymentRequestedBy: integer("payment_requested_by").references(() => users.id),
+  paymentRequestedAt: text("payment_requested_at"),
+  paidBy: integer("paid_by").references(() => users.id),
+  paidAt: text("paid_at"),
+  dispatchedBy: integer("dispatched_by").references(() => users.id),
+  dispatchedAt: text("dispatched_at"),
+  // Ajuste do comprador na cotação: a quantidade pedida originalmente fica guardada ao lado da
+  // alterada (ou do item removido), com quem alterou e quando.
+  originalQuantity: doublePrecision("original_quantity"),
+  quantityChangedBy: integer("quantity_changed_by").references(() => users.id),
+  quantityChangedAt: text("quantity_changed_at"),
+  removedBy: integer("removed_by").references(() => users.id),
+  removedAt: text("removed_at"),
+  removedReason: text("removed_reason"),
   // Preenchidos pelo comprador na cotação.
   unitPrice: doublePrecision("unit_price"),
   supplierId: integer("supplier_id").references(() => suppliers.id),
@@ -1264,10 +1309,13 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   ...timestamps,
 }, (table) => [index("purchase_order_items_order_idx").on(table.orderId), index("purchase_order_items_product_idx").on(table.productId)]);
 
-// Orçamentos anexados pelo comprador (imagem ou PDF), em uploads/purchase-quotes.
+// Anexos do pedido, em uploads/purchase-quotes: PHOTO = foto enviada na criação (peça quebrada,
+// problema...); QUOTE_IMAGE = orçamento por imagem; QUOTE_DOCUMENT = orçamento em documento
+// (PDF, Word, Excel...).
 export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   id: serial("id").primaryKey(),
   orderId: integer("order_id").notNull().references(() => purchaseOrders.id, { onDelete:"cascade" }),
+  kind: text("kind", { enum:["PHOTO","QUOTE_IMAGE","QUOTE_DOCUMENT"] }).notNull().default("QUOTE_DOCUMENT"),
   storageKey: text("storage_key").notNull(),
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
@@ -1275,6 +1323,19 @@ export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   uploadedBy: integer("uploaded_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("purchase_order_attachments_order_idx").on(table.orderId)]);
+
+// Histórico de cada item do pedido (mudança de situação, ajuste de quantidade, remoção, recebimento).
+export const purchaseOrderItemEvents = pgTable("purchase_order_item_events", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => purchaseOrders.id, { onDelete:"cascade" }),
+  itemId: integer("item_id").notNull().references(() => purchaseOrderItems.id, { onDelete:"cascade" }),
+  action: text("action").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status"),
+  details: text("details"),
+  userId: integer("user_id").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("purchase_order_item_events_item_idx").on(table.itemId, table.createdAt)]);
 
 // ---------------------------------------------------------------------------
 // Movimentação: saída de produtos do estoque para um funcionário ou um equipamento. Número

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
 import { auditLogs, companies, employeeAbsences, employeeDismissals, employeeLeaveCycles, employees, employeeTransfers, serviceFronts, users } from "../db/schema";
-import { frentesVisiveisCadastro } from "./access";
+import { frentesVisiveis, frentesVisiveisCadastro } from "./access";
 import { frentesEmExibicao, frentesEmExibicaoCadastro } from "./active-front";
 import type { SessionUser } from "./auth";
 import { ABSENCE_LABELS, absenceBadge, currentAbsence, EMPLOYEE_STATUS_LABELS, formatCpf, nameKey, onlyDigits, type AbsenceKind } from "./employee-rules";
@@ -29,9 +29,17 @@ export async function employeeVisibleFronts(db: Db, user: SessionUser) {
   return visible === "ALL" ? fronts : fronts.filter((front) => visible.includes(front.id));
 }
 
-export function canSeeEmployeeFront(user: SessionUser, frontId: number) {
-  const visible = frentesVisiveisCadastro(user);
+// VIEW = consultar e transferir (todas as frentes, no módulo Funcionários); CHANGE = cadastrar,
+// editar, lançar ciclo/afastamento, demitir ou readmitir (só nas frentes do login).
+export type EmployeeAccess = "VIEW" | "CHANGE";
+export function canSeeEmployeeFront(user: SessionUser, frontId: number, access: EmployeeAccess = "CHANGE") {
+  const visible = access === "VIEW" ? frentesVisiveisCadastro(user) : frentesVisiveis(user);
   return visible === "ALL" || visible.includes(frontId);
+}
+
+// Frentes onde a pessoa pode alterar funcionários (a tela usa para mostrar só as ações permitidas).
+export function employeeChangeFronts(user: SessionUser): number[] | "ALL" {
+  return frentesVisiveis(user);
 }
 
 // Frentes em exibição (seletor global ou botões do módulo) ∩ frentes que a pessoa enxerga.
@@ -192,7 +200,8 @@ function present<T extends BaseRow>(row: T, showSalary: boolean) {
   return { ...row, cpf: row.cpf ? formatCpf(row.cpf) : null, salary: showSalary ? row.salary : null, statusLabel: EMPLOYEE_STATUS_LABELS[row.status] };
 }
 
-export async function listEmployees(db: Db, frontIds: number[], options: { includeDismissed?: boolean; showSalary?: boolean } = {}) {
+// `salaryFronts`: frentes cujo salário aparece (só as do login, mesmo com a permissão de salário).
+export async function listEmployees(db: Db, frontIds: number[], options: { includeDismissed?: boolean; showSalary?: boolean; salaryFronts?: number[] | "ALL" } = {}) {
   if (frontIds.length === 0) return [];
   const rows = await db.select(baseColumns).from(employees).innerJoin(serviceFronts, eq(employees.serviceFrontId, serviceFronts.id))
     .where(and(inArray(employees.serviceFrontId, frontIds), options.includeDismissed ? undefined : ne(employees.status, "DEMITIDO")))
@@ -213,7 +222,7 @@ export async function listEmployees(db: Db, frontIds: number[], options: { inclu
     const open = openCycle(employeeCycles);
     const arrival = arrivals.find((item) => item.employeeId === row.id && item.frontId === row.serviceFrontId)?.date ?? row.admissionDate;
     return {
-      ...present(row, Boolean(options.showSalary)),
+      ...present(row, Boolean(options.showSalary) && (options.salaryFronts === undefined || options.salaryFronts === "ALL" || options.salaryFronts.includes(row.serviceFrontId))),
       currentAbsence: current ? { ...current, kindLabel: ABSENCE_LABELS[current.kind], badge: absenceBadge(current) } : null,
       cycle: open ? cycleView(open, today) : null,
       cycleCount: employeeCycles.length,
@@ -272,11 +281,11 @@ export async function employeeDetail(db: Db, id: number, options: { showSalary?:
   };
 }
 
-export async function requireEmployee(db: Db, user: SessionUser, id: number) {
+export async function requireEmployee(db: Db, user: SessionUser, id: number, access: EmployeeAccess = "CHANGE") {
   const row = (await db.select({ id: employees.id, name: employees.name, status: employees.status, serviceFrontId: employees.serviceFrontId, admissionDate: employees.admissionDate, cycleWorkDays: employees.cycleWorkDays, cycleOffDays: employees.cycleOffDays })
     .from(employees).where(eq(employees.id, id)).limit(1))[0];
   if (!row) throw new EmployeeError("Funcionário não encontrado.", 404);
-  if (!canSeeEmployeeFront(user, row.serviceFrontId)) throw new EmployeeError("Você não tem acesso a este funcionário.", 403);
+  if (!canSeeEmployeeFront(user, row.serviceFrontId, access)) throw new EmployeeError(access === "VIEW" ? "Você não tem acesso a este funcionário." : "Este funcionário é de outra frente: você pode consultar e transferir, mas as demais alterações são da frente dele.", 403);
   return row;
 }
 

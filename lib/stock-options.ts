@@ -40,7 +40,7 @@ export async function equipmentOptions(db: Db, user: SessionUser) {
   const rows = await db.select({
     id: equipment.id, prefix: equipment.prefix, type: equipment.type, brand: equipment.brand, model: equipment.model,
     serviceFrontId: equipment.serviceFrontId, front: serviceFronts.name, controlType: equipment.controlType,
-    currentHours: equipment.currentHours, currentKm: equipment.currentKm,
+    chassis: equipment.chassis, year: equipment.year, currentHours: equipment.currentHours, currentKm: equipment.currentKm,
   }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id))
     .where(visible === "ALL" ? undefined : inArray(equipment.serviceFrontId, visible))
     .orderBy(asc(equipment.sortKey));

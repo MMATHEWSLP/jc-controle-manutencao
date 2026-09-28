@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
 import { optimizePhoto } from "../lib/photo-client";
+import { CatalogPicker, type CatalogOption } from "./stock-client";
 
 type ProductFront = { serviceFrontId: number; name: string; active: boolean; quantity: number; editable: boolean };
 type Product = {
@@ -69,6 +70,8 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
   const [data, setData] = useState<ProductsResponse>({ products: [], total: 0, page: 1, pageSize: PAGE_SIZE, availableBrands: [], scope: { allFronts: true, frontIds: [], multiFront: false }, visibleFronts: [] });
   const [models, setModels] = useState<EquipmentModel[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // Marcas: lista única compartilhada com a cotação/recebimento das Compras.
+  const [brands, setBrands] = useState<CatalogOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -141,6 +144,9 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
     loadModels();
     fetchJson<{ suppliers: Supplier[] }>("/api/suppliers?includeInactive=1")
       .then((result) => setSuppliers(result.suppliers))
+      .catch(() => undefined);
+    fetchJson<{ brands: string[] }>("/api/catalog")
+      .then((result) => setBrands(result.brands.map((name) => ({ name }))))
       .catch(() => undefined);
   }, [loadModels]);
 
@@ -304,8 +310,8 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
                           {product.tag}
                           {product.needsReview && <span className="products-review-badge">Revisar</span>}
                         </td>
-                        <td>
-                          {product.name}
+                        <td className="product-name-cell">
+                          <strong>{product.name}</strong>
                           <div className="product-front-badges">
                             {activeFronts.length === 0 ? <span className="product-front-badge none">Inativo em todas as frentes</span> : activeFronts.map((front) => <span key={front.serviceFrontId} className="product-front-badge">{front.name}</span>)}
                           </div>
@@ -381,7 +387,9 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
             await load();
             flash(message);
           }}
-          onSupplierCreated={(supplier) => setSuppliers((current) => [...current, supplier].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")))}
+          brands={brands}
+          onSupplierCreated={(supplier) => setSuppliers((current) => current.some((row) => row.id === supplier.id) ? current.map((row) => row.id === supplier.id ? { ...row, active: true } : row) : [...current, supplier].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")))}
+          onBrandCreated={(brand) => setBrands((current) => current.some((row) => row.name === brand.name) ? current : [...current, brand].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")))}
         />
       )}
       {importOpen && (
@@ -477,7 +485,9 @@ function ProductModal({
   close,
   openExisting,
   saved,
+  brands,
   onSupplierCreated,
+  onBrandCreated,
 }: {
   item: Product | null;
   models: EquipmentModel[];
@@ -489,13 +499,16 @@ function ProductModal({
   close: () => void;
   openExisting: (id: number) => Promise<void>;
   saved: (message: string) => Promise<void>;
+  brands: CatalogOption[];
   onSupplierCreated: (supplier: Supplier) => void;
+  onBrandCreated: (brand: CatalogOption) => void;
 }) {
   const [tag, setTag] = useState(item?.tag ?? "");
   const [name, setName] = useState(item?.name ?? "");
   const [references, setReferences] = useState<string[]>(item ? (item.references.length ? item.references : item.reference ? [item.reference] : []) : []);
   const [referenceInput, setReferenceInput] = useState("");
-  const [supplierId, setSupplierId] = useState(item?.supplierId ? String(item.supplierId) : "");
+  const [supplier, setSupplier] = useState<CatalogOption | null>(item?.supplierId ? { id: item.supplierId, name: item.supplierName ?? suppliers.find((row) => row.id === item.supplierId)?.name ?? "" } : null);
+  const [brand, setBrand] = useState<CatalogOption | null>(item?.brand ? { name: item.brand } : null);
   const [modelIds, setModelIds] = useState<number[]>(item?.equipmentModelIds ?? (item?.equipmentModelId ? [item.equipmentModelId] : []));
   const [modelFilter, setModelFilter] = useState("");
   const [needsReview, setNeedsReview] = useState(item?.needsReview ?? false);
@@ -506,8 +519,6 @@ function ProductModal({
   const [pendingPhotos, setPendingPhotos] = useState<Array<{ file: File; url: string }>>([]);
   const [similar, setSimilar] = useState<SimilarMatch[]>([]);
   const [similarDismissed, setSimilarDismissed] = useState(false);
-  const [newSupplierOpen, setNewSupplierOpen] = useState(false);
-  const [newSupplierName, setNewSupplierName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [modalTab, setModalTab] = useState<"dados" | "historico">("dados");
@@ -549,25 +560,16 @@ function ProductModal({
     setError("");
   }
 
-  async function createSupplier() {
-    if (!newSupplierName.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await fetchJson<{ supplier: Supplier }>("/api/suppliers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newSupplierName.trim() }),
-      });
-      onSupplierCreated(result.supplier);
-      setSupplierId(String(result.supplier.id));
-      setNewSupplierOpen(false);
-      setNewSupplierName("");
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Não foi possível cadastrar o fornecedor.");
-    } finally {
-      setBusy(false);
-    }
+  // Fornecedor e marca: mesma base e mesmo componente da cotação/recebimento das Compras.
+  async function createCatalog(kind: "SUPPLIER" | "BRAND", value: string) {
+    const result = await fetchJson<{ option: CatalogOption }>("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, name: value }),
+    });
+    if (kind === "SUPPLIER") onSupplierCreated({ id: result.option.id!, name: result.option.name, active: true });
+    else onBrandCreated(result.option);
+    return result.option;
   }
 
   async function toggleFront(front: Front, active: boolean, productId = item?.id) {
@@ -626,8 +628,8 @@ function ProductModal({
       name,
       references: allReferences,
       price: form.get("price"),
-      brand: form.get("brand"),
-      supplierId: supplierId || null,
+      brand: brand?.name ?? "",
+      supplierId: supplier?.id ?? null,
       equipmentModelIds: modelIds,
       needsReview,
       ...(item ? { stocks } : { serviceFrontId: creationFrontId || null }),
@@ -738,31 +740,11 @@ function ProductModal({
           </label>
           <label>
             Marca
-            <input name="brand" defaultValue={item?.brand ?? ""} disabled={readOnly} />
+            <CatalogPicker options={brands} value={brand} onPick={setBrand} onCreate={readOnly ? undefined : (value) => createCatalog("BRAND", value)} placeholder="Buscar marca..." createLabel="Cadastrar nova marca" disabled={readOnly} />
           </label>
           <label className="full">
             Fornecedor
-            <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} disabled={readOnly}>
-              <option value="">— Nenhum —</option>
-              {suppliers.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </select>
-            {!readOnly && !newSupplierOpen && (
-              <button type="button" className="link-button" onClick={() => setNewSupplierOpen(true)}>
-                + Cadastrar novo fornecedor
-              </button>
-            )}
-            {!readOnly && newSupplierOpen && (
-              <div className="combo-with-create">
-                <input placeholder="Nome do novo fornecedor" value={newSupplierName} onChange={(event) => setNewSupplierName(event.target.value)} />
-                <button type="button" disabled={busy} onClick={createSupplier}>
-                  Salvar
-                </button>
-              </div>
-            )}
+            <CatalogPicker options={suppliers.filter((row) => row.active)} value={supplier} onPick={setSupplier} onCreate={readOnly ? undefined : (value) => createCatalog("SUPPLIER", value)} placeholder="Buscar fornecedor..." createLabel="Cadastrar novo fornecedor" disabled={readOnly} />
           </label>
           <div className="full product-applications">
             <span>Aplicação <small>({modelIds.length ? `${modelIds.length} modelo(s)` : "nenhuma = uso geral"})</small></span>

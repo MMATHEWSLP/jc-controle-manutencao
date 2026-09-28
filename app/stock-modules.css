@@ -61,3 +61,54 @@ html[data-theme="dark"] .po-steps li.done{background:#1f3a30;color:#8fe0bf;borde
 html[data-theme="dark"] .po-steps li.current{background:#1d2a36;color:#9ccbee;border-color:#2e5575}
 .wo-actions button,.po-detail td button.secondary,.stock-filters>button.secondary{min-height:34px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:inherit;font-weight:800;font-size:12px;cursor:pointer}
 .po-receipt .equipment-row-actions button.primary{background:linear-gradient(135deg,#00a879,#05845f);border-color:#007e5b;color:#fff}
+
+/* Busca de produto com as duas lupas (ampla + TAG exata), igual ao módulo Produtos. */
+.product-picker-inputs{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:6px}
+.product-picker-inputs .page-search{width:auto;min-width:0;display:flex;align-items:center;gap:6px;min-height:42px;margin:0;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.product-picker-inputs .page-search input{flex:1;min-width:0;min-height:38px;border:0;background:transparent;padding:0;box-shadow:none}
+.product-picker-inputs .page-search span{position:static;color:var(--muted)}
+.wo-mechanic-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;border:1px solid #9bcdbb;border-radius:16px;background:#eaf7f2;color:#0d7455;font-size:12px;font-weight:700}
+.wo-mechanic-chip button{width:22px;height:22px;border:0;border-radius:50%;background:rgba(13,116,85,.12);color:inherit;font-size:14px;line-height:1;cursor:pointer}
+html[data-theme="dark"] .wo-mechanic-chip{background:#1f3a30;color:#8fe0bf;border-color:#2f6b55}
+/* Solicitação de Pedidos — cabeçalho, cards, filtros de situação, seleção por item e histórico */
+.po-header-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:900px){.po-header-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.po-header-grid{grid-template-columns:1fr}.po-header-grid .span-2{grid-column:auto}}
+.po-add-item{width:100%;margin-top:4px;min-height:40px;border-style:dashed!important;font-weight:800}
+.po-photo-grid{display:flex;flex-wrap:wrap;gap:10px}
+.po-photo-grid figure{margin:0;width:120px;display:grid;gap:4px;font-size:11px;color:var(--muted)}
+.po-photo-grid img{width:120px;height:90px;object-fit:cover;border:1px solid var(--line);border-radius:8px}
+.po-photo-grid figcaption{display:flex;flex-direction:column;gap:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-company{padding:2px 7px;border-radius:6px;background:#eef1f3;color:#394a58;font-size:9px;font-weight:800;letter-spacing:.04em}
+.po-situation-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.po-situation-chips button{padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:#51606c;font-size:11px;font-weight:700;cursor:pointer}
+.po-situation-chips button.selected{border-color:#1f6b9c;background:#e5f1fb;color:#1f6b9c}
+.po-status-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px}
+.po-stage-count{padding:3px 8px;border:1px solid var(--line);border-radius:12px;font-size:11px;color:var(--muted)}
+.po-cancelled{margin:0 0 10px;padding:8px 10px;border:1px solid #efb6bc;border-radius:8px;background:#fff0f2;color:#a62532;font-size:12px;font-weight:700}
+.po-header-info{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 14px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
+.po-header-info dt{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.po-header-info dd{margin:2px 0 0;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+@media(max-width:700px){.po-header-info{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.po-bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:8px;padding:8px 10px;border:1px solid #cfe0ea;border-radius:10px;background:#f4f9fc}
+.po-bulk-bar label{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800}
+.po-bulk-bar>span{font-size:11px;color:var(--muted)}
+.po-bulk-bar>div{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.po-bulk-bar button{min-height:32px;padding:5px 10px;font-size:11px}
+.po-bulk-bar button:disabled{opacity:.45;cursor:not-allowed}
+.purchase-items-table td .link-button{display:block;margin-top:3px;padding:0;font-size:11px}
+.po-item-out td{opacity:.62}
+.po-qty-changed{display:grid;gap:1px}.po-qty-changed strong{color:#b35a00}
+.po-item-history-row td{background:#f8fafb}
+.po-item-history{margin:0;padding-left:18px;display:grid;gap:3px;font-size:11px}
+.po-item-history time{color:var(--muted)}
+.po-attachments img{width:34px;height:34px;object-fit:cover;border-radius:5px}
+.catalog-chip{padding:5px 8px}.catalog-create{font-weight:800;color:#11704f!important}
+html[data-theme="dark"] .po-company{background:#2b2926;color:#d0cdc6}
+html[data-theme="dark"] .po-situation-chips button.selected{background:#1d2a36;color:#9ccbee;border-color:#2e5575}
+html[data-theme="dark"] .po-bulk-bar{background:#1d2227;border-color:#33424f}
+html[data-theme="dark"] .po-item-history-row td{background:#1d1c19}
+html[data-theme="dark"] .po-cancelled{background:#321f24;border-color:#63363b;color:#ff9093}
+html[data-theme="dark"] .po-qty-changed strong{color:#f0a060}
+.po-bulk-bar input[type="checkbox"],.purchase-items-table input[type="checkbox"]{width:16px;height:16px;min-height:0;margin:0;padding:0;accent-color:#11704f}
+.po-bulk-bar label{text-transform:none;letter-spacing:0}

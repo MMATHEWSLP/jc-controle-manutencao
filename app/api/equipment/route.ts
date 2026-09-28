@@ -3,7 +3,8 @@ import { getD1, getDb } from "../../../db";
 import { alerts, equipment, equipmentMaintenanceTypes, maintenancePlans, maintenanceTypes, serviceFronts } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { naturalSortKey } from "../../../lib/equipment-sort";
-import { activeServiceFronts, allowedEquipmentIds, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
+import { activeServiceFronts, allowedEquipmentIds, canBrowseAllEquipment, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
+import { frentesVisiveis } from "../../../lib/access";
 import { canonicalEquipmentPrefix, reconcileEquipmentMeasurement } from "../../../lib/maintenance-history";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
 import { frentesEmExibicao, frentesEmExibicaoCadastro, showsRegistryFrontButtons } from "../../../lib/active-front";
@@ -70,18 +71,20 @@ async function getApplicableMap() {
 export async function GET(request:Request) {
   const auth=await authorize(request,"equipment.view");if(auth.response)return auth.response;
   try {
-    const db = await getDb();const d1=await getD1();const mode=new URL(request.url).searchParams.get("scope")==="oil"?"OIL":"MANAGEMENT";
+    const db = await getDb();const d1=await getD1();const mode=new URL(request.url).searchParams.get("scope")==="oil"?"OIL":"REGISTRY";
     const [rows, applicableMap, typeRows,fronts,allowed] = await Promise.all([
       getEquipmentRows(), getApplicableMap(),
       db.select({ name:maintenanceTypes.name, category:maintenanceTypes.category }).from(maintenanceTypes).where(and(eq(maintenanceTypes.active, true),eq(maintenanceTypes.category,"OIL"))).orderBy(maintenanceTypes.name),
-      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,mode==="MANAGEMENT"?frentesEmExibicaoCadastro(auth.user!,request):frentesEmExibicao(auth.user!,request)),
+      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,mode==="REGISTRY"?frentesEmExibicaoCadastro(auth.user!,request):frentesEmExibicao(auth.user!,request)),
     ]);
     return Response.json({
       equipment:rows.filter((row)=>allowed.has(row.id)).map((row)=>normalize(row,applicableMap[row.id] ?? [])),
       maintenanceTypes:typeRows.map((row)=>row.name),
       fronts,
       // Botões de frente dentro do módulo (só para quem tem a permissão e não tem o seletor global).
-      frontButtons:mode==="MANAGEMENT"&&showsRegistryFrontButtons(auth.user!),
+      frontButtons:mode==="REGISTRY"&&showsRegistryFrontButtons(auth.user!),
+      // Frentes cujo cadastro a pessoa pode alterar (as demais aparecem só para consulta/transferência).
+      editableFrontIds:canBrowseAllEquipment(auth.user!,"MANAGEMENT")?"ALL":frentesVisiveis(auth.user!),
     });
   } catch (error) {
     const detail = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";

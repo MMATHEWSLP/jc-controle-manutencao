@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
     const url = new URL(request.url);
-    if ((url.searchParams.get("q") ?? "").trim().length < 2) return Response.json({ products: [] });
+    if ((url.searchParams.get("q") ?? "").trim().length < 2 && !(url.searchParams.get("tag") ?? "").trim()) return Response.json({ products: [] });
     const visible = frentesVisiveis(user);
     const requested = Number(url.searchParams.get("frente"));
     const frontId = Number.isInteger(requested) && requested > 0 && (visible === "ALL" || visible.includes(requested)) ? requested : null;

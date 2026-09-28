@@ -2,144 +2,302 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
-import { api, brDateTime, jsonBody, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat, type Front, type ProductOption } from "./stock-client";
+import {
+  isActiveItem, isTerminalOrder, ITEM_STATUS_LABELS, matchesSituation, ORDER_STATUS_LABELS, PURCHASE_COMPANIES, SITUATION_FILTER_LABELS, URGENCIES, URGENCY_LABELS,
+  type ItemAction, type ItemStatus, type OrderStatus, type SituationFilter, type Urgency,
+} from "../lib/purchase-rules";
+import {
+  api, brDateTime, brDay, CatalogPicker, EquipmentPicker, jsonBody, localToday, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat,
+  type CatalogOption, type EquipmentOption, type Front, type ProductOption,
+} from "./stock-client";
 
 type User = { id: number; name: string; permissions: string[] };
-type Status = "AGUARDANDO_APROVACAO" | "RECUSADO" | "EM_COTACAO" | "ANALISE_PAGAMENTO" | "PAGO" | "ENVIADO" | "RECEBIDO" | "CANCELADO";
-type Actions = { approve: boolean; quote: boolean; confirmPayment: boolean; dispatch: boolean; receive: boolean; cancel: boolean };
-type OrderRow = { id: number; number: string; requesterId: number; requester: string; front: string; requestedAt: string; status: Status; statusLabel: string; notes: string | null; itemCount: number; itemsPreview: string[]; total: number | null; actions: Actions };
-type Supplier = { id: number; name: string };
-type ListResponse = { orders: OrderRow[]; requestFronts: Front[]; suppliers: Supplier[]; worksOnPurchases: boolean; canRequest: boolean };
+type BatchActions = Record<ItemAction, boolean>;
+type Actions = BatchActions & { CANCEL: boolean; PHOTO: boolean };
+type OrderRow = {
+  id: number; number: string; requesterId: number; createdBy: string; requesterName: string; serviceFrontId: number; front: string; requestedAt: string; orderDate: string;
+  status: OrderStatus; statusLabel: string; company: string | null; branch: string | null; title: string | null; department: string | null; urgency: Urgency;
+  equipmentPrefix: string | null; items: Array<{ status: string }>; itemCount: number; activeItemCount: number; searchText: string; quoteCount: number; total: number | null; needsMe: boolean;
+};
+type ListResponse = {
+  orders: OrderRow[]; requestFronts: Front[]; suppliers: CatalogOption[]; brands: string[]; nextNumber: string; equipment: EquipmentOption[];
+  worksOnPurchases: boolean; canRequest: boolean; userName: string;
+};
 type ProductInfo = { id: number; tag: string | null; name: string | null; price: number | null; brand: string | null; supplierId: number | null; supplier: string | null };
+type ItemEvent = { id: number; action: string; fromStatus: string | null; toStatus: string | null; details: string | null; userName: string | null; createdAt: string };
 type Item = {
-  id: number; productId: number | null; product: ProductInfo | null; description: string; reference: string | null; quantity: number; fiscalUnit: string;
+  id: number; productId: number | null; product: ProductInfo | null; description: string; reference: string | null; notes: string | null; quantity: number; fiscalUnit: string;
+  status: ItemStatus; statusLabel: string; originalQuantity: number | null; quantityChangedAt: string | null; quantityChangedByName: string | null;
+  removedAt: string | null; removedByName: string | null; removedReason: string | null; rejectedAt: string | null; rejectedByName: string | null; rejectReason: string | null;
   unitPrice: number | null; supplierId: number | null; supplierName: string | null; brand: string | null; total: number | null;
-  receivedAt: string | null; receivedQuantity: number | null; receivedUnitPrice: number | null; receivedSupplierName: string | null; receivedBrand: string | null; receiptNotes: string | null;
+  receivedAt: string | null; receivedByName: string | null; receivedQuantity: number | null; receivedUnitPrice: number | null; receivedSupplierName: string | null; receivedBrand: string | null; receiptNotes: string | null;
+  events: ItemEvent[];
 };
+type Attachment = { id: number; kind: "PHOTO" | "QUOTE_IMAGE" | "QUOTE_DOCUMENT"; fileName: string; contentType: string; size: number; createdAt: string; uploadedByName: string | null };
 type Detail = {
-  id: number; number: string; status: Status; statusLabel: string; front: string; requester: string | null; requestedAt: string; notes: string | null;
-  approvedAt: string | null; approvedByName: string | null; rejectedAt: string | null; rejectedByName: string | null; rejectReason: string | null;
-  paymentRequestedAt: string | null; paymentRequestedByName: string | null; buyerNotes: string | null; paidAt: string | null; paidByName: string | null; paymentNotes: string | null;
-  dispatchedAt: string | null; dispatchedByName: string | null; dispatchNotes: string | null; receivedAt: string | null; receivedByName: string | null;
-  cancelledAt: string | null; cancelledByName: string | null; cancelReason: string | null;
-  items: Item[]; attachments: Array<{ id: number; fileName: string; contentType: string; size: number; createdAt: string }>; total: number | null; actions: Actions;
+  id: number; number: string; status: OrderStatus; statusLabel: string; front: string; requesterId: number; requesterName: string | null; createdByName: string | null; requestedAt: string; orderDate: string;
+  company: string | null; branch: string | null; title: string | null; department: string | null; urgency: Urgency; notes: string | null;
+  equipment: { id: number; prefix: string; description: string; chassis: string | null; year: number | null } | null;
+  buyerNotes: string | null; paymentNotes: string | null; dispatchNotes: string | null; cancelledAt: string | null; cancelledByName: string | null; cancelReason: string | null;
+  items: Item[]; attachments: Attachment[]; total: number | null; actions: Actions;
 };
-type Tab = "acao" | "minhas" | "andamento" | "historico";
+type Tab = "ativas" | "acao" | "historico";
+type Catalog = { suppliers: CatalogOption[]; brands: CatalogOption[]; createSupplier: (name: string) => Promise<CatalogOption>; createBrand: (name: string) => Promise<CatalogOption> };
 
-const TERMINAL: Status[] = ["RECEBIDO", "RECUSADO", "CANCELADO"];
-const STATUS_TONE: Record<Status, string> = { AGUARDANDO_APROVACAO: "yellow", RECUSADO: "red", EM_COTACAO: "blue", ANALISE_PAGAMENTO: "orange", PAGO: "blue", ENVIADO: "blue", RECEBIDO: "green", CANCELADO: "gray" };
-const needsMe = (actions: Actions) => actions.approve || actions.quote || actions.confirmPayment || actions.dispatch || actions.receive;
+const ORDER_TONE: Record<OrderStatus, string> = { AGUARDANDO_APROVACAO: "yellow", RECUSADO: "red", EM_COTACAO: "blue", ANALISE_PAGAMENTO: "orange", PAGO: "blue", ENVIADO: "blue", RECEBIDO: "green", CANCELADO: "gray", EM_ANDAMENTO: "orange" };
+const ITEM_TONE: Record<ItemStatus, string> = { AGUARDANDO_APROVACAO: "yellow", RECUSADO: "red", EM_COTACAO: "blue", ANALISE_PAGAMENTO: "orange", PAGO: "blue", ENVIADO: "blue", RECEBIDO: "green", REMOVIDO: "gray", CANCELADO: "gray" };
+const CARD_ACCENT: Record<OrderStatus, string> = { AGUARDANDO_APROVACAO: "orange", RECUSADO: "red", EM_COTACAO: "yellow", ANALISE_PAGAMENTO: "orange", PAGO: "yellow", ENVIADO: "yellow", RECEBIDO: "green", CANCELADO: "gray", EM_ANDAMENTO: "yellow" };
+const ACTIVE_STATUSES: OrderStatus[] = ["EM_ANDAMENTO", "AGUARDANDO_APROVACAO", "EM_COTACAO", "ANALISE_PAGAMENTO", "PAGO", "ENVIADO"];
+const HISTORY_STATUSES: OrderStatus[] = ["RECEBIDO", "RECUSADO", "CANCELADO"];
+const SITUATIONS = Object.keys(SITUATION_FILTER_LABELS) as SituationFilter[];
+const normalize = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase("pt-BR");
 
-// Solicitação de Pedidos (Compras externas): solicitante → aprovação → cotação → pagamento → envio →
-// recebimento (entrada no estoque dos itens vinculados a produto).
+// Solicitação de Pedidos (Compras externas): cada item anda sozinho (aprovação → cotação →
+// pagamento → envio → recebimento com entrada no estoque) e o pedido mostra a combinação.
+// Todos da frente do pedido acompanham (só consulta); as ações seguem as permissões.
 export default function PurchaseOrdersView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<Tab>("acao");
+  const [tab, setTab] = useState<Tab>("ativas");
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
-  const initialized = useRef(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [situations, setSituations] = useState<SituationFilter[]>([]);
+  const [frontFilter, setFrontFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [suppliers, setSuppliers] = useState<CatalogOption[]>([]);
+  const [brands, setBrands] = useState<CatalogOption[]>([]);
   const load = useCallback(async () => {
     setError("");
     try {
       const result = await api<ListResponse>("/api/purchase-orders");
       setData(result);
-      if (!initialized.current) { initialized.current = true; if (!result.orders.some((order) => needsMe(order.actions))) setTab(result.worksOnPurchases ? "andamento" : "minhas"); }
+      setSuppliers(result.suppliers);
+      setBrands(result.brands.map((name) => ({ name })));
     } catch (problem) { setError(problemText(problem, "Não foi possível carregar os pedidos.")); }
   }, []);
   useEffect(() => { load(); }, [load]);
-  const orders = useMemo(() => (data?.orders ?? []).filter((order) => tab === "acao" ? needsMe(order.actions) : tab === "minhas" ? order.requesterId === authUser.id : tab === "andamento" ? !TERMINAL.includes(order.status) : TERMINAL.includes(order.status)), [data, tab, authUser.id]);
-  const count = (value: Tab) => (data?.orders ?? []).filter((order) => value === "acao" ? needsMe(order.actions) : value === "minhas" ? order.requesterId === authUser.id : value === "andamento" ? !TERMINAL.includes(order.status) : TERMINAL.includes(order.status)).length;
+
+  // Base única de fornecedores e marcas (a mesma do cadastro de Produtos).
+  const catalog = useMemo<Catalog>(() => ({
+    suppliers, brands,
+    createSupplier: async (name) => {
+      const result = await api<{ option: CatalogOption }>("/api/catalog", jsonBody("POST", { kind: "SUPPLIER", name }));
+      setSuppliers((current) => current.some((row) => row.id === result.option.id) ? current : [...current, result.option].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
+      return result.option;
+    },
+    createBrand: async (name) => {
+      const result = await api<{ option: CatalogOption }>("/api/catalog", jsonBody("POST", { kind: "BRAND", name }));
+      setBrands((current) => current.some((row) => row.name === result.option.name) ? current : [...current, result.option].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
+      return result.option;
+    },
+  }), [suppliers, brands]);
+
+  const inTab = useCallback((order: OrderRow, value: Tab) => value === "acao" ? order.needsMe : value === "ativas" ? !isTerminalOrder(order.status) : isTerminalOrder(order.status), []);
+  const fronts = useMemo(() => [...new Map((data?.orders ?? []).map((order) => [order.serviceFrontId, order.front])).entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")), [data]);
+  const branches = useMemo(() => [...new Set((data?.orders ?? []).map((order) => order.branch).filter((value): value is string => Boolean(value)))].sort(), [data]);
+  const departments = useMemo(() => [...new Set((data?.orders ?? []).map((order) => order.department).filter((value): value is string => Boolean(value)))].sort(), [data]);
+  // Filtros combináveis (AND): texto, situação geral, situações especiais, frente, filial e período.
+  const orders = useMemo(() => {
+    const key = normalize(query.trim());
+    return (data?.orders ?? []).filter((order) => {
+      if (!inTab(order, tab)) return false;
+      if (key && !normalize([order.number, order.title ?? "", order.company ?? "", order.front, order.branch ?? "", order.requesterName, order.createdBy, order.department ?? "", order.equipmentPrefix ?? "", order.searchText].join(" ")).includes(key)) return false;
+      if (status && order.status !== status) return false;
+      if (situations.some((situation) => !matchesSituation(order, situation))) return false;
+      if (frontFilter && String(order.serviceFrontId) !== frontFilter) return false;
+      if (branchFilter && order.branch !== branchFilter) return false;
+      if (from && order.orderDate < from) return false;
+      if (to && order.orderDate > to) return false;
+      return true;
+    });
+  }, [data, tab, query, status, situations, frontFilter, branchFilter, from, to, inTab]);
+  const count = (value: Tab) => (data?.orders ?? []).filter((order) => inTab(order, value)).length;
+  const hasFilters = Boolean(query || status || situations.length || frontFilter || branchFilter || from || to);
+  const clearFilters = () => { setQuery(""); setStatus(""); setSituations([]); setFrontFilter(""); setBranchFilter(""); setFrom(""); setTo(""); };
+  const toggleSituation = (value: SituationFilter) => setSituations((current) => current.includes(value) ? current.filter((row) => row !== value) : [...current, value]);
+  const statusOptions = tab === "historico" ? HISTORY_STATUSES : tab === "ativas" ? ACTIVE_STATUSES : [...ACTIVE_STATUSES, ...HISTORY_STATUSES];
 
   return (
     <>
       <div className="page-heading module-heading">
-        <div><p className="eyebrow">COMPRAS</p><h1>Solicitação de Pedidos</h1><span>Pedido de compra externa: aprovação, cotação com orçamentos, pagamento, envio e recebimento com entrada no estoque.</span></div>
+        <div><p className="eyebrow">COMPRAS</p><h1>Solicitação de Pedidos</h1><span>Pedido de compra externa: aprovação e cotação item a item, pagamento, envio e recebimento com entrada no estoque.</span></div>
         {data?.canRequest && <div className="heading-actions"><button className="primary" onClick={() => setCreating(true)}>＋ Novo pedido</button></div>}
       </div>
-      <article className="panel module-panel equipment-management-panel">
-        <div className="main-tabs secondary-module-nav" role="tablist">
-          <button type="button" className={tab === "acao" ? "active" : ""} onClick={() => setTab("acao")}>Precisam da minha ação <b className="nav-badge soft">{count("acao")}</b></button>
-          <button type="button" className={tab === "minhas" ? "active" : ""} onClick={() => setTab("minhas")}>Minhas solicitações <b className="nav-badge soft">{count("minhas")}</b></button>
-          {data?.worksOnPurchases && <button type="button" className={tab === "andamento" ? "active" : ""} onClick={() => setTab("andamento")}>Em andamento <b className="nav-badge soft">{count("andamento")}</b></button>}
-          <button type="button" className={tab === "historico" ? "active" : ""} onClick={() => setTab("historico")}>Histórico</button>
-        </div>
-        {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
-        {!data && !error ? <div className="page-loading"><span /><p>Carregando pedidos...</p></div> : (
-          <div className="table-scroll">
-            <table className="purchase-table">
-              <thead><tr><th>Pedido</th><th title="Solicitante · frente">Solicitante</th><th>Itens</th><th>Total</th><th>Situação</th><th /></tr></thead>
-              <tbody>{orders.map((order) => (
-                <tr key={order.id}>
-                  <td><strong>{order.number}</strong><small className="table-sub">{brDateTime(order.requestedAt)}</small></td>
-                  <td>{order.requester}<small className="table-sub">{order.front}</small></td>
-                  <td>{order.itemCount} item(ns)<small className="table-sub">{order.itemsPreview.join(" · ")}{order.itemCount > 3 ? " …" : ""}</small></td>
-                  <td>{order.total === null ? "—" : moneyFormat.format(order.total)}</td>
-                  <td><span className={`status-pill ${STATUS_TONE[order.status]}`}>{order.statusLabel}</span>{needsMe(order.actions) && <small className="table-sub">aguarda você</small>}</td>
-                  <td><div className="equipment-row-actions"><button onClick={() => setViewing(order.id)}>Abrir</button></div></td>
-                </tr>
-              ))}</tbody>
-            </table>
-            {orders.length === 0 && <div className="empty-state">Nenhum pedido nesta aba.</div>}
+      <div className="main-tabs secondary-module-nav" role="tablist">
+        <button type="button" className={tab === "ativas" ? "active" : ""} onClick={() => { setTab("ativas"); setStatus(""); }}>Ativas <b className="nav-badge soft">{count("ativas")}</b></button>
+        <button type="button" className={tab === "acao" ? "active" : ""} onClick={() => { setTab("acao"); setStatus(""); }}>Precisam da minha ação <b className="nav-badge soft">{count("acao")}</b></button>
+        <button type="button" className={tab === "historico" ? "active" : ""} onClick={() => { setTab("historico"); setStatus(""); }}>Histórico <b className="nav-badge soft">{count("historico")}</b></button>
+      </div>
+      {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
+      <article className="panel module-panel">
+        <div className="module-filters-grid">
+          <label className="page-search span-wide"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar nº, título, solicitante, departamento, equipamento ou item..." /></label>
+          <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos os status</option>{statusOptions.map((value) => <option key={value} value={value}>{ORDER_STATUS_LABELS[value]}</option>)}</select></label>
+          {fronts.length > 1 && <label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}><option value="">Todas</option>{fronts.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
+          {branches.length > 0 && <label>Filial<select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">Todas</option>{branches.map((value) => <option key={value}>{value}</option>)}</select></label>}
+          <div className="date-range"><label>De<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>Até<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></div>
+          {hasFilters && <button type="button" className="secondary clear-filters" onClick={clearFilters}>Limpar filtros</button>}
+          <div className="po-situation-chips" role="group" aria-label="Situação do pedido">
+            {SITUATIONS.map((value) => <button key={value} type="button" className={situations.includes(value) ? "selected" : ""} aria-pressed={situations.includes(value)} onClick={() => toggleSituation(value)}>{SITUATION_FILTER_LABELS[value]}</button>)}
           </div>
+        </div>
+        {!data && !error ? <div className="page-loading"><span /><p>Carregando pedidos...</p></div> : (
+          <>
+            <div className="material-card-grid">{orders.map((order) => <PurchaseCard key={order.id} order={order} open={() => setViewing(order.id)} />)}</div>
+            {orders.length === 0 && <div className="empty-state">Nenhum pedido {tab === "historico" ? "no histórico" : "nesta aba"}{hasFilters ? " com estes filtros" : ""}.{hasFilters && <button type="button" className="secondary" onClick={clearFilters}>Limpar filtros</button>}</div>}
+          </>
         )}
       </article>
-      {creating && data && <CreatePurchaseModal fronts={data.requestFronts} close={() => setCreating(false)} saved={async (message) => { setCreating(false); await load(); flash(message); }} />}
-      {viewing !== null && data && <PurchaseDetailModal id={viewing} suppliers={data.suppliers} close={() => setViewing(null)} changed={load} flash={flash} />}
+      {creating && data && <CreatePurchaseModal data={data} departments={departments} branches={branches} close={() => setCreating(false)} saved={async (message, id) => { setCreating(false); await load(); flash(message); setViewing(id); }} />}
+      {viewing !== null && data && <PurchaseDetailModal id={viewing} catalog={catalog} close={() => setViewing(null)} changed={load} flash={flash} authUserId={authUser.id} />}
     </>
   );
 }
 
-type DraftItem = { key: string; mode: "PRODUCT" | "MANUAL"; product: ProductOption | null; description: string; reference: string; quantity: string; fiscalUnit: string };
-const newDraft = (): DraftItem => ({ key: crypto.randomUUID(), mode: "PRODUCT", product: null, description: "", reference: "", quantity: "", fiscalUnit: DEFAULT_FISCAL_UNIT });
+function PurchaseCard({ order, open }: { order: OrderRow; open: () => void }) {
+  return (
+    <article className={`material-card po-card accent-${CARD_ACCENT[order.status]}`}>
+      <header className="task-card-head">
+        <span className="task-card-id">{order.number}</span>
+        {order.company && <span className="po-company">{order.company}</span>}
+        <h3><button type="button" className="task-title-link" onClick={open}>{order.title || `Pedido ${order.number}`}</button></h3>
+        <div className="task-card-badges">
+          <span className={`status-pill ${ORDER_TONE[order.status]}`}>{order.statusLabel}</span>
+          {order.urgency === "URGENTE" && <span className="status-pill red po-urgent">Urgente</span>}
+          {order.urgency === "ALTA" && <span className="status-pill orange">Urgência alta</span>}
+          {order.needsMe && <span className="status-pill blue">Aguarda você</span>}
+        </div>
+      </header>
+      <div className="task-card-body">
+        <p className="material-card-route"><strong>{order.front}</strong>{order.branch ? ` · Filial ${order.branch}` : ""}{order.equipmentPrefix ? ` · ${order.equipmentPrefix}` : ""}</p>
+        <dl>
+          <div><dt>Data de criação</dt><dd>{brDay(order.orderDate)}</dd></div>
+          <div><dt>Itens</dt><dd>{order.itemCount} item(ns){order.activeItemCount !== order.itemCount ? ` · ${order.activeItemCount} seguem` : ""}</dd></div>
+          <div><dt>Solicitante</dt><dd title={order.requesterName}>{order.requesterName}</dd></div>
+          <div><dt>Criado por</dt><dd title={order.createdBy}>{order.createdBy}</dd></div>
+          <div><dt>Departamento</dt><dd>{order.department ?? "—"}</dd></div>
+          <div><dt>Total</dt><dd>{order.total === null ? "—" : moneyFormat.format(order.total)}</dd></div>
+        </dl>
+      </div>
+      <footer className="task-card-footer"><button onClick={open}>Ver detalhes</button></footer>
+    </article>
+  );
+}
 
-function CreatePurchaseModal({ fronts, close, saved }: { fronts: Front[]; close: () => void; saved: (message: string) => Promise<void> }) {
+// ------------------------------------------------------------------------------ criação
+
+type DraftItem = { key: string; mode: "PRODUCT" | "MANUAL"; product: ProductOption | null; description: string; reference: string; notes: string; quantity: string; fiscalUnit: string };
+const newDraft = (): DraftItem => ({ key: crypto.randomUUID(), mode: "PRODUCT", product: null, description: "", reference: "", notes: "", quantity: "", fiscalUnit: DEFAULT_FISCAL_UNIT });
+
+async function uploadFiles(orderId: number, kind: Attachment["kind"], files: File[]) {
+  const form = new FormData();
+  form.append("kind", kind);
+  files.forEach((file) => form.append("files", file));
+  return api<{ message: string }>(`/api/purchase-orders/${orderId}/attachments`, { method: "POST", body: form });
+}
+
+function CreatePurchaseModal({ data, departments, branches, close, saved }: { data: ListResponse; departments: string[]; branches: string[]; close: () => void; saved: (message: string, id: number) => Promise<void> }) {
+  const fronts = data.requestFronts;
   const [frontId, setFrontId] = useState(fronts.length === 1 ? String(fronts[0].id) : "");
+  const [company, setCompany] = useState<string>(PURCHASE_COMPANIES[0]);
+  const [branch, setBranch] = useState("");
+  const [title, setTitle] = useState("");
+  const [department, setDepartment] = useState("");
+  const [orderDate, setOrderDate] = useState(localToday());
+  const [requesterName, setRequesterName] = useState(data.userName);
+  const [urgency, setUrgency] = useState<Urgency>("NORMAL");
+  const [equipment, setEquipment] = useState<EquipmentOption | null>(null);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<DraftItem[]>([newDraft()]);
+  const [photos, setPhotos] = useState<Array<{ file: File; url: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const photoInput = useRef<HTMLInputElement>(null);
+  const photoUrls = useRef<string[]>([]);
+  useEffect(() => () => photoUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   const patch = (key: string, value: Partial<DraftItem>) => setItems((current) => current.map((item) => (item.key === key ? { ...item, ...value } : item)));
+  const addPhotos = (files: FileList | null) => {
+    if (!files?.length) return;
+    const added = [...files].map((file) => ({ file, url: URL.createObjectURL(file) }));
+    photoUrls.current.push(...added.map((photo) => photo.url));
+    setPhotos((current) => [...current, ...added]);
+    if (photoInput.current) photoInput.current.value = "";
+  };
+  const removePhoto = (url: string) => { URL.revokeObjectURL(url); setPhotos((current) => current.filter((photo) => photo.url !== url)); };
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (items.some((item) => item.mode === "PRODUCT" && !item.product)) { setError("Escolha o produto de cada item (ou mude para “Item manual”)."); return; }
     setBusy(true); setError("");
     try {
-      const result = await api<{ message: string }>("/api/purchase-orders", jsonBody("POST", {
-        serviceFrontId: Number(frontId), notes,
+      const result = await api<{ id: number; message: string }>("/api/purchase-orders", jsonBody("POST", {
+        serviceFrontId: Number(frontId), company, branch, title, department, orderDate, requesterName, urgency, equipmentId: equipment?.id ?? null, notes,
         items: items.map((item) => item.mode === "PRODUCT"
-          ? { productId: item.product!.id, description: item.product!.name, reference: item.product!.references[0] ?? item.product!.reference ?? "", quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }
-          : { description: item.description, reference: item.reference, quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }),
+          ? { productId: item.product!.id, description: item.product!.name, reference: item.product!.references[0] ?? item.product!.reference ?? "", notes: item.notes, quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }
+          : { description: item.description, reference: item.reference, notes: item.notes, quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }),
       }));
-      await saved(result.message);
+      let message = result.message;
+      if (photos.length) {
+        try { await uploadFiles(result.id, "PHOTO", photos.map((photo) => photo.file)); message += ` ${photos.length} foto(s) anexada(s).`; }
+        catch (problem) { message += ` Atenção: as fotos não foram anexadas (${problemText(problem, "falha no envio")}) — anexe pelo detalhe do pedido.`; }
+      }
+      await saved(message, result.id);
     } catch (problem) { setError(problemText(problem, "Não foi possível registrar o pedido.")); }
     finally { setBusy(false); }
   }
   return (
-    <div className="fleet-modal-backdrop" role="presentation"><form className="fleet-modal" onSubmit={submit}>
-      <header><div><p>SOLICITAÇÃO DE PEDIDOS</p><h2>Novo pedido de compra</h2><span>Depois de enviado, o pedido aguarda aprovação.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+    <div className="fleet-modal-backdrop" role="presentation"><form className="fleet-modal po-create" onSubmit={submit}>
+      <header><div><p>SOLICITAÇÃO DE PEDIDOS</p><h2>Novo pedido de compra</h2><span>Depois de enviado, cada item aguarda aprovação.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
       <div className="fleet-modal-body">
-        <div className="fleet-form-grid">
-          {fronts.length === 1
-            ? <label className="span-2">Frente de serviço / Obra / Setor<input readOnly value={fronts[0].name} /></label>
-            : <label className="span-2">Frente de serviço / Obra / Setor *<select required value={frontId} onChange={(event) => setFrontId(event.target.value)}><option value="" disabled>Selecione para qual frente é este pedido</option>{fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
-        </div>
         <section className="fleet-form-section">
-          <div className="fleet-section-title"><h3>Itens</h3><button type="button" onClick={() => setItems([...items, newDraft()])}>＋ ADICIONAR ITEM</button></div>
+          <div className="fleet-section-title"><h3>Cabeçalho do pedido</h3></div>
+          <div className="fleet-form-grid po-header-grid">
+            <label>Pedido Nº<input readOnly value={data.nextNumber} title="Gerado automaticamente ao salvar (número previsto)" /></label>
+            <label>Empresa *<select required value={company} onChange={(event) => setCompany(event.target.value)}>{PURCHASE_COMPANIES.map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label>Filial<input value={branch} list="po-branches" onChange={(event) => setBranch(event.target.value)} placeholder="Ex.: Belém" /><datalist id="po-branches">{branches.map((value) => <option key={value} value={value} />)}</datalist></label>
+            <label>Data *<input type="date" required value={orderDate} onChange={(event) => setOrderDate(event.target.value)} /></label>
+            <label className="span-2">Descrição do pedido *<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Peças para revisão da escavadeira" /></label>
+            <label>Departamento<input value={department} list="po-departments" onChange={(event) => setDepartment(event.target.value)} placeholder="Ex.: Manutenção" /><datalist id="po-departments">{departments.map((value) => <option key={value} value={value} />)}</datalist></label>
+            <label>Urgência *<select required value={urgency} onChange={(event) => setUrgency(event.target.value as Urgency)}>{URGENCIES.map((value) => <option key={value} value={value}>{URGENCY_LABELS[value]}</option>)}</select></label>
+            <label>Solicitante *<input required value={requesterName} onChange={(event) => setRequesterName(event.target.value)} /></label>
+            {fronts.length === 1
+              ? <label>Frente de serviço / Obra / Setor<input readOnly value={fronts[0].name} /></label>
+              : <label>Frente de serviço / Obra / Setor *<select required value={frontId} onChange={(event) => setFrontId(event.target.value)}><option value="" disabled>Selecione a frente</option>{fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
+            <label className="span-2">Equipamento (opcional)<EquipmentPicker options={data.equipment} value={equipment} onPick={setEquipment} /></label>
+            {equipment && <><label>Chassi<input readOnly value={equipment.chassis ?? "—"} /></label><label>Ano<input readOnly value={equipment.year ?? "—"} /></label></>}
+          </div>
+        </section>
+        <section className="fleet-form-section">
+          <div className="fleet-section-title"><h3>Itens <small>({items.length})</small></h3></div>
           {items.map((item, index) => (
             <div className="fleet-order-editor" key={item.key}>
-              <header><b>Item {index + 1}</b><div className="material-item-mode" role="group" aria-label="Tipo do item"><button type="button" className={item.mode === "PRODUCT" ? "active" : ""} onClick={() => patch(item.key, { mode: "PRODUCT" })}>Produto do estoque</button><button type="button" className={item.mode === "MANUAL" ? "active" : ""} onClick={() => patch(item.key, { mode: "MANUAL", product: null })}>Item manual</button></div>{items.length > 1 && <button type="button" onClick={() => setItems(items.filter((row) => row.key !== item.key))}>Remover</button>}</header>
+              <header><b>Item {index + 1}</b><div className="material-item-mode" role="group" aria-label="Tipo do item"><button type="button" className={item.mode === "PRODUCT" ? "active" : ""} onClick={() => patch(item.key, { mode: "PRODUCT" })}>Produto do estoque</button><button type="button" className={item.mode === "MANUAL" ? "active" : ""} onClick={() => patch(item.key, { mode: "MANUAL", product: null })}>Item manual (compra)</button></div>{items.length > 1 && <button type="button" onClick={() => setItems(items.filter((row) => row.key !== item.key))}>Remover</button>}</header>
               <div className="fleet-form-grid">
                 {item.mode === "PRODUCT" ? <label className="span-2">Produto *<ProductPicker value={item.product} frontId={Number(frontId) || null} onPick={(product) => patch(item.key, { product })} /></label> : <>
                   <label className="span-2">Descrição do item *<input required value={item.description} onChange={(event) => patch(item.key, { description: event.target.value })} /></label>
                   <label>Referência<input value={item.reference} onChange={(event) => patch(item.key, { reference: event.target.value })} /></label>
                 </>}
                 <label>Quantidade *<input required inputMode="decimal" value={item.quantity} onChange={(event) => patch(item.key, { quantity: event.target.value })} /></label>
-                <label>Unidade fiscal *<select required value={item.fiscalUnit} onChange={(event) => patch(item.key, { fiscalUnit: event.target.value })}>{FISCAL_UNITS.map(([code, label]) => <option key={code} value={code}>{code} — {label}</option>)}</select></label>
+                <label>Unidade *<select required value={item.fiscalUnit} onChange={(event) => patch(item.key, { fiscalUnit: event.target.value })}>{FISCAL_UNITS.map(([code, label]) => <option key={code} value={code}>{code} — {label}</option>)}</select></label>
+                <label className="span-2">Observações<input value={item.notes} onChange={(event) => patch(item.key, { notes: event.target.value })} placeholder="Opcional (aplicação, medida, cor...)" /></label>
               </div>
               {item.mode === "MANUAL" && <small className="material-item-hint">Item manual (não cadastrado) só é marcado como recebido, sem entrada no estoque.</small>}
             </div>
           ))}
+          <button type="button" className="secondary po-add-item" onClick={() => setItems([...items, newDraft()])}>＋ Adicionar item</button>
+        </section>
+        <section className="fleet-form-section">
+          <div className="fleet-section-title"><h3>Fotos <small>(opcional)</small></h3><button type="button" onClick={() => photoInput.current?.click()}>＋ ANEXAR FOTO(S)</button><input ref={photoInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => addPhotos(event.target.files)} /></div>
+          {photos.length === 0 ? <p className="stock-summary">Foto da peça quebrada, do problema ou referência visual do que está sendo pedido.</p> : (
+            <div className="po-photo-grid">{photos.map((photo) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <figure key={photo.url}><img src={photo.url} alt={photo.file.name} /><figcaption>{photo.file.name}<button type="button" className="link-button" onClick={() => removePhoto(photo.url)}>remover</button></figcaption></figure>
+            ))}</div>
+          )}
         </section>
         <label className="fleet-notes">Observações / justificativa<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
         {error && <div className="equipment-form-error"><span>!</span><strong>{error}</strong></div>}
@@ -149,43 +307,57 @@ function CreatePurchaseModal({ fronts, close, saved }: { fronts: Front[]; close:
   );
 }
 
-function Steps({ order }: { order: Detail }) {
-  const steps: Array<{ label: string; done: string | null; who: string | null }> = [
-    { label: "Solicitado", done: order.requestedAt, who: order.requester },
-    { label: "Aprovado / Em cotação", done: order.approvedAt, who: order.approvedByName },
-    { label: "Análise de pagamento", done: order.paymentRequestedAt, who: order.paymentRequestedByName },
-    { label: "Pago", done: order.paidAt, who: order.paidByName },
-    { label: "Enviado", done: order.dispatchedAt, who: order.dispatchedByName },
-    { label: "Recebido", done: order.receivedAt, who: order.receivedByName },
-  ];
-  const current = steps.findIndex((step) => !step.done);
+// ------------------------------------------------------------------------------ detalhe
+
+type BatchButton = { action: ItemAction; label: string; from: ItemStatus; prompt?: string; optionalPrompt?: string; primary?: boolean };
+const BATCH_BUTTONS: BatchButton[] = [
+  { action: "REJECT", label: "Recusar", from: "AGUARDANDO_APROVACAO", prompt: "Motivo da recusa:" },
+  { action: "APPROVE", label: "Aprovar", from: "AGUARDANDO_APROVACAO", primary: true },
+  { action: "REMOVE", label: "Remover da cotação", from: "EM_COTACAO", prompt: "Por que o item foi removido (orçamento não atendeu)?" },
+  { action: "SEND_TO_PAYMENT", label: "Enviar para pagamento", from: "EM_COTACAO", primary: true },
+  { action: "CONFIRM_PAYMENT", label: "Confirmar pagamento", from: "ANALISE_PAGAMENTO", optionalPrompt: "Observação do pagamento (opcional):", primary: true },
+  { action: "DISPATCH", label: "Marcar como enviado", from: "PAGO", optionalPrompt: "Observação do envio (transportadora, previsão...) — opcional:", primary: true },
+];
+
+function QuantityCell({ item }: { item: Item }) {
+  const changed = item.originalQuantity !== null && item.originalQuantity !== item.quantity;
+  if (item.status === "REMOVIDO") return (
+    <><s>{qtyFormat.format(item.quantity)} {item.fiscalUnit}</s> <span className="status-pill gray">Removido</span>
+      <small className="table-sub">{item.removedByName ?? "—"} · {brDateTime(item.removedAt)}{item.removedReason ? ` · ${item.removedReason}` : ""}</small></>
+  );
+  if (!changed) return <>{qtyFormat.format(item.quantity)} {item.fiscalUnit}</>;
   return (
-    <ol className="po-steps">
-      {steps.map((step, index) => (
-        <li key={step.label} className={step.done ? "done" : index === current && !["RECUSADO", "CANCELADO"].includes(order.status) ? "current" : ""} title={step.done ? `${brDateTime(step.done)} · ${step.who ?? "—"}` : undefined}>
-          {step.done ? "✓" : index + 1}. {index === 1 && !step.done && order.status === "AGUARDANDO_APROVACAO" ? "Aguardando aprovação" : step.label}
-        </li>
-      ))}
-      {order.status === "RECUSADO" && <li className="rejected">Recusado por {order.rejectedByName ?? "—"}: {order.rejectReason}</li>}
-      {order.status === "CANCELADO" && <li className="rejected">Cancelado por {order.cancelledByName ?? "—"}: {order.cancelReason}</li>}
-    </ol>
+    <span className="po-qty-changed" title="Quantidade alterada pelo comprador na cotação">
+      <small>Pedido: <s>{qtyFormat.format(item.originalQuantity!)}</s></small><strong>Cotação: {qtyFormat.format(item.quantity)} {item.fiscalUnit}</strong>
+      <small className="table-sub">{item.quantityChangedByName ?? "—"} · {brDateTime(item.quantityChangedAt)}</small>
+    </span>
   );
 }
 
-function PurchaseDetailModal({ id, suppliers, close, changed, flash }: { id: number; suppliers: Supplier[]; close: () => void; changed: () => Promise<void>; flash: (message: string) => void }) {
+type QuoteDraft = { unitPrice: string; supplier: CatalogOption | null; brand: CatalogOption | null };
+
+function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }: { id: number; catalog: Catalog; close: () => void; changed: () => Promise<void>; flash: (message: string) => void; authUserId: number }) {
   const [order, setOrder] = useState<Detail | null>(null);
-  const [quote, setQuote] = useState<Record<number, { unitPrice: string; supplierId: string; brand: string }>>({});
+  const [quote, setQuote] = useState<Record<number, QuoteDraft>>({});
   const [buyerNotes, setBuyerNotes] = useState("");
+  const [selected, setSelected] = useState<number[]>([]);
   const [receiving, setReceiving] = useState<Item | null>(null);
+  const [historyOf, setHistoryOf] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const fileInput = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     try {
       const result = await api<{ order: Detail }>(`/api/purchase-orders/${id}`);
-      setOrder(result.order);
-      setBuyerNotes(result.order.buyerNotes ?? "");
-      setQuote(Object.fromEntries(result.order.items.map((item) => [item.id, { unitPrice: item.unitPrice === null ? "" : String(item.unitPrice), supplierId: item.supplierId ? String(item.supplierId) : item.product?.supplierId ? String(item.product.supplierId) : "", brand: item.brand ?? item.product?.brand ?? "" }])));
+      const detail = result.order;
+      setOrder(detail);
+      setBuyerNotes(detail.buyerNotes ?? "");
+      setSelected((current) => current.filter((itemId) => detail.items.some((item) => item.id === itemId && isActiveItem(item.status) && item.status !== "RECEBIDO")));
+      setQuote(Object.fromEntries(detail.items.map((item) => {
+        const supplierId = item.supplierId ?? item.product?.supplierId ?? null;
+        const supplierName = item.supplierName ?? item.product?.supplier ?? null;
+        const brand = item.brand ?? item.product?.brand ?? null;
+        return [item.id, { unitPrice: item.unitPrice === null ? "" : String(item.unitPrice).replace(".", ","), supplier: supplierId && supplierName ? { id: supplierId, name: supplierName } : null, brand: brand ? { name: brand } : null }];
+      })));
     } catch (problem) { setError(problemText(problem, "Não foi possível carregar o pedido.")); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
@@ -196,82 +368,161 @@ function PurchaseDetailModal({ id, suppliers, close, changed, flash }: { id: num
     catch (problem) { setError(problemText(problem, "Não foi possível atualizar o pedido.")); return false; }
     finally { setBusy(false); }
   }
-  const quoteItems = () => Object.entries(quote).map(([itemId, value]) => ({ id: Number(itemId), unitPrice: value.unitPrice, supplierId: value.supplierId, brand: value.brand }));
-  async function upload(files: FileList | null) {
+  const patchQuote = (itemId: number, value: Partial<QuoteDraft>) => setQuote((current) => ({ ...current, [itemId]: { ...current[itemId], ...value } }));
+  const quoteItems = () => (order?.items ?? []).filter((item) => item.status === "EM_COTACAO").map((item) => ({ id: item.id, unitPrice: quote[item.id]?.unitPrice ?? "", supplierId: quote[item.id]?.supplier?.id ?? null, brand: quote[item.id]?.brand?.name ?? "" }));
+  async function upload(kind: Attachment["kind"], files: FileList | null) {
     if (!files?.length) return;
-    const form = new FormData();
-    [...files].forEach((file) => form.append("files", file));
     setBusy(true); setError("");
-    try { flash((await api<{ message: string }>(`/api/purchase-orders/${id}/attachments`, { method: "POST", body: form })).message); await load(); }
+    try { flash((await uploadFiles(id, kind, [...files])).message); await load(); }
     catch (problem) { setError(problemText(problem, "Não foi possível anexar.")); }
-    finally { setBusy(false); if (fileInput.current) fileInput.current.value = ""; }
+    finally { setBusy(false); }
   }
   async function removeAttachment(attachmentId: number) {
-    if (!window.confirm("Remover este orçamento?")) return;
+    if (!window.confirm("Remover este anexo?")) return;
     try { await api(`/api/purchase-orders/attachments/${attachmentId}`, { method: "DELETE" }); await load(); }
     catch (problem) { setError(problemText(problem, "Não foi possível remover.")); }
   }
-  const withPrompt = (message: string, key: string, action: string, required = true) => {
-    const value = window.prompt(message);
-    if (value === null || (required && !value.trim())) return;
-    act({ action, [key]: value });
-  };
+  async function runBatch(button: BatchButton, itemIds: number[]) {
+    const body: Record<string, unknown> = { action: button.action, itemIds };
+    if (button.prompt) { const value = window.prompt(button.prompt); if (value === null || !value.trim()) return; body.reason = value; }
+    if (button.optionalPrompt) { const value = window.prompt(button.optionalPrompt); if (value === null) return; body.notes = value; }
+    if (button.action === "SEND_TO_PAYMENT") { body.items = quoteItems(); body.buyerNotes = buyerNotes; }
+    if (await act(body)) setSelected([]);
+  }
+  async function adjustQuantity(item: Item) {
+    const original = item.originalQuantity ?? item.quantity;
+    const value = window.prompt(`Nova quantidade de ${item.description} (pedido original: ${qtyFormat.format(original)} ${item.fiscalUnit}; só pode reduzir):`, qtyFormat.format(item.quantity));
+    if (value === null) return;
+    const reason = window.prompt("Motivo (opcional, ex.: fornecedor só tinha 6):") ?? "";
+    await act({ action: "ADJUST_QUANTITY", itemId: item.id, quantity: value, reason });
+  }
+
+  const stageCounts = useMemo(() => {
+    const counts = new Map<ItemStatus, number>();
+    for (const item of order?.items ?? []) counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+    return [...counts.entries()];
+  }, [order]);
+  const actions = order?.actions;
+  const canSelect = Boolean(actions && BATCH_BUTTONS.some((button) => actions[button.action]));
+  const selectable = (order?.items ?? []).filter((item) => isActiveItem(item.status) && item.status !== "RECEBIDO");
+  const allSelected = selectable.length > 0 && selectable.every((item) => selected.includes(item.id));
+  const quoting = Boolean(actions?.QUOTE);
+  const photos = (order?.attachments ?? []).filter((file) => file.kind === "PHOTO");
+  const quoteImages = (order?.attachments ?? []).filter((file) => file.kind === "QUOTE_IMAGE");
+  const quoteDocs = (order?.attachments ?? []).filter((file) => file.kind === "QUOTE_DOCUMENT");
 
   return (
     <div className="fleet-modal-backdrop" role="presentation"><section className="fleet-modal po-detail">
-      <header><div><p>SOLICITAÇÃO DE PEDIDOS</p><h2>{order ? `${order.number} · ${order.statusLabel}` : "Carregando..."}</h2><span>{order ? `${order.requester ?? "—"} · ${order.front} · ${brDateTime(order.requestedAt)}` : ""}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+      <header><div><p>SOLICITAÇÃO DE PEDIDOS{order?.company ? ` · ${order.company}` : ""}</p><h2>{order ? `${order.number} · ${order.title ?? ""}` : "Carregando..."}</h2><span>{order ? `${order.requesterName ?? "—"} · ${order.front}${order.branch ? ` · Filial ${order.branch}` : ""} · ${brDay(order.orderDate)}` : ""}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
       <div className="fleet-modal-body">
         {!order && !error && <div className="page-loading"><span /><p>Carregando...</p></div>}
         {order && <>
-          <Steps order={order} />
+          <div className="po-status-line">
+            <span className={`status-pill ${ORDER_TONE[order.status]}`}>{order.statusLabel}</span>
+            {order.urgency !== "NORMAL" && <span className={`status-pill ${order.urgency === "URGENTE" ? "red" : order.urgency === "ALTA" ? "orange" : "gray"}`}>Urgência {URGENCY_LABELS[order.urgency].toLowerCase()}</span>}
+            {stageCounts.map(([itemStatus, total]) => <span key={itemStatus} className="po-stage-count">{ITEM_STATUS_LABELS[itemStatus]}: <b>{total}</b></span>)}
+          </div>
+          {order.cancelledAt && <p className="po-cancelled">Cancelado por {order.cancelledByName ?? "—"} em {brDateTime(order.cancelledAt)}: {order.cancelReason}</p>}
+          <dl className="po-header-info">
+            <div><dt>Pedido Nº</dt><dd>{order.number}</dd></div>
+            <div><dt>Empresa</dt><dd>{order.company ?? "—"}</dd></div>
+            <div><dt>Frente / Filial</dt><dd>{order.front}{order.branch ? ` · ${order.branch}` : ""}</dd></div>
+            <div><dt>Data</dt><dd>{brDay(order.orderDate)}</dd></div>
+            <div><dt>Departamento</dt><dd>{order.department ?? "—"}</dd></div>
+            <div><dt>Solicitante</dt><dd>{order.requesterName ?? "—"}</dd></div>
+            <div><dt>Criado por</dt><dd>{order.createdByName ?? "—"} · {brDateTime(order.requestedAt)}</dd></div>
+            <div><dt>Equipamento</dt><dd>{order.equipment ? `${order.equipment.prefix} · ${order.equipment.description}` : "—"}</dd></div>
+            {order.equipment && <><div><dt>Chassi</dt><dd>{order.equipment.chassis ?? "—"}</dd></div><div><dt>Ano</dt><dd>{order.equipment.year ?? "—"}</dd></div></>}
+          </dl>
           {order.notes && <p className="stock-summary">Observações do solicitante: {order.notes}</p>}
+
+          {canSelect && (
+            <div className="po-bulk-bar">
+              <label><input type="checkbox" checked={allSelected} disabled={selectable.length === 0} onChange={(event) => setSelected(event.target.checked ? selectable.map((item) => item.id) : [])} /> Selecionar todos</label>
+              <span>{selected.length ? `${selected.length} selecionado(s)` : "Marque os itens e escolha a ação"}</span>
+              <div>{BATCH_BUTTONS.filter((button) => actions![button.action]).map((button) => {
+                const eligible = order.items.filter((item) => selected.includes(item.id) && item.status === button.from).map((item) => item.id);
+                return <button key={button.action} type="button" className={button.primary ? "primary" : "secondary"} disabled={busy || eligible.length === 0} title={`Aplica aos itens selecionados em “${ITEM_STATUS_LABELS[button.from]}”`} onClick={() => runBatch(button, eligible)}>{button.label}{eligible.length ? ` (${eligible.length})` : ""}</button>;
+              })}</div>
+            </div>
+          )}
           <div className="table-scroll">
             <table className="purchase-items-table">
-              <thead><tr><th>Item</th><th>Qtd.</th><th title="Fornecedor · marca (cotação)">Fornecedor / marca</th><th title="Valor unitário · total">Valor</th><th>Recebimento</th></tr></thead>
-              <tbody>{order.items.map((item) => (
-                <tr key={item.id}>
-                  <td><strong>{item.product?.tag ? `${item.product.tag} · ` : ""}{item.description}</strong><small className="table-sub">{item.product ? "Produto do estoque" : "Item manual"}{item.reference ? ` · Ref. ${item.reference}` : ""}</small></td>
-                  <td>{qtyFormat.format(item.quantity)} {item.fiscalUnit}</td>
-                  <td>{order.actions.quote ? (
-                    <div className="po-quote-cell">
-                      <select value={quote[item.id]?.supplierId ?? ""} onChange={(event) => setQuote({ ...quote, [item.id]: { ...quote[item.id], supplierId: event.target.value } })}><option value="">Fornecedor...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select>
-                      <input value={quote[item.id]?.brand ?? ""} placeholder="Marca" onChange={(event) => setQuote({ ...quote, [item.id]: { ...quote[item.id], brand: event.target.value } })} />
-                    </div>
-                  ) : <>{item.supplierName ?? "—"}<small className="table-sub">{item.brand ?? "—"}</small></>}</td>
-                  <td>{order.actions.quote
-                    ? <input inputMode="decimal" value={quote[item.id]?.unitPrice ?? ""} placeholder="R$ unitário" onChange={(event) => setQuote({ ...quote, [item.id]: { ...quote[item.id], unitPrice: event.target.value } })} />
-                    : <>{item.unitPrice === null ? "—" : moneyFormat.format(item.unitPrice)}{item.total !== null && <small className="table-sub">Total {moneyFormat.format(item.total)}</small>}</>}</td>
-                  <td>{item.receivedAt
-                    ? <><span className="status-pill green">Recebido</span><small className="table-sub">{qtyFormat.format(item.receivedQuantity ?? 0)} {item.fiscalUnit}{item.receivedUnitPrice !== null ? ` · ${moneyFormat.format(item.receivedUnitPrice)}` : ""}{item.receivedSupplierName ? ` · ${item.receivedSupplierName}` : ""}</small></>
-                    : order.actions.receive ? <button type="button" className="secondary" onClick={() => setReceiving(item)}>Confirmar recebimento</button> : "—"}</td>
-                </tr>
-              ))}</tbody>
+              <thead><tr>{canSelect && <th aria-label="Selecionar" />}<th>Item</th><th>Qtd.</th><th>Situação</th><th title="Fornecedor · marca (cotação)">Fornecedor / marca</th><th title="Valor unitário · total">Valor</th><th>Recebimento</th></tr></thead>
+              <tbody>{order.items.map((item) => {
+                const editable = quoting && item.status === "EM_COTACAO";
+                const row = quote[item.id];
+                return [
+                  <tr key={item.id} className={!isActiveItem(item.status) ? "po-item-out" : ""}>
+                    {canSelect && <td><input type="checkbox" aria-label={`Selecionar ${item.description}`} disabled={!selectable.includes(item)} checked={selected.includes(item.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((value) => value !== item.id))} /></td>}
+                    <td><strong>{item.product?.tag ? `${item.product.tag} · ` : ""}{item.description}</strong><small className="table-sub">{item.product ? "Produto do estoque" : "Item manual"}{item.reference ? ` · Ref. ${item.reference}` : ""}</small>{item.notes && <small className="table-sub">Obs.: {item.notes}</small>}
+                      <button type="button" className="link-button" onClick={() => setHistoryOf(historyOf === item.id ? null : item.id)}>{historyOf === item.id ? "ocultar histórico" : `histórico (${item.events.length})`}</button></td>
+                    <td><QuantityCell item={item} />{editable && <button type="button" className="link-button" disabled={busy} onClick={() => adjustQuantity(item)}>ajustar qtd.</button>}</td>
+                    <td><span className={`status-pill ${ITEM_TONE[item.status]}`}>{item.statusLabel}</span>{item.status === "RECUSADO" && <small className="table-sub">{item.rejectedByName ?? "—"}: {item.rejectReason}</small>}</td>
+                    <td>{editable ? (
+                      <div className="po-quote-cell">
+                        <CatalogPicker options={catalog.suppliers} value={row?.supplier ?? null} onPick={(supplier) => patchQuote(item.id, { supplier })} onCreate={catalog.createSupplier} placeholder="Fornecedor..." createLabel="Cadastrar novo fornecedor" />
+                        <CatalogPicker options={catalog.brands} value={row?.brand ?? null} onPick={(brand) => patchQuote(item.id, { brand })} onCreate={catalog.createBrand} placeholder="Marca..." createLabel="Cadastrar nova marca" />
+                      </div>
+                    ) : <>{item.supplierName ?? "—"}<small className="table-sub">{item.brand ?? "—"}</small></>}</td>
+                    <td>{editable
+                      ? <input inputMode="decimal" value={row?.unitPrice ?? ""} placeholder="R$ unitário" onChange={(event) => patchQuote(item.id, { unitPrice: event.target.value })} />
+                      : <>{item.unitPrice === null ? "—" : moneyFormat.format(item.unitPrice)}{item.total !== null && <small className="table-sub">Total {moneyFormat.format(item.total)}</small>}</>}</td>
+                    <td>{item.receivedAt
+                      ? <><span className="status-pill green">Recebido</span><small className="table-sub">{qtyFormat.format(item.receivedQuantity ?? 0)} {item.fiscalUnit}{item.receivedUnitPrice !== null ? ` · ${moneyFormat.format(item.receivedUnitPrice)}` : ""}{item.receivedSupplierName ? ` · ${item.receivedSupplierName}` : ""}{item.receivedBrand ? ` · ${item.receivedBrand}` : ""}</small><small className="table-sub">{item.receivedByName ?? "—"} · {brDateTime(item.receivedAt)}</small></>
+                      : item.status === "ENVIADO" && actions?.RECEIVE ? <button type="button" className="secondary" onClick={() => setReceiving(item)}>Confirmar recebimento</button> : "—"}</td>
+                  </tr>,
+                  historyOf === item.id && <tr key={`${item.id}-history`} className="po-item-history-row"><td colSpan={canSelect ? 7 : 6}>
+                    <ol className="po-item-history">{item.events.length === 0 ? <li>Sem registros.</li> : item.events.map((event) => (
+                      <li key={event.id}><time>{brDateTime(event.createdAt)}</time> <b>{event.action}</b>{event.toStatus && event.fromStatus && event.fromStatus !== event.toStatus ? ` (${ITEM_STATUS_LABELS[event.fromStatus as ItemStatus] ?? event.fromStatus} → ${ITEM_STATUS_LABELS[event.toStatus as ItemStatus] ?? event.toStatus})` : ""} · {event.userName ?? "—"}{event.details ? <span> — {event.details}</span> : null}</li>
+                    ))}</ol>
+                  </td></tr>,
+                ];
+              })}</tbody>
             </table>
           </div>
-          <p className="stock-summary">Total: <strong>{order.total === null ? "—" : moneyFormat.format(order.total)}</strong>{order.buyerNotes && !order.actions.quote ? ` · Comprador: ${order.buyerNotes}` : ""}{order.paymentNotes ? ` · Pagamento: ${order.paymentNotes}` : ""}{order.dispatchNotes ? ` · Envio: ${order.dispatchNotes}` : ""}</p>
+          <p className="stock-summary">Total (itens que seguem): <strong>{order.total === null ? "—" : moneyFormat.format(order.total)}</strong>{order.buyerNotes && !quoting ? ` · Comprador: ${order.buyerNotes}` : ""}{order.paymentNotes ? ` · Pagamento: ${order.paymentNotes}` : ""}{order.dispatchNotes ? ` · Envio: ${order.dispatchNotes}` : ""}</p>
+          {quoting && <>
+            <label className="fleet-notes">Observações do comprador<textarea value={buyerNotes} onChange={(event) => setBuyerNotes(event.target.value)} /></label>
+            <div className="equipment-row-actions"><button type="button" className="secondary" disabled={busy} onClick={() => act({ action: "SAVE_QUOTE", items: quoteItems(), buyerNotes })}>Salvar cotação</button></div>
+          </>}
 
-          <section className="fleet-form-section">
-            <div className="fleet-section-title"><h3>Orçamentos</h3>{order.actions.quote && <><button type="button" onClick={() => fileInput.current?.click()} disabled={busy}>＋ ANEXAR ORÇAMENTO</button><input ref={fileInput} type="file" hidden multiple accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => upload(event.target.files)} /></>}</div>
-            {order.attachments.length === 0 ? <p className="stock-summary">Nenhum orçamento anexado.</p> : (
-              <div className="po-attachments">{order.attachments.map((file) => (
-                <span key={file.id}><a href={`/api/purchase-orders/attachments/${file.id}`} target="_blank" rel="noreferrer">{file.contentType === "application/pdf" ? "📄" : "🖼"} {file.fileName}</a>{order.actions.quote && <button type="button" className="link-button" onClick={() => removeAttachment(file.id)}>remover</button>}</span>
-              ))}</div>
-            )}
-            {order.actions.quote && <label className="fleet-notes">Observações do comprador<textarea value={buyerNotes} onChange={(event) => setBuyerNotes(event.target.value)} /></label>}
-          </section>
-          {receiving && <ReceiptCard item={receiving} suppliers={suppliers} busy={busy} cancel={() => setReceiving(null)} confirm={async (body) => { if (await act({ action: "RECEIVE_ITEM", itemId: receiving.id, ...body })) setReceiving(null); }} />}
+          <AttachmentSection title="Fotos do pedido" empty="Nenhuma foto anexada." files={photos} canEdit={Boolean(actions?.PHOTO)} accept="image/jpeg,image/png,image/webp" addLabel="＋ ANEXAR FOTO(S)" busy={busy} upload={(files) => upload("PHOTO", files)} remove={removeAttachment} />
+          <AttachmentSection title="Orçamento por imagem" empty="Nenhum orçamento por imagem (foto/print)." files={quoteImages} canEdit={quoting} accept="image/jpeg,image/png,image/webp" addLabel="＋ ANEXAR IMAGEM" busy={busy} upload={(files) => upload("QUOTE_IMAGE", files)} remove={removeAttachment} />
+          <AttachmentSection title="Orçamento por documento" empty="Nenhum orçamento em documento (PDF, Word, Excel...)." files={quoteDocs} canEdit={quoting}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.csv,.txt,application/pdf" addLabel="＋ ANEXAR DOCUMENTO" busy={busy} upload={(files) => upload("QUOTE_DOCUMENT", files)} remove={removeAttachment} />
+          {receiving && <ReceiptCard item={receiving} catalog={catalog} busy={busy} cancel={() => setReceiving(null)} confirm={async (body) => { if (await act({ action: "RECEIVE_ITEM", itemId: receiving.id, ...body })) setReceiving(null); }} />}
+          {!canSelect && !actions?.RECEIVE && order.requesterId !== authUserId && <p className="stock-summary">Você acompanha este pedido por ser da mesma frente (somente consulta).</p>}
         </>}
         {error && <div className="equipment-form-error"><span>!</span><strong>{error}</strong></div>}
       </div>
       <footer>
         <button type="button" onClick={close}>Fechar janela</button>
-        {order?.actions.cancel && <button type="button" disabled={busy} onClick={() => withPrompt("Motivo do cancelamento:", "reason", "CANCEL")}>Cancelar pedido</button>}
-        {order?.actions.approve && <><button type="button" disabled={busy} onClick={() => withPrompt("Motivo da recusa:", "reason", "REJECT")}>Recusar</button><button type="button" className="primary" disabled={busy} onClick={() => act({ action: "APPROVE" })}>APROVAR</button></>}
-        {order?.actions.quote && <><button type="button" disabled={busy} onClick={() => act({ action: "SAVE_QUOTE", items: quoteItems(), buyerNotes })}>Salvar cotação</button><button type="button" className="primary" disabled={busy} onClick={() => act({ action: "SEND_TO_PAYMENT", items: quoteItems(), buyerNotes })}>ENVIAR PARA PAGAMENTO</button></>}
-        {order?.actions.confirmPayment && <button type="button" className="primary" disabled={busy} onClick={() => withPrompt("Observação do pagamento (opcional):", "notes", "CONFIRM_PAYMENT", false)}>CONFIRMAR PAGAMENTO</button>}
-        {order?.actions.dispatch && <button type="button" className="primary" disabled={busy} onClick={() => withPrompt("Observação do envio (transportadora, previsão...) — opcional:", "notes", "DISPATCH", false)}>MARCAR COMO ENVIADO</button>}
+        {actions?.CANCEL && <button type="button" disabled={busy} onClick={() => { const reason = window.prompt("Motivo do cancelamento do pedido inteiro:"); if (reason?.trim()) act({ action: "CANCEL", reason }); }}>Cancelar pedido</button>}
       </footer>
     </section></div>
+  );
+}
+
+function AttachmentSection({ title, empty, files, canEdit, accept, addLabel, busy, upload, remove }: {
+  title: string; empty: string; files: Attachment[]; canEdit: boolean; accept: string; addLabel: string; busy: boolean; upload: (files: FileList | null) => Promise<void>; remove: (id: number) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <section className="fleet-form-section">
+      <div className="fleet-section-title"><h3>{title} <small>({files.length})</small></h3>{canEdit && <><button type="button" onClick={() => input.current?.click()} disabled={busy}>{addLabel}</button><input ref={input} type="file" hidden multiple accept={accept} onChange={async (event) => { await upload(event.target.files); if (input.current) input.current.value = ""; }} /></>}</div>
+      {files.length === 0 ? <p className="stock-summary">{empty}</p> : (
+        <div className="po-attachments">{files.map((file) => (
+          <span key={file.id} title={`${file.uploadedByName ?? "—"} · ${brDateTime(file.createdAt)}`}>
+            <a href={`/api/purchase-orders/attachments/${file.id}`} target="_blank" rel="noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {file.contentType.startsWith("image/") ? <img src={`/api/purchase-orders/attachments/${file.id}`} alt="" loading="lazy" /> : "📄"} {file.fileName}
+            </a>
+            {canEdit && <button type="button" className="link-button" onClick={() => remove(file.id)}>remover</button>}
+          </span>
+        ))}</div>
+      )}
+    </section>
   );
 }
 
@@ -279,36 +530,38 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (value: boolean)
   return <span className="po-yesno"><button type="button" className={value ? "active" : ""} onClick={() => onChange(true)}>Sim</button><button type="button" className={!value ? "active" : ""} onClick={() => onChange(false)}>Não</button></span>;
 }
 
-// Card de conferência do recebimento. Item do estoque: "Mudou o fornecedor? a marca? o valor? Veio
-// a quantidade pedida?" → entrada no estoque e atualização do produto. Item manual: só a quantidade.
-function ReceiptCard({ item, suppliers, busy, cancel, confirm }: { item: Item; suppliers: Supplier[]; busy: boolean; cancel: () => void; confirm: (body: Record<string, unknown>) => void }) {
+// Card de conferência do recebimento. Só a quantidade é obrigatória; fornecedor, marca e valor são
+// complementares. Fornecedor e marca usam a mesma base do cadastro de Produtos, com cadastro na hora.
+function ReceiptCard({ item, catalog, busy, cancel, confirm }: { item: Item; catalog: Catalog; busy: boolean; cancel: () => void; confirm: (body: Record<string, unknown>) => void }) {
   const product = item.product;
   const referencePrice = item.unitPrice ?? product?.price ?? null;
-  const [supplierChanged, setSupplierChanged] = useState(Boolean(product && item.supplierId && item.supplierId !== product.supplierId));
-  const [supplierId, setSupplierId] = useState(item.supplierId ? String(item.supplierId) : "");
-  const [brandChanged, setBrandChanged] = useState(Boolean(product && item.brand && item.brand !== product.brand));
-  const [brand, setBrand] = useState(item.brand ?? "");
-  const [priceChanged, setPriceChanged] = useState(Boolean(product && item.unitPrice !== null && item.unitPrice !== product.price));
-  const [unitPrice, setUnitPrice] = useState(referencePrice === null ? "" : String(referencePrice));
+  const [supplierChanged, setSupplierChanged] = useState(false);
+  const [supplier, setSupplier] = useState<CatalogOption | null>(null);
+  const [brandChanged, setBrandChanged] = useState(false);
+  const [brand, setBrand] = useState<CatalogOption | null>(null);
+  const [priceChanged, setPriceChanged] = useState(false);
+  const [unitPrice, setUnitPrice] = useState(referencePrice === null ? "" : String(referencePrice).replace(".", ","));
   const [fullQuantity, setFullQuantity] = useState(true);
   const [quantity, setQuantity] = useState(String(item.quantity));
   const [notes, setNotes] = useState("");
+  const currentSupplier = item.supplierName ?? product?.supplier ?? null;
+  const currentBrand = item.brand ?? product?.brand ?? null;
   return (
     <div className="po-receipt">
       <strong>Conferência do recebimento — {item.description}</strong>
-      {product && <>
-        <fieldset><legend>Mudou o fornecedor? <small>(cadastro: {product.supplier ?? "—"})</small></legend><YesNo value={supplierChanged} onChange={setSupplierChanged} />
-          {supplierChanged && <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">Escolha o fornecedor</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select>}</fieldset>
-        <fieldset><legend>Mudou a marca? <small>(cadastro: {product.brand ?? "—"})</small></legend><YesNo value={brandChanged} onChange={setBrandChanged} />
-          {brandChanged && <input value={brand} onChange={(event) => setBrand(event.target.value)} placeholder="Nova marca" />}</fieldset>
-        <fieldset><legend>Mudou o valor? <small>(cadastro: {product.price === null ? "—" : moneyFormat.format(product.price)}{item.unitPrice !== null ? ` · cotado: ${moneyFormat.format(item.unitPrice)}` : ""})</small></legend><YesNo value={priceChanged} onChange={setPriceChanged} />
-          {priceChanged && <input inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder="Novo valor unitário (R$)" />}</fieldset>
-      </>}
-      <fieldset><legend>Veio a quantidade pedida? <small>({qtyFormat.format(item.quantity)} {item.fiscalUnit})</small></legend><YesNo value={fullQuantity} onChange={setFullQuantity} />
-        {!fullQuantity && <input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="Quantidade que chegou" />}</fieldset>
+      <fieldset><legend>Mudou o fornecedor? <small>(atual: {currentSupplier ?? "—"})</small></legend><YesNo value={supplierChanged} onChange={setSupplierChanged} />
+        {supplierChanged && <CatalogPicker options={catalog.suppliers} value={supplier} onPick={setSupplier} onCreate={catalog.createSupplier} placeholder="Buscar fornecedor..." createLabel="Cadastrar novo fornecedor" />}</fieldset>
+      <fieldset><legend>Mudou a marca? <small>(atual: {currentBrand ?? "—"})</small></legend><YesNo value={brandChanged} onChange={setBrandChanged} />
+        {brandChanged && <CatalogPicker options={catalog.brands} value={brand} onPick={setBrand} onCreate={catalog.createBrand} placeholder="Buscar marca..." createLabel="Cadastrar nova marca" />}</fieldset>
+      <fieldset><legend>Mudou o valor? <small>({product ? `cadastro: ${product.price === null ? "—" : moneyFormat.format(product.price)}` : "item manual"}{item.unitPrice !== null ? ` · cotado: ${moneyFormat.format(item.unitPrice)}` : ""})</small></legend><YesNo value={priceChanged} onChange={setPriceChanged} />
+        {priceChanged && <input inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} placeholder="Novo valor unitário (R$) — opcional" />}</fieldset>
+      <fieldset><legend>Veio a quantidade pedida? * <small>({qtyFormat.format(item.quantity)} {item.fiscalUnit})</small></legend><YesNo value={fullQuantity} onChange={setFullQuantity} />
+        {!fullQuantity && <input inputMode="decimal" required value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="Quantidade que chegou" />}</fieldset>
       <label>Observação<input value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
-      <p className="stock-summary">{product ? "Ao confirmar, a quantidade recebida entra no estoque da frente do pedido e o cadastro do produto é atualizado no que mudou." : "Item manual: só fica marcado como recebido (sem estoque)."}</p>
-      <div className="equipment-row-actions"><button type="button" onClick={cancel}>Voltar</button><button type="button" className="primary" disabled={busy} onClick={() => confirm({ supplierChanged, supplierId, brandChanged, brand, priceChanged, unitPrice, fullQuantity, quantity: parseQty(quantity), notes })}>Confirmar recebimento</button></div>
+      <p className="stock-summary">{product ? "Ao confirmar, a quantidade recebida entra no estoque da frente do pedido e o cadastro do produto é atualizado no que mudou (fornecedor, marca e valor são opcionais)." : "Item manual: só fica marcado como recebido (sem estoque)."}</p>
+      <div className="equipment-row-actions"><button type="button" onClick={cancel}>Voltar</button><button type="button" className="primary" disabled={busy} onClick={() => confirm({
+        supplierChanged, supplierId: supplier?.id ?? null, brandChanged, brand: brand?.name ?? "", priceChanged, unitPrice, fullQuantity, quantity: parseQty(quantity), notes,
+      })}>Confirmar recebimento</button></div>
     </div>
   );
 }
