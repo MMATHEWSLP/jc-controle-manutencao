@@ -806,6 +806,17 @@ export const productBrands = pgTable("product_brands", {
   ...timestamps,
 }, (table) => [uniqueIndex("product_brands_key_unique").on(table.key)]);
 
+// Departamentos: lista ÚNICA do sistema (Movimentação e Solicitação de Pedidos usam a mesma).
+// `key` (sem acentos, espaços e pontuação) impede o mesmo departamento com grafias diferentes.
+export const departments = pgTable("departments", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  key: text("key").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("departments_key_unique").on(table.key)]);
+
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   tag: text("tag").notNull(),
@@ -868,6 +879,7 @@ export const productStockMovements = pgTable("product_stock_movements", {
   // Destino da saída (Movimentação / O.S.): equipamento ou funcionário.
   equipmentId: integer("equipment_id").references((): AnyPgColumn => equipment.id),
   employeeId: integer("employee_id").references((): AnyPgColumn => employees.id),
+  departmentId: integer("department_id").references((): AnyPgColumn => departments.id),
   materialRequestId: integer("material_request_id").references((): AnyPgColumn => materialRequests.id),
   materialRequestItemId: integer("material_request_item_id").references((): AnyPgColumn => materialRequestItems.id),
   purchaseOrderId: integer("purchase_order_id").references((): AnyPgColumn => purchaseOrders.id),
@@ -1230,7 +1242,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   company: text("company"),
   branch: text("branch"),
   title: text("title"),
+  // Nome do departamento no momento do pedido (a escolha vem da lista única `departments`).
   department: text("department"),
+  departmentId: integer("department_id").references((): AnyPgColumn => departments.id),
   orderDate: text("order_date"),
   // Nome de quem pede (pode ser diferente de quem lançou, requester_id = "criado por").
   requesterName: text("requester_name"),
@@ -1309,13 +1323,15 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   ...timestamps,
 }, (table) => [index("purchase_order_items_order_idx").on(table.orderId), index("purchase_order_items_product_idx").on(table.productId)]);
 
-// Anexos do pedido, em uploads/purchase-quotes: PHOTO = foto enviada na criação (peça quebrada,
+// Anexos do pedido, em uploads/purchase-quotes: PHOTO = foto de um item (peça quebrada,
 // problema...); QUOTE_IMAGE = orçamento por imagem; QUOTE_DOCUMENT = orçamento em documento
-// (PDF, Word, Excel...).
+// (PDF, Word, Excel...); PAYMENT_PROOF = comprovante de pagamento (imagem ou documento).
 export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
   id: serial("id").primaryKey(),
   orderId: integer("order_id").notNull().references(() => purchaseOrders.id, { onDelete:"cascade" }),
-  kind: text("kind", { enum:["PHOTO","QUOTE_IMAGE","QUOTE_DOCUMENT"] }).notNull().default("QUOTE_DOCUMENT"),
+  kind: text("kind", { enum:["PHOTO","QUOTE_IMAGE","QUOTE_DOCUMENT","PAYMENT_PROOF"] }).notNull().default("QUOTE_DOCUMENT"),
+  // Foto vinculada a um item do pedido (PHOTO); nulo nos orçamentos e comprovantes (do pedido todo).
+  itemId: integer("item_id").references((): AnyPgColumn => purchaseOrderItems.id, { onDelete:"set null" }),
   storageKey: text("storage_key").notNull(),
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
@@ -1346,9 +1362,11 @@ export const stockExits = pgTable("stock_exits", {
   // Frente cujo estoque sai.
   serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
   exitDate: text("exit_date").notNull(),
-  destinationType: text("destination_type", { enum:["EMPLOYEE","EQUIPMENT"] }).notNull(),
+  // Destino principal (para exibição): veículo > funcionário > departamento. A saída pode ter os três.
+  destinationType: text("destination_type", { enum:["EMPLOYEE","EQUIPMENT","DEPARTMENT"] }).notNull(),
   employeeId: integer("employee_id").references(() => employees.id),
   equipmentId: integer("equipment_id").references(() => equipment.id),
+  departmentId: integer("department_id").references(() => departments.id),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
   cancelledAt: text("cancelled_at"),

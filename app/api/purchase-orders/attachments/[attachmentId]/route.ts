@@ -51,8 +51,8 @@ export async function DELETE(request: Request, { params }: Context) {
     const user = auth.user!;
     const order = await requirePurchaseOrder(db, user, purchaseFronts(user, request), attachment.orderId);
     const actions = orderActions(user, order, await orderItemStatuses(db, order.id));
-    const allowed = attachment.kind === "PHOTO" ? actions.PHOTO : actions.QUOTE;
-    if (!allowed) return Response.json({ error: attachment.kind === "PHOTO" ? "Só quem pediu remove fotos, enquanto o pedido está em andamento." : "Só o comprador remove orçamentos, com itens em cotação." }, { status: 409 });
+    const allowed = attachment.kind === "PHOTO" ? actions.PHOTO : attachment.kind === "PAYMENT_PROOF" ? actions.PAYMENT_PROOF : actions.QUOTE;
+    if (!allowed) return Response.json({ error: attachment.kind === "PHOTO" ? "Só quem pediu remove fotos, enquanto o pedido está em andamento." : attachment.kind === "PAYMENT_PROOF" ? "Só quem confirma pagamentos remove o comprovante." : "Só o comprador remove orçamentos, com itens em cotação." }, { status: 409 });
     await db.delete(purchaseOrderAttachments).where(eq(purchaseOrderAttachments.id, attachment.id));
     await unlink(path.join(QUOTE_DIR, attachment.storageKey)).catch(() => undefined);
     return Response.json({ message: "Anexo removido." });

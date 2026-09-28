@@ -5,11 +5,12 @@ import { detectImage } from "./image-signature";
 // e gravados com nome seguro em uploads/purchase-quotes:
 //   PHOTO          foto(s) enviadas na criação do pedido (peça quebrada, problema...) — só imagem;
 //   QUOTE_IMAGE    orçamento por imagem (foto/print) — só imagem;
-//   QUOTE_DOCUMENT orçamento por documento — PDF, Word, Excel, PowerPoint, OpenDocument, CSV ou TXT.
+//   QUOTE_DOCUMENT orçamento por documento — PDF, Word, Excel, PowerPoint, OpenDocument, CSV ou TXT;
+//   PAYMENT_PROOF  comprovante de pagamento — imagem ou documento.
 export const QUOTE_DIR = path.join(process.cwd(), "uploads", "purchase-quotes");
 export const QUOTE_MAX_BYTES = 10 * 1024 * 1024;
-export type AttachmentKind = "PHOTO" | "QUOTE_IMAGE" | "QUOTE_DOCUMENT";
-export const ATTACHMENT_KINDS: AttachmentKind[] = ["PHOTO", "QUOTE_IMAGE", "QUOTE_DOCUMENT"];
+export type AttachmentKind = "PHOTO" | "QUOTE_IMAGE" | "QUOTE_DOCUMENT" | "PAYMENT_PROOF";
+export const ATTACHMENT_KINDS: AttachmentKind[] = ["PHOTO", "QUOTE_IMAGE", "QUOTE_DOCUMENT", "PAYMENT_PROOF"];
 export const isAttachmentKind = (value: unknown): value is AttachmentKind => ATTACHMENT_KINDS.includes(value as AttachmentKind);
 
 type Format = { contentType: string; extension: string };
@@ -56,6 +57,7 @@ export function detectDocument(buffer: Buffer, fileName: string): Format | null 
 }
 
 export function detectAttachment(kind: AttachmentKind, buffer: Buffer, fileName: string): Format | null {
+  if (kind === "PAYMENT_PROOF") return detectImage(buffer) ?? detectDocument(buffer, fileName);
   return kind === "QUOTE_DOCUMENT" ? detectDocument(buffer, fileName) : detectImage(buffer);
 }
 
@@ -63,6 +65,7 @@ export const ATTACHMENT_FORMAT_HINT: Record<AttachmentKind, string> = {
   PHOTO: "Envie as fotos em JPEG, PNG ou WebP.",
   QUOTE_IMAGE: "Envie o orçamento por imagem em JPEG, PNG ou WebP (para PDF, Word ou Excel use “Orçamento por documento”).",
   QUOTE_DOCUMENT: "Envie o orçamento em PDF, Word, Excel, PowerPoint, OpenDocument, CSV ou TXT (para foto/print use “Orçamento por imagem”).",
+  PAYMENT_PROOF: "Envie o comprovante como imagem (JPEG, PNG, WebP) ou documento (PDF, Word, Excel...).",
 };
 
 // Abre no navegador só o que é seguro exibir (imagem e PDF); o resto é baixado.

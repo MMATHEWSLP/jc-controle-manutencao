@@ -4,10 +4,11 @@ import { getDb } from "../db";
 import { auditLogs, equipment, products, purchaseOrderAttachments, purchaseOrderItemEvents, purchaseOrderItems, purchaseOrders, serviceFronts, suppliers, users } from "../db/schema";
 import type { Permission, SessionUser } from "./auth";
 import { ensureBrand } from "./catalog";
+import { requireDepartment } from "./departments";
 import { purchaseOrderNumber } from "./document-numbers";
 import { isFiscalUnit } from "./fiscal-units";
 import {
-  ACTION_FROM, ACTION_TO, availableActions, canDo, isActiveItem, isTerminalOrder, ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, orderStatusFromItems,
+  ACTION_FROM, ACTION_TO, availableActions, canDo, FLOW, isActiveItem, isTerminalOrder, ITEM_STATUS_LABELS, ORDER_STATUS_LABELS, orderStatusFromItems,
   PURCHASE_COMPANIES, quantityProblem, URGENCIES, type Capabilities, type ItemAction, type ItemStatus, type OrderStatus, type Urgency,
 } from "./purchase-rules";
 import { stockEntry, StockError } from "./stock";
@@ -69,8 +70,10 @@ export function orderActions(user: SessionUser, order: Pick<Order, "requesterId"
   const actions = availableActions(items, caps, Boolean(order.cancelledAt));
   return {
     ...actions,
-    // Fotos do pedido: quem pediu (ou quem gerencia) enquanto o pedido não terminou.
+    // Fotos dos itens: quem pediu (ou quem gerencia) enquanto o pedido não terminou.
     PHOTO: (caps.own || caps.manage) && !isTerminalOrder(order.status),
+    // Comprovante de pagamento: quem confirma pagamentos, a partir da análise de pagamento.
+    PAYMENT_PROOF: caps.pay && !order.cancelledAt && items.some((item) => FLOW.indexOf(item.status as ItemStatus) >= FLOW.indexOf("ANALISE_PAGAMENTO")),
   };
 }
 export type OrderActions = ReturnType<typeof orderActions>;
@@ -104,8 +107,8 @@ export async function listPurchaseOrders(db: Db, user: SessionUser, fronts: Fron
   const rows = await db.select({
     id: purchaseOrders.id, requesterId: purchaseOrders.requesterId, createdBy: creator.name, requesterName: purchaseOrders.requesterName,
     serviceFrontId: purchaseOrders.serviceFrontId, front: serviceFronts.name, requestedAt: purchaseOrders.requestedAt, orderDate: purchaseOrders.orderDate,
-    status: purchaseOrders.status, cancelledAt: purchaseOrders.cancelledAt, notes: purchaseOrders.notes, company: purchaseOrders.company, branch: purchaseOrders.branch,
-    title: purchaseOrders.title, department: purchaseOrders.department, urgency: purchaseOrders.urgency, equipmentPrefix: equipment.prefix,
+    status: purchaseOrders.status, cancelledAt: purchaseOrders.cancelledAt, notes: purchaseOrders.notes, company: purchaseOrders.company,
+    title: purchaseOrders.title, department: purchaseOrders.department, departmentId: purchaseOrders.departmentId, urgency: purchaseOrders.urgency, equipmentPrefix: equipment.prefix,
   }).from(purchaseOrders).innerJoin(creator, eq(purchaseOrders.requesterId, creator.id)).innerJoin(serviceFronts, eq(purchaseOrders.serviceFrontId, serviceFronts.id))
     .leftJoin(equipment, eq(purchaseOrders.equipmentId, equipment.id))
     .where(visibilityCondition(user, fronts)).orderBy(desc(purchaseOrders.requestedAt)).limit(1000);
@@ -153,7 +156,7 @@ export async function purchaseOrderDetail(db: Db, user: SessionUser, fronts: Fro
       .leftJoin(quotedSupplier, eq(purchaseOrderItems.supplierId, quotedSupplier.id))
       .leftJoin(receivedSupplier, eq(purchaseOrderItems.receivedSupplierId, receivedSupplier.id))
       .where(eq(purchaseOrderItems.orderId, id)).orderBy(asc(purchaseOrderItems.id)),
-    db.select({ id: purchaseOrderAttachments.id, kind: purchaseOrderAttachments.kind, fileName: purchaseOrderAttachments.fileName, contentType: purchaseOrderAttachments.contentType, size: purchaseOrderAttachments.size, createdAt: purchaseOrderAttachments.createdAt, uploadedBy: purchaseOrderAttachments.uploadedBy })
+    db.select({ id: purchaseOrderAttachments.id, kind: purchaseOrderAttachments.kind, itemId: purchaseOrderAttachments.itemId, fileName: purchaseOrderAttachments.fileName, contentType: purchaseOrderAttachments.contentType, size: purchaseOrderAttachments.size, createdAt: purchaseOrderAttachments.createdAt, uploadedBy: purchaseOrderAttachments.uploadedBy })
       .from(purchaseOrderAttachments).where(eq(purchaseOrderAttachments.orderId, id)).orderBy(asc(purchaseOrderAttachments.id)),
     db.select().from(purchaseOrderItemEvents).where(eq(purchaseOrderItemEvents.orderId, id)).orderBy(asc(purchaseOrderItemEvents.createdAt), asc(purchaseOrderItemEvents.id)),
   ]);
@@ -191,7 +194,7 @@ export async function purchaseOrderDetail(db: Db, user: SessionUser, fronts: Fro
 // ------------------------------------------------------------------------------ criação
 
 export type NewPurchaseInput = {
-  serviceFrontId: number; notes: string | null; company: string | null; branch: string | null; title: string; department: string | null;
+  serviceFrontId: number; notes: string | null; company: string | null; title: string; departmentId: number | null;
   orderDate: string; requesterName: string; urgency: Urgency; equipmentId: number | null;
   items: Array<{ productId: number | null; description: string; reference: string | null; notes: string | null; quantity: number; fiscalUnit: string }>;
 };
@@ -208,6 +211,7 @@ export function parseNewPurchase(body: Record<string, unknown>, user: SessionUse
   const orderDate = clean(body.orderDate) || localToday();
   if (!isIsoDay(orderDate)) throw new StockError("Data do pedido inválida.");
   const equipmentId = Number(body.equipmentId) > 0 ? Number(body.equipmentId) : null;
+  const departmentId = Number(body.departmentId) > 0 ? Number(body.departmentId) : null;
   const raw = Array.isArray(body.items) ? (body.items as Array<Record<string, unknown>>) : [];
   if (raw.length === 0) throw new StockError("Adicione ao menos um item ao pedido.");
   const items = raw.map((item) => {
@@ -221,7 +225,7 @@ export function parseNewPurchase(body: Record<string, unknown>, user: SessionUse
     return { productId, description, reference: clean(item.reference).toUpperCase().slice(0, 120) || null, notes: clean(item.notes).slice(0, 1000) || null, quantity, fiscalUnit };
   });
   return {
-    serviceFrontId, title, company: company || null, branch: clean(body.branch).toUpperCase().slice(0, 120) || null, department: clean(body.department).toUpperCase().slice(0, 120) || null,
+    serviceFrontId, title, company: company || null, departmentId,
     orderDate, requesterName: clean(body.requesterName).slice(0, 160) || user.name, urgency, equipmentId, notes: clean(body.notes).slice(0, 2000) || null, items,
   };
 }
@@ -229,6 +233,7 @@ export function parseNewPurchase(body: Record<string, unknown>, user: SessionUse
 export async function createPurchaseOrder(db: Db, user: SessionUser, input: NewPurchaseInput) {
   const allowed = await requestFronts(db, user);
   if (!allowed.some((front) => front.id === input.serviceFrontId)) throw new StockError("Escolha uma das frentes vinculadas ao seu login.");
+  const department = input.departmentId ? await requireDepartment(db, input.departmentId) : null;
   if (input.equipmentId && !(await equipmentOptions(db, user)).some((row) => row.id === input.equipmentId)) throw new StockError("Equipamento não encontrado entre os que você enxerga.");
   const linkedIds = [...new Set(input.items.flatMap((item) => (item.productId ? [item.productId] : [])))];
   const linked = linkedIds.length ? await db.select({ id: products.id, name: products.name, reference: products.reference, active: products.active }).from(products).where(inArray(products.id, linkedIds)) : [];
@@ -242,11 +247,12 @@ export async function createPurchaseOrder(db: Db, user: SessionUser, input: NewP
   const now = new Date().toISOString();
   return db.transaction(async (tx) => {
     const { items, ...header } = input;
-    const [order] = await tx.insert(purchaseOrders).values({ ...header, requesterId: user.id, requestedAt: now, status: "AGUARDANDO_APROVACAO" }).returning({ id: purchaseOrders.id });
+    const [order] = await tx.insert(purchaseOrders).values({ ...header, department: department?.name ?? null, requesterId: user.id, requestedAt: now, status: "AGUARDANDO_APROVACAO" }).returning({ id: purchaseOrders.id });
     const created = await tx.insert(purchaseOrderItems).values(items.map((item) => ({ orderId: order.id, ...item, status: "AGUARDANDO_APROVACAO" as const }))).returning({ id: purchaseOrderItems.id });
     await logEvents(tx, created.map((item) => ({ orderId: order.id, itemId: item.id, action: "SOLICITADO", toStatus: "AGUARDANDO_APROVACAO", userId: user.id })));
     await audit(tx, user.id, order.id, "PEDIDO DE COMPRA CRIADO", input);
-    return { id: order.id, number: purchaseOrderNumber(order.id) };
+    // Ids dos itens na mesma ordem do envio: a tela usa para vincular as fotos a cada item.
+    return { id: order.id, number: purchaseOrderNumber(order.id), itemIds: created.map((item) => item.id) };
   });
 }
 

@@ -40,6 +40,7 @@ export type StockMovementInput = {
   unitPrice?: number | null;
   equipmentId?: number | null;
   employeeId?: number | null;
+  departmentId?: number | null;
   refs?: StockRefs;
 };
 
@@ -93,7 +94,7 @@ export async function recordStockMovement(db: StockDb, input: StockMovementInput
   const [row] = await db.insert(productStockMovements).values({
     productId: input.productId, serviceFrontId: input.serviceFrontId, delta: input.delta, reason: input.reason, source: input.source,
     movementDate: input.movementDate ?? null, unitPrice: input.unitPrice ?? null, equipmentId: input.equipmentId ?? null, employeeId: input.employeeId ?? null,
-    ...input.refs, createdBy: input.userId,
+    departmentId: input.departmentId ?? null, ...input.refs, createdBy: input.userId,
   }).returning({ id: productStockMovements.id });
   await productAudit(db, input.userId, input.productId, input.delta > 0 ? "ENTRADA NO ESTOQUE" : "SAÍDA DO ESTOQUE", undefined,
     { serviceFrontId: input.serviceFrontId, quantity: Math.abs(input.delta), source: input.source, reason: input.reason, movementId: row.id });

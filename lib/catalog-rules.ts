@@ -8,3 +8,6 @@ export function catalogKey(value: string) {
 export function brandName(value: string) {
   return value.trim().replace(/\s+/g, " ").toUpperCase().slice(0, 80);
 }
+
+// Nome gravado do departamento: mesma regra da marca (maiúsculas, espaços simples).
+export const departmentName = (value: string) => brandName(value);

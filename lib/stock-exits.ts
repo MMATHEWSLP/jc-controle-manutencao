@@ -1,44 +1,47 @@
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { auditLogs, employees, equipment, products, serviceFronts, stockExitItems, stockExits, users } from "../db/schema";
+import { auditLogs, departments, employees, equipment, products, serviceFronts, stockExitItems, stockExits, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { stockExitNumber } from "./document-numbers";
+import { requireDepartment } from "./departments";
 import { assertStockAvailable, reverseStockMovements, stockExit, StockError } from "./stock";
 import { isIsoDay, localToday, productsById } from "./stock-options";
 import { visibleFrontList } from "./products-data";
 
-// Movimentação: saída de produtos do estoque para um funcionário ou um equipamento (SAI-000123).
+// Movimentação: saída de produtos do estoque (SAI-000123) para um veículo/equipamento, um
+// funcionário e/ou um departamento (pelo menos um dos três).
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
 export type StockExitInput = {
-  serviceFrontId: number; exitDate: string; destinationType: "EMPLOYEE" | "EQUIPMENT";
-  employeeId: number | null; equipmentId: number | null; notes: string | null;
+  serviceFrontId: number; exitDate: string; destinationType: "EMPLOYEE" | "EQUIPMENT" | "DEPARTMENT";
+  employeeId: number | null; equipmentId: number | null; departmentId: number | null; notes: string | null;
   items: Array<{ productId: number; quantity: number }>; allowNegative: boolean;
 };
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
+const positiveId = (value: unknown) => { const parsed = Number(value); return Number.isInteger(parsed) && parsed > 0 ? parsed : null; };
+
 export function parseStockExit(body: Record<string, unknown>): StockExitInput {
-  const destinationType = body.destinationType === "EQUIPMENT" ? "EQUIPMENT" : body.destinationType === "EMPLOYEE" ? "EMPLOYEE" : null;
-  if (!destinationType) throw new StockError("Escolha o destino da saída: funcionário ou equipamento.");
   const serviceFrontId = Number(body.serviceFrontId);
   if (!Number.isInteger(serviceFrontId) || serviceFrontId <= 0) throw new StockError("Escolha a frente de onde o estoque sai.");
   const exitDate = clean(body.exitDate) || localToday();
   if (!isIsoDay(exitDate)) throw new StockError("Informe uma data válida.");
   if (exitDate > localToday()) throw new StockError("A data da saída não pode ser futura.");
-  const employeeId = destinationType === "EMPLOYEE" ? Number(body.employeeId) : null;
-  const equipmentId = destinationType === "EQUIPMENT" ? Number(body.equipmentId) : null;
-  if (destinationType === "EMPLOYEE" && !(Number.isInteger(employeeId) && employeeId! > 0)) throw new StockError("Escolha o funcionário que recebe os produtos.");
-  if (destinationType === "EQUIPMENT" && !(Number.isInteger(equipmentId) && equipmentId! > 0)) throw new StockError("Escolha o equipamento de destino.");
+  const equipmentId = positiveId(body.equipmentId);
+  const employeeId = positiveId(body.employeeId);
+  const departmentId = positiveId(body.departmentId);
+  if (!equipmentId && !employeeId && !departmentId) throw new StockError("Informe o destino da saída: veículo, funcionário e/ou departamento.");
+  const destinationType = equipmentId ? "EQUIPMENT" : employeeId ? "EMPLOYEE" : "DEPARTMENT";
   const rawItems = Array.isArray(body.items) ? (body.items as Array<Record<string, unknown>>) : [];
   const items = rawItems.map((item) => ({ productId: Number(item.productId), quantity: Number(String(item.quantity ?? "").replace(",", ".")) }));
   if (items.length === 0) throw new StockError("Adicione ao menos um produto.");
   if (items.some((item) => !Number.isInteger(item.productId) || item.productId <= 0)) throw new StockError("Escolha o produto de todos os itens.");
   if (items.some((item) => !Number.isFinite(item.quantity) || item.quantity <= 0)) throw new StockError("A quantidade de todos os itens deve ser maior que zero.");
-  return { serviceFrontId, exitDate, destinationType, employeeId, equipmentId, notes: clean(body.notes) || null, items, allowNegative: body.allowNegative === true };
+  return { serviceFrontId, exitDate, destinationType, employeeId, equipmentId, departmentId, notes: clean(body.notes) || null, items, allowNegative: body.allowNegative === true };
 }
 
 export async function createStockExit(db: Db, user: SessionUser, input: StockExitInput) {
@@ -53,6 +56,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
     if (!person) throw new StockError("Funcionário não encontrado.", 404);
     if (person.status === "DEMITIDO") throw new StockError("Funcionário demitido não pode receber produtos.");
   }
+  if (input.departmentId) await requireDepartment(db, input.departmentId);
   const catalog = await productsById(db, input.items.map((item) => item.productId));
   const missing = input.items.find((item) => !catalog.get(item.productId)?.active);
   if (missing) throw new StockError("Um dos produtos escolhidos não existe mais ou foi desativado.");
@@ -61,7 +65,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
   return db.transaction(async (tx) => {
     const [exit] = await tx.insert(stockExits).values({
       serviceFrontId: input.serviceFrontId, exitDate: input.exitDate, destinationType: input.destinationType,
-      employeeId: input.employeeId, equipmentId: input.equipmentId, notes: input.notes, createdBy: user.id,
+      employeeId: input.employeeId, equipmentId: input.equipmentId, departmentId: input.departmentId, notes: input.notes, createdBy: user.id,
     }).returning({ id: stockExits.id });
     const number = stockExitNumber(exit.id);
     for (const item of input.items) {
@@ -69,7 +73,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
       const [row] = await tx.insert(stockExitItems).values({ exitId: exit.id, productId: item.productId, quantity: item.quantity, unitPrice: product.price }).returning({ id: stockExitItems.id });
       await stockExit(tx, {
         productId: item.productId, serviceFrontId: input.serviceFrontId, quantity: item.quantity, source: "STOCK_EXIT", reason: `Saída ${number}`,
-        userId: user.id, movementDate: input.exitDate, unitPrice: product.price, equipmentId: input.equipmentId, employeeId: input.employeeId,
+        userId: user.id, movementDate: input.exitDate, unitPrice: product.price, equipmentId: input.equipmentId, employeeId: input.employeeId, departmentId: input.departmentId,
         refs: { stockExitId: exit.id, stockExitItemId: row.id },
       });
     }
@@ -95,7 +99,7 @@ export async function cancelStockExit(db: Db, user: SessionUser, id: number, rea
 }
 
 // Saídas (documentos) recentes das frentes que a pessoa enxerga, com os itens.
-export async function listStockExits(db: Db, user: SessionUser, filters: { equipmentId?: number | null; employeeId?: number | null; from?: string | null; to?: string | null; limit?: number }) {
+export async function listStockExits(db: Db, user: SessionUser, filters: { equipmentId?: number | null; employeeId?: number | null; departmentId?: number | null; from?: string | null; to?: string | null; limit?: number }) {
   const visible = frentesVisiveis(user);
   if (visible !== "ALL" && visible.length === 0) return [];
   const creator = alias(users, "exit_creator");
@@ -103,22 +107,25 @@ export async function listStockExits(db: Db, user: SessionUser, filters: { equip
     visible === "ALL" ? undefined : inArray(stockExits.serviceFrontId, visible),
     filters.equipmentId ? eq(stockExits.equipmentId, filters.equipmentId) : undefined,
     filters.employeeId ? eq(stockExits.employeeId, filters.employeeId) : undefined,
+    filters.departmentId ? eq(stockExits.departmentId, filters.departmentId) : undefined,
     filters.from ? gte(stockExits.exitDate, filters.from) : undefined,
     filters.to ? lte(stockExits.exitDate, filters.to) : undefined,
   ].filter(Boolean);
   const rows = await db.select({
     id: stockExits.id, exitDate: stockExits.exitDate, destinationType: stockExits.destinationType, notes: stockExits.notes,
     cancelledAt: stockExits.cancelledAt, cancelReason: stockExits.cancelReason, front: serviceFronts.name,
-    equipmentId: stockExits.equipmentId, equipmentPrefix: equipment.prefix, employeeId: stockExits.employeeId, employeeName: employees.name, createdBy: creator.name,
+    equipmentId: stockExits.equipmentId, equipmentPrefix: equipment.prefix, employeeId: stockExits.employeeId, employeeName: employees.name,
+    departmentId: stockExits.departmentId, departmentName: departments.name, createdBy: creator.name,
   }).from(stockExits).innerJoin(serviceFronts, eq(stockExits.serviceFrontId, serviceFronts.id))
     .leftJoin(equipment, eq(stockExits.equipmentId, equipment.id)).leftJoin(employees, eq(stockExits.employeeId, employees.id))
+    .leftJoin(departments, eq(stockExits.departmentId, departments.id))
     .leftJoin(creator, eq(stockExits.createdBy, creator.id))
     .where(conditions.length ? and(...conditions) : undefined).orderBy(desc(stockExits.exitDate), desc(stockExits.id)).limit(filters.limit ?? 200);
   const filtered = rows;
   const items = filtered.length ? await db.select({ exitId: stockExitItems.exitId, quantity: stockExitItems.quantity, unitPrice: stockExitItems.unitPrice, tag: products.tag, name: products.name })
     .from(stockExitItems).innerJoin(products, eq(stockExitItems.productId, products.id)).where(inArray(stockExitItems.exitId, filtered.map((row) => row.id))) : [];
   return filtered.map((row) => ({
-    ...row, number: stockExitNumber(row.id), destination: row.destinationType === "EQUIPMENT" ? row.equipmentPrefix : row.employeeName,
+    ...row, number: stockExitNumber(row.id), destination: [row.equipmentPrefix, row.employeeName, row.departmentName].filter(Boolean).join(" · ") || null,
     items: items.filter((item) => item.exitId === row.id).map((item) => ({ tag: item.tag, name: item.name, quantity: item.quantity, unitPrice: item.unitPrice })),
   }));
 }
