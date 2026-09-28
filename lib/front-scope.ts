@@ -11,7 +11,7 @@ export class EquipmentAccessError extends Error {
 
 export function isAdministrator(user:SessionUser){return user.profile==="ADMIN";}
 export function canBrowseAllEquipment(user:SessionUser,mode:EquipmentScopeMode){
-  return isAdministrator(user)||(mode==="MANAGEMENT"&&user.permissions.includes("equipment.transfer"));
+  return isAdministrator(user)||(mode==="MANAGEMENT"&&(user.permissions.includes("equipment.transfer")||user.permissions.includes("fronts.cross_registry")));
 }
 
 // `displayed` = frentes em exibição no seletor global (lib/active-front.ts). Só restringe: o

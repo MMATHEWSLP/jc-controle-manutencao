@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import EmployeeProfile from "./EmployeeProfile";
+import RegistryFrontButtons, { frontParam } from "./RegistryFrontButtons";
 import { CompaniesModal, EmployeeForm, StepModal, TransferModal } from "./EmployeeForms";
 import { EmployeesHistory, RestrictedList } from "./EmployeesHistory";
 import {
@@ -9,7 +10,7 @@ import {
   type Alerts, type Company, type CycleStep, type Employee, type Front, type Phase, type User,
 } from "./employees-client";
 
-type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canManageCompanies: boolean };
+type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canManageCompanies: boolean; frontButtons?: boolean };
 type Tab = "painel" | "viagem" | "folga" | "retorno" | "historico" | "restritos";
 const EMPTY: ListResponse = { employees: [], fronts: [], scopeFrontIds: [], companies: [], alerts: { offOverdue: 0, workExceeded: 0, approaching: 0 }, canManage: false, canSeeSalary: false, canManageCompanies: false };
 
@@ -43,15 +44,17 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
   const [stepping, setStepping] = useState<{ employees: Employee[]; steps: CycleStep[]; label: string } | null>(null);
   const [companiesOpen, setCompaniesOpen] = useState(false);
   const [details, setDetails] = useState<number | null>(null);
+  const [moduleFront, setModuleFront] = useState<number | "ALL">("ALL");
   const canManage = authUser.permissions.includes("employees.manage");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    try { setData(await api<ListResponse>(`/api/employees${includeDismissed ? "?includeDismissed=1" : ""}`)); }
+    const params = [includeDismissed ? "includeDismissed=1" : "", frontParam(moduleFront)].filter(Boolean).join("&");
+    try { setData(await api<ListResponse>(`/api/employees${params ? `?${params}` : ""}`)); }
     catch (problem) { setError(problemText(problem, "Não foi possível carregar os funcionários.")); }
     finally { setLoading(false); }
-  }, [includeDismissed]);
+  }, [includeDismissed, moduleFront]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelected(new Set()); }, [tab, query, front, company, situation, onlyAlerts, includeDismissed]);
 
@@ -100,6 +103,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
           {canManage && <button className="primary" onClick={() => setEditing("new")}>＋ Novo funcionário</button>}
         </div>
       </div>
+      {data.frontButtons && <RegistryFrontButtons fronts={data.fronts} value={moduleFront} onChange={(value) => { setModuleFront(value); setFront(""); }} />}
       {alertTotal > 0 && (
         <div className="employee-alert-banner" role="alert">
           <span>!</span>
@@ -123,7 +127,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
         <button className={tab === "historico" ? "active" : ""} onClick={() => setTab("historico")}>Histórico</button>
         <button className={tab === "restritos" ? "active" : ""} onClick={() => setTab("restritos")}>Restritos</button>
       </div>
-      {tab === "historico" && <EmployeesHistory companies={data.companies} open={setDetails} />}
+      {tab === "historico" && <EmployeesHistory companies={data.companies} open={setDetails} frontQuery={data.frontButtons ? frontParam(moduleFront) : ""} />}
       {tab === "restritos" && <RestrictedList open={setDetails} />}
       {listTab && (
         <article className="panel module-panel equipment-management-panel">

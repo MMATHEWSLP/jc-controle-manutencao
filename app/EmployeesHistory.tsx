@@ -9,13 +9,13 @@ type Filters = { nome: string; empresa: string; tipo: "FOLGA" | "AFASTAMENTO"; d
 const days = (value: number | null) => (value === null ? "—" : value);
 
 // Histórico: folgas (ciclos) ou afastamentos, com filtros aplicados no botão Filtrar e PDF da mesma consulta.
-export function EmployeesHistory({ companies, open }: { companies: Company[]; open: (id: number) => void }) {
+export function EmployeesHistory({ companies, open, frontQuery = "" }: { companies: Company[]; open: (id: number) => void; frontQuery?: string }) {
   const [draft, setDraft] = useState<Filters>({ nome: "", empresa: "", tipo: "FOLGA", de: "", ate: "" });
   const [applied, setApplied] = useState<Filters>(draft);
   const [rows, setRows] = useState<Array<CycleRow | AbsenceRow>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const query = new URLSearchParams(Object.entries(applied).filter(([, value]) => value)).toString();
+  const query = [new URLSearchParams(Object.entries(applied).filter(([, value]) => value)).toString(), frontQuery].filter(Boolean).join("&");
   const load = useCallback(async () => {
     setLoading(true);
     setError("");

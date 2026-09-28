@@ -107,6 +107,7 @@ export const PERMISSION_GROUPS = [
   ]},
   { label:"Frentes de Serviço", items:[
     ["service_fronts.manage","Cadastrar, renomear e ativar/desativar frentes de serviço"],
+    ["fronts.cross_registry","Ver e transferir equipamentos e funcionários de todas as frentes (só nos módulos Equipamentos e Funcionários)"],
   ]},
 ] as const;
 

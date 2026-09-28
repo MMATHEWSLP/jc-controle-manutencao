@@ -99,3 +99,12 @@ function fakeDb(equipment) {
     },
   };
 }
+
+test("permissão de ver todas as frentes vale só no cadastro de equipamentos (MANAGEMENT)", () => {
+  const cross = user({ permissions: ["equipment.view", "fronts.cross_registry"] });
+  assert.equal(canBrowseAllEquipment(cross, "MANAGEMENT"), true);
+  assert.equal(canBrowseAllEquipment(cross, "OPERATIONAL"), false);
+  assert.equal(canBrowseAllEquipment(cross, "OIL"), false);
+  assert.equal(equipmentScopeSql(cross, "MANAGEMENT").clause, "1=1");
+  assert.deepEqual(equipmentScopeSql(cross, "OPERATIONAL").values, [[2]]);
+});
