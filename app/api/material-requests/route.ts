@@ -4,7 +4,9 @@ import { getDb } from "../../../db";
 import { materialRequestItems, materialRequests, products, serviceFronts, users } from "../../../db/schema";
 import { assertSameOrigin, authorize, type SessionUser } from "../../../lib/auth";
 import { logMaterialRequestAudit } from "../../../lib/material-request-audit";
-import { activeFrontList, productStockByFront, visibleFrontList } from "../../../lib/products-data";
+import { activeFrontList, visibleFrontList } from "../../../lib/products-data";
+import { productStockByFront } from "../../../lib/stock";
+import { materialRequestNumber } from "../../../lib/document-numbers";
 import { isFiscalUnit } from "../../../lib/fiscal-units";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
@@ -20,7 +22,7 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = { PENDING:"Pendent
 export const ACTIVE_STATUSES: RequestStatus[] = ["PENDING", "IN_SEPARATION"];
 export const TERMINAL_STATUSES: RequestStatus[] = ["SENT", "PARTIALLY_SENT", "NOT_FULFILLED", "CANCELLED"];
 
-export function requestNumber(id: number) { return `SOL-${String(id).padStart(6, "0")}`; }
+export const requestNumber = materialRequestNumber;
 export function canSeeAllRequests(user: SessionUser) { return user.permissions.includes("materials.manage") || user.permissions.includes("materials.ship"); }
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 

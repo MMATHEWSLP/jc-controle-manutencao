@@ -423,6 +423,9 @@ export const maintenances = pgTable("maintenances", {
   km: doublePrecision("km"),
   mechanic: text("mechanic"),
   workOrder: text("work_order").notNull(),
+  // O.S. do módulo Ordem de Serviço a que esta troca pertence (vínculo automático pela última O.S.
+  // do equipamento no QR Code, editável). NULL = número de OS livre/antigo, sem O.S. cadastrada.
+  workOrderId: integer("work_order_id").references((): AnyPgColumn => workOrders.id),
   cost: doublePrecision("cost").notNull().default(0),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
@@ -835,23 +838,46 @@ export const productFrontStock = pgTable("product_front_stock", {
   index("product_front_stock_front_idx").on(table.serviceFrontId, table.active),
 ]);
 
-// Movimentações de estoque por frente (hoje: envios de Solicitação de Materiais). O saldo continua
-// em product_front_stock; esta tabela é o rastro de cada entrada/saída e permite desfazer o envio
-// quando uma solicitação é reaberta.
+// Movimentações de estoque por frente — o rastro de TODA entrada/saída (Solicitação de Materiais,
+// Solicitação de Pedidos/Compras, Movimentação, Ordem de Serviço e ajuste manual). O saldo continua
+// em product_front_stock; só lib/stock.ts grava aqui e no saldo (nunca direto em outro lugar).
+// delta > 0 = entrada, delta < 0 = saída. Estorno não apaga a linha: marca reversedAt e grava o
+// movimento contrário no saldo.
 export const productStockMovements = pgTable("product_stock_movements", {
   id: serial("id").primaryKey(),
   productId: integer("product_id").notNull().references(() => products.id, { onDelete:"cascade" }),
   serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
   delta: doublePrecision("delta").notNull(),
   reason: text("reason").notNull(),
+  // Origem do lançamento (o número exibido vem da tabela de origem: SOL-/PED-/SAI-/OS-).
+  source: text("source", { enum:["MATERIAL_REQUEST","PURCHASE","STOCK_EXIT","WORK_ORDER","ADJUSTMENT"] }).notNull().default("MATERIAL_REQUEST"),
+  // Data do lançamento (AAAA-MM-DD) quando difere do registro (ex.: peça de uma O.S. aberta há dias).
+  movementDate: text("movement_date"),
+  // Valor unitário no momento do movimento (R$), para o histórico e o custo da O.S.
+  unitPrice: doublePrecision("unit_price"),
+  // Destino da saída (Movimentação / O.S.): equipamento ou funcionário.
+  equipmentId: integer("equipment_id").references((): AnyPgColumn => equipment.id),
+  employeeId: integer("employee_id").references((): AnyPgColumn => employees.id),
   materialRequestId: integer("material_request_id").references((): AnyPgColumn => materialRequests.id),
   materialRequestItemId: integer("material_request_item_id").references((): AnyPgColumn => materialRequestItems.id),
+  purchaseOrderId: integer("purchase_order_id").references((): AnyPgColumn => purchaseOrders.id),
+  purchaseOrderItemId: integer("purchase_order_item_id").references((): AnyPgColumn => purchaseOrderItems.id),
+  stockExitId: integer("stock_exit_id").references((): AnyPgColumn => stockExits.id),
+  stockExitItemId: integer("stock_exit_item_id").references((): AnyPgColumn => stockExitItems.id),
+  workOrderId: integer("work_order_id").references((): AnyPgColumn => workOrders.id),
+  workOrderItemId: integer("work_order_item_id").references((): AnyPgColumn => workOrderItems.id),
   reversedAt: text("reversed_at"),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
   index("product_stock_movements_product_idx").on(table.productId, table.serviceFrontId),
   index("product_stock_movements_request_idx").on(table.materialRequestId),
+  index("product_stock_movements_source_idx").on(table.source, table.createdAt),
+  index("product_stock_movements_equipment_idx").on(table.equipmentId),
+  index("product_stock_movements_employee_idx").on(table.employeeId),
+  index("product_stock_movements_work_order_idx").on(table.workOrderId),
+  index("product_stock_movements_exit_idx").on(table.stockExitId),
+  index("product_stock_movements_purchase_idx").on(table.purchaseOrderId),
 ]);
 
 // Várias referências por produto. `normalized` (maiúsculas, sem espaço/traço/ponto/barra) é a chave
@@ -1173,3 +1199,162 @@ export const employeeAbsences = pgTable("employee_absences", {
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("employee_absences_employee_idx").on(table.employeeId, table.startDate)]);
+
+// ---------------------------------------------------------------------------
+// Solicitação de Pedidos (Compras externas). Número exibido PED-000123 (lib/purchases.ts). Cada
+// etapa é feita por uma função diferente: solicitante → aprovador → comprador → pagamento →
+// despacho → solicitante confirma o recebimento (que gera a entrada no estoque dos itens
+// vinculados a produto, via lib/stock.ts).
+// ---------------------------------------------------------------------------
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  requesterId: integer("requester_id").notNull().references(() => users.id),
+  // Frente que pede (a do login; escolha obrigatória para quem tem mais de uma) — é onde o estoque entra.
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  requestedAt: text("requested_at").notNull(),
+  status: text("status", { enum:["AGUARDANDO_APROVACAO","RECUSADO","EM_COTACAO","ANALISE_PAGAMENTO","PAGO","ENVIADO","RECEBIDO","CANCELADO"] }).notNull().default("AGUARDANDO_APROVACAO"),
+  notes: text("notes"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: text("approved_at"),
+  rejectedBy: integer("rejected_by").references(() => users.id),
+  rejectedAt: text("rejected_at"),
+  rejectReason: text("reject_reason"),
+  paymentRequestedBy: integer("payment_requested_by").references(() => users.id),
+  paymentRequestedAt: text("payment_requested_at"),
+  buyerNotes: text("buyer_notes"),
+  paidBy: integer("paid_by").references(() => users.id),
+  paidAt: text("paid_at"),
+  paymentNotes: text("payment_notes"),
+  dispatchedBy: integer("dispatched_by").references(() => users.id),
+  dispatchedAt: text("dispatched_at"),
+  dispatchNotes: text("dispatch_notes"),
+  receivedBy: integer("received_by").references(() => users.id),
+  receivedAt: text("received_at"),
+  cancelledBy: integer("cancelled_by").references(() => users.id),
+  cancelledAt: text("cancelled_at"),
+  cancelReason: text("cancel_reason"),
+  ...timestamps,
+}, (table) => [
+  index("purchase_orders_status_idx").on(table.status, table.requestedAt),
+  index("purchase_orders_requester_idx").on(table.requesterId, table.requestedAt),
+  index("purchase_orders_front_idx").on(table.serviceFrontId),
+]);
+
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => purchaseOrders.id, { onDelete:"cascade" }),
+  // Vinculado a produto do estoque (recebimento gera entrada) ou NULL = item digitado à mão.
+  productId: integer("product_id").references(() => products.id, { onDelete:"set null" }),
+  description: text("description").notNull(),
+  reference: text("reference"),
+  quantity: doublePrecision("quantity").notNull(),
+  fiscalUnit: text("fiscal_unit").notNull(),
+  // Preenchidos pelo comprador na cotação.
+  unitPrice: doublePrecision("unit_price"),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  brand: text("brand"),
+  // Conferência do recebimento (card "Mudou o fornecedor/marca/valor? Veio a quantidade pedida?").
+  receivedAt: text("received_at"),
+  receivedBy: integer("received_by").references(() => users.id),
+  receivedQuantity: doublePrecision("received_quantity"),
+  receivedUnitPrice: doublePrecision("received_unit_price"),
+  receivedSupplierId: integer("received_supplier_id").references(() => suppliers.id),
+  receivedBrand: text("received_brand"),
+  receiptNotes: text("receipt_notes"),
+  ...timestamps,
+}, (table) => [index("purchase_order_items_order_idx").on(table.orderId), index("purchase_order_items_product_idx").on(table.productId)]);
+
+// Orçamentos anexados pelo comprador (imagem ou PDF), em uploads/purchase-quotes.
+export const purchaseOrderAttachments = pgTable("purchase_order_attachments", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => purchaseOrders.id, { onDelete:"cascade" }),
+  storageKey: text("storage_key").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("purchase_order_attachments_order_idx").on(table.orderId)]);
+
+// ---------------------------------------------------------------------------
+// Movimentação: saída de produtos do estoque para um funcionário ou um equipamento. Número
+// exibido SAI-000123. Cada item vira um movimento em product_stock_movements (lib/stock.ts).
+// ---------------------------------------------------------------------------
+export const stockExits = pgTable("stock_exits", {
+  id: serial("id").primaryKey(),
+  // Frente cujo estoque sai.
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  exitDate: text("exit_date").notNull(),
+  destinationType: text("destination_type", { enum:["EMPLOYEE","EQUIPMENT"] }).notNull(),
+  employeeId: integer("employee_id").references(() => employees.id),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  cancelledAt: text("cancelled_at"),
+  cancelledBy: integer("cancelled_by").references(() => users.id),
+  cancelReason: text("cancel_reason"),
+  ...timestamps,
+}, (table) => [
+  index("stock_exits_date_idx").on(table.exitDate),
+  index("stock_exits_equipment_idx").on(table.equipmentId),
+  index("stock_exits_employee_idx").on(table.employeeId),
+]);
+
+export const stockExitItems = pgTable("stock_exit_items", {
+  id: serial("id").primaryKey(),
+  exitId: integer("exit_id").notNull().references(() => stockExits.id, { onDelete:"cascade" }),
+  productId: integer("product_id").notNull().references(() => products.id),
+  quantity: doublePrecision("quantity").notNull(),
+  unitPrice: doublePrecision("unit_price"),
+  ...timestamps,
+}, (table) => [index("stock_exit_items_exit_idx").on(table.exitId)]);
+
+// ---------------------------------------------------------------------------
+// Ordem de Serviço (número exibido OS-000123). Peças lançadas saem do estoque na hora (lib/stock.ts),
+// cada uma com a própria data de lançamento e quem retirou. Trocas de óleo feitas pelo QR Code se
+// vinculam pela coluna maintenances.work_order_id.
+// ---------------------------------------------------------------------------
+export const workOrders = pgTable("work_orders", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  // Frente do equipamento na abertura: é de onde saem as peças.
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  openedAt: text("opened_at").notNull(),
+  meterReading: doublePrecision("meter_reading"),
+  meterUnit: text("meter_unit", { enum:["HOURS","KM"] }).notNull(),
+  // O que está sendo feito / diagnóstico do serviço.
+  description: text("description").notNull(),
+  status: text("status", { enum:["OPEN","CLOSED"] }).notNull().default("OPEN"),
+  closedAt: text("closed_at"),
+  closedBy: integer("closed_by").references(() => users.id),
+  closingNotes: text("closing_notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("work_orders_equipment_idx").on(table.equipmentId, table.openedAt),
+  index("work_orders_status_idx").on(table.status, table.openedAt),
+]);
+
+// Mecânicos responsáveis (multi-seleção): nomes da mesma lista do Status da Frota (fleet_mechanics).
+export const workOrderMechanics = pgTable("work_order_mechanics", {
+  workOrderId: integer("work_order_id").notNull().references(() => workOrders.id, { onDelete:"cascade" }),
+  mechanicName: text("mechanic_name").notNull(),
+  ...timestamps,
+}, (table) => [primaryKey({ columns: [table.workOrderId, table.mechanicName] })]);
+
+export const workOrderItems = pgTable("work_order_items", {
+  id: serial("id").primaryKey(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrders.id, { onDelete:"cascade" }),
+  productId: integer("product_id").notNull().references(() => products.id),
+  quantity: doublePrecision("quantity").notNull(),
+  // Data em que ESTA peça foi lançada (a O.S. pode ficar aberta vários dias).
+  launchDate: text("launch_date").notNull(),
+  // Quem retirou esta peça para aplicação (peça por peça).
+  withdrawnBy: text("withdrawn_by").notNull(),
+  withdrawnByEmployeeId: integer("withdrawn_by_employee_id").references(() => employees.id),
+  // Onde a peça foi aplicada (motor, freio...). Opcional.
+  application: text("application"),
+  unitPrice: doublePrecision("unit_price"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("work_order_items_order_idx").on(table.workOrderId)]);

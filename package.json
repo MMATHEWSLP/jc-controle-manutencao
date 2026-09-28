@@ -36,7 +36,8 @@
     "test:fuel-rules": "esbuild tests/fuel-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-rules.mjs",
     "test:employee-rules": "esbuild tests/employee-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-employee-rules.mjs && node --test /tmp/manutencao-preventiva-employee-rules.mjs",
     "test:leave-cycle": "esbuild tests/leave-cycle.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-leave-cycle.mjs && node --test /tmp/manutencao-preventiva-leave-cycle.mjs",
-    "test:registry-fronts": "esbuild tests/registry-fronts.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-registry-fronts.mjs && node --test /tmp/manutencao-preventiva-registry-fronts.mjs"
+    "test:registry-fronts": "esbuild tests/registry-fronts.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-registry-fronts.mjs && node --test /tmp/manutencao-preventiva-registry-fronts.mjs",
+    "test:stock": "tsx --test tests/stock-service.integration.test.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

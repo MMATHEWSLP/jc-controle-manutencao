@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @next/next/no-img-element -- fotos vêm de rota própria (já otimizadas em WebP no navegador), como a foto do equipamento */
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
 import { optimizePhoto } from "../lib/photo-client";
 
 type ProductFront = { serviceFrontId: number; name: string; active: boolean; quantity: number; editable: boolean };
@@ -509,6 +510,7 @@ function ProductModal({
   const [newSupplierName, setNewSupplierName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [modalTab, setModalTab] = useState<"dados" | "historico">("dados");
   const fileInput = useRef<HTMLInputElement>(null);
   const canUploadPhotos = !readOnly && (can(authUser, "products.create") || can(authUser, "products.edit"));
   const canActivate = can(authUser, "products.create") || can(authUser, "products.edit");
@@ -665,6 +667,13 @@ function ProductModal({
           </div>
           <button onClick={close}>×</button>
         </header>
+        {item && (
+          <div className="main-tabs secondary-module-nav product-modal-tabs" role="tablist">
+            <button type="button" className={modalTab === "dados" ? "active" : ""} onClick={() => setModalTab("dados")}>Dados do produto</button>
+            <button type="button" className={modalTab === "historico" ? "active" : ""} onClick={() => setModalTab("historico")}>Histórico</button>
+          </div>
+        )}
+        {item && modalTab === "historico" ? <ProductHistory productId={item.id} close={close} /> : (
         <form className="modal-form" onSubmit={submit}>
           <label>
             TAG
@@ -855,7 +864,27 @@ function ProductModal({
             )}
           </div>
         </form>
+        )}
       </section>
+    </div>
+  );
+}
+
+// Aba Histórico: entradas e saídas deste produto com o número do lançamento de origem.
+function ProductHistory({ productId, close }: { productId: number; close: () => void }) {
+  const [rows, setRows] = useState<StockMovementRow[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetchJson<{ movements: StockMovementRow[] }>(`/api/products/${productId}/movements`).then((result) => setRows(result.movements)).catch((problem) => setError(problem instanceof Error ? problem.message : "Não foi possível carregar o histórico."));
+  }, [productId]);
+  const entries = rows?.filter((row) => row.type === "ENTRADA" && !row.reversed).reduce((total, row) => total + row.quantity, 0) ?? 0;
+  const exits = rows?.filter((row) => row.type === "SAIDA" && !row.reversed).reduce((total, row) => total + row.quantity, 0) ?? 0;
+  return (
+    <div className="modal-form product-history-panel">
+      <p className="full product-history-summary">Entradas: <strong>{entries.toLocaleString("pt-BR")}</strong> · Saídas: <strong>{exits.toLocaleString("pt-BR")}</strong> · {rows?.length ?? 0} lançamento(s) nas frentes que você enxerga.</p>
+      {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
+      <div className="full">{rows === null && !error ? <div className="page-loading"><span /><p>Carregando histórico...</p></div> : <StockMovementsTable rows={rows ?? []} showProduct={false} empty="Nenhuma movimentação registrada para este produto." />}</div>
+      <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Fechar</button></div>
     </div>
   );
 }

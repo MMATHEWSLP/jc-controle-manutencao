@@ -3,6 +3,7 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { productFrontStock, productPhotos, products, suppliers } from "../../../../db/schema";
+import { setStockLevel } from "../../../../lib/stock";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { normalizeTag, parseReferenceList } from "../../../../lib/product-rules";
@@ -130,8 +131,8 @@ export async function PUT(request: Request, { params }: Context) {
       for (const change of stockChanges) {
         const current = (await tx.select().from(productFrontStock).where(and(eq(productFrontStock.productId, id), eq(productFrontStock.serviceFrontId, change.serviceFrontId))).limit(1))[0];
         if (current && current.quantity === change.quantity && current.active) continue;
-        await tx.insert(productFrontStock).values({ productId: id, serviceFrontId: change.serviceFrontId, quantity: change.quantity, active: true, activatedAt: now, activatedBy: user.id, updatedAt: now })
-          .onConflictDoUpdate({ target: [productFrontStock.productId, productFrontStock.serviceFrontId], set: { quantity: change.quantity, active: true, updatedAt: now } });
+        // O ajuste vira um movimento (aba Histórico do produto) pelo serviço único de estoque.
+        await setStockLevel(tx, { productId: id, serviceFrontId: change.serviceFrontId, quantity: change.quantity, userId: user.id });
         await productAudit(tx, user.id, id, "ESTOQUE AJUSTADO", { serviceFrontId: change.serviceFrontId, quantity: current?.quantity ?? null }, { serviceFrontId: change.serviceFrontId, quantity: change.quantity });
       }
     });

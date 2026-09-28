@@ -134,6 +134,13 @@
       "when": 1790606002829,
       "tag": "0018_material_items_fiscal_unit",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790606444723,
+      "tag": "0019_stock_purchases_exits_work_orders",
+      "breakpoints": true
     }
   ]
 }
