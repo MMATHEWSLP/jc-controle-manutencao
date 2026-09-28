@@ -18,6 +18,7 @@ import FuelView from "./FuelView";
 import EmployeesView from "./EmployeesView";
 import StockExitsView from "./StockExitsView";
 import WorkOrdersView from "./WorkOrdersView";
+import PurchaseOrdersView from "./PurchaseOrdersView";
 import TaskRoleManagerModal from "./TaskRoleManagerModal";
 import { planBalanceText, planDetailStatus, planSortRank, type PlanState } from "../lib/maintenance-engine";
 type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "daily.register" | "daily.view_all" | "daily.manage" | "daily.field_operators" | "daily.front_requests" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "products.view" | "products.create" | "products.edit" | "products.delete" | "products.import" | "products.manage_models" | "suppliers.view" | "suppliers.create" | "suppliers.edit" | "suppliers.delete" | "fuel.view" | "fuel.register" | "fuel.manage" | "employees.view" | "employees.manage" | "employees.salary" | "employees.companies" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status" | "service_fronts.manage" | "fronts.cross_registry" | "purchases.view" | "purchases.request" | "purchases.approve" | "purchases.buy" | "purchases.pay" | "purchases.dispatch" | "purchases.manage" | "stock.exits_view" | "stock.exits_create" | "stock.exits_cancel" | "work_orders.view" | "work_orders.manage" | "work_orders.close";
@@ -171,7 +172,7 @@ type UserRecord = AuthUser & {
     serviceFrontNames: string[];
 };
 type ServiceFront = { id:number;name:string;location:string|null;active:boolean };
-type Section = "Dashboard" | "Equipamentos da troca" | "Equipamentos" | "QR Codes" | "Horímetros / KM" | "Registrar troca de óleo" | "Central de alertas" | "WhatsApp" | "Histórico" | "Status da Frota" | "Controle Diário" | "Solicitação de Materiais" | "Produtos" | "Combustível" | "Funcionários" | "Tarefas" | "Usuários" | "Movimentação" | "Ordem de Serviço";
+type Section = "Dashboard" | "Equipamentos da troca" | "Equipamentos" | "QR Codes" | "Horímetros / KM" | "Registrar troca de óleo" | "Central de alertas" | "WhatsApp" | "Histórico" | "Status da Frota" | "Controle Diário" | "Solicitação de Materiais" | "Produtos" | "Combustível" | "Funcionários" | "Tarefas" | "Usuários" | "Movimentação" | "Ordem de Serviço" | "Solicitação de Pedidos";
 const emptyData: SystemData = { generatedAt: "", equipment: [], maintenanceTypes: [], alerts: [], history: [], readings: [], dashboard: { equipmentTotal: 0, active: 0, stopped: 0, fronts: 0, normal: 0, attention: 0, urgent: 0, overdue: 0, unconfigured: 0, due7: 0, due30: 0, recentMaintenances: 0 } };
 const internalNav: Array<[
     string,
@@ -369,8 +370,8 @@ export default function Home() {
     if (authUser.profile === "CAMPO")
         return <FieldShell user={authUser} logout={async () => { await fetchJson("/api/auth/logout", { method: "POST" }).catch(() => undefined); clearCachedUserData(); setAuthUser(null); }} flash={flash} notice={notice}/>;
     const allowed = internalNav.filter(([, , permission]) => can(authUser, permission));
-    const standaloneAllowed = active === "Status da Frota" && can(authUser, "fleet.view") || active === "Controle Diário" && canDaily(authUser) || active === "Equipamentos" && can(authUser, "equipment.view") || active === "Solicitação de Materiais" && can(authUser, "materials.view") || active === "Produtos" && can(authUser, "products.view") || active === "Movimentação" && can(authUser, "stock.exits_view") || active === "Ordem de Serviço" && can(authUser, "work_orders.view") || active === "Combustível" && can(authUser, "fuel.view") || active === "Funcionários" && can(authUser, "employees.view") || active === "Tarefas" && can(authUser, "tasks.view") || active === "Usuários" && can(authUser, "users.view");
-    const effective = standaloneAllowed ? active : !allowed.some(([, label]) => label === active) ? allowed[0]?.[1] ?? (can(authUser, "equipment.view") ? "Equipamentos" : can(authUser, "fleet.view") ? "Status da Frota" : canDaily(authUser) ? "Controle Diário" : can(authUser, "materials.view") ? "Solicitação de Materiais" : can(authUser, "products.view") ? "Produtos" : can(authUser, "fuel.view") ? "Combustível" : can(authUser, "employees.view") ? "Funcionários" : can(authUser, "tasks.view") ? "Tarefas" : can(authUser, "stock.exits_view") ? "Movimentação" : can(authUser, "work_orders.view") ? "Ordem de Serviço" : can(authUser, "users.view") ? "Usuários" : "Dashboard") : active;
+    const standaloneAllowed = active === "Status da Frota" && can(authUser, "fleet.view") || active === "Controle Diário" && canDaily(authUser) || active === "Equipamentos" && can(authUser, "equipment.view") || active === "Solicitação de Materiais" && can(authUser, "materials.view") || active === "Produtos" && can(authUser, "products.view") || active === "Movimentação" && can(authUser, "stock.exits_view") || active === "Ordem de Serviço" && can(authUser, "work_orders.view") || active === "Solicitação de Pedidos" && can(authUser, "purchases.view") || active === "Combustível" && can(authUser, "fuel.view") || active === "Funcionários" && can(authUser, "employees.view") || active === "Tarefas" && can(authUser, "tasks.view") || active === "Usuários" && can(authUser, "users.view");
+    const effective = standaloneAllowed ? active : !allowed.some(([, label]) => label === active) ? allowed[0]?.[1] ?? (can(authUser, "equipment.view") ? "Equipamentos" : can(authUser, "fleet.view") ? "Status da Frota" : canDaily(authUser) ? "Controle Diário" : can(authUser, "materials.view") ? "Solicitação de Materiais" : can(authUser, "products.view") ? "Produtos" : can(authUser, "fuel.view") ? "Combustível" : can(authUser, "employees.view") ? "Funcionários" : can(authUser, "tasks.view") ? "Tarefas" : can(authUser, "stock.exits_view") ? "Movimentação" : can(authUser, "work_orders.view") ? "Ordem de Serviço" : can(authUser, "purchases.view") ? "Solicitação de Pedidos" : can(authUser, "users.view") ? "Usuários" : "Dashboard") : active;
     const oilActive = allowed.some(([, label]) => label === effective);
     // Menu agrupado: Equipamentos (Cadastro/Listagem, Troca de Óleo, Status da Frota, Controle Diário)
     // e Produtos (Produtos, Solicitação de Materiais). As telas e permissões continuam as mesmas;
@@ -387,6 +388,7 @@ export default function Home() {
     const productsGroup: NavItem[] = [
         ...(can(authUser, "products.view") ? [{ key: "produtos", icon: "⛭", label: "Produtos", active: effective === "Produtos", go: () => setActive("Produtos"), badge: 0 }] : []),
         ...(can(authUser, "materials.view") ? [{ key: "materiais", icon: "▤", label: "Solicitação de Materiais", active: effective === "Solicitação de Materiais", go: () => setActive("Solicitação de Materiais"), badge: 0 }] : []),
+        ...(can(authUser, "purchases.view") ? [{ key: "pedidos", icon: "🛒", label: "Solicitação de Pedidos", active: effective === "Solicitação de Pedidos", go: () => setActive("Solicitação de Pedidos"), badge: 0 }] : []),
         ...(can(authUser, "stock.exits_view") ? [{ key: "movimentacao", icon: "⇄", label: "Movimentação", active: effective === "Movimentação", go: () => setActive("Movimentação"), badge: 0 }] : []),
     ];
     const group: "EQUIPAMENTOS" | "PRODUTOS" | null = equipmentGroup.some((item) => item.active) ? "EQUIPAMENTOS" : productsGroup.some((item) => item.active) ? "PRODUTOS" : null;
@@ -430,7 +432,8 @@ function SectionView(props: {
     return <EmployeesView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Tarefas")
     return <TasksView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Movimentação")
     return <StockExitsView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Ordem de Serviço")
-    return <WorkOrdersView authUser={props.authUser} flash={props.flash}/>; return <UsersView {...props}/>; }
+    return <WorkOrdersView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Solicitação de Pedidos")
+    return <PurchaseOrdersView authUser={props.authUser} flash={props.flash}/>; return <UsersView {...props}/>; }
 function ModuleHeader({ eyebrow, title, subtitle, action, onAction }: {
     eyebrow: string;
     title: string;

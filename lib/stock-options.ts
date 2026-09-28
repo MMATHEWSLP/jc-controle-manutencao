@@ -4,7 +4,7 @@ import { equipment, productFrontStock, productReferences, products, serviceFront
 import { frentesVisiveis } from "./access";
 import type { Permission, SessionUser } from "./auth";
 import { buildProductWhere } from "./products-filters";
-import { visibleFrontList } from "./products-data";
+import { activeFrontList, visibleFrontList } from "./products-data";
 import { fuelLocalDay } from "./fuel";
 
 // Apoio comum às telas que lançam estoque (Movimentação, Ordem de Serviço, Compras): frentes da
@@ -24,6 +24,14 @@ export const isIsoDay = (value: unknown): value is string => typeof value === "s
 export function defaultFrontId(user: SessionUser, fronts: Array<{ id: number }>) {
   if (fronts.length === 1) return fronts[0].id;
   return user.serviceFrontId && fronts.some((front) => front.id === user.serviceFrontId) ? user.serviceFrontId : null;
+}
+
+// Frentes para as quais a pessoa pode fazer um pedido (Solicitação de Materiais e de Compras): as
+// vinculadas ao login. Uma só = preenchida sozinha; mais de uma = escolha obrigatória. Login sem
+// frente vinculada escolhe entre todas as ativas.
+export async function requestFronts(db: Db, user: SessionUser) {
+  const fronts = await visibleFrontList(db, user);
+  return fronts.length ? fronts : activeFrontList(db);
 }
 
 export async function equipmentOptions(db: Db, user: SessionUser) {

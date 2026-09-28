@@ -4,7 +4,8 @@ import { getDb } from "../../../db";
 import { materialRequestItems, materialRequests, products, serviceFronts, users } from "../../../db/schema";
 import { assertSameOrigin, authorize, type SessionUser } from "../../../lib/auth";
 import { logMaterialRequestAudit } from "../../../lib/material-request-audit";
-import { activeFrontList, visibleFrontList } from "../../../lib/products-data";
+import { visibleFrontList } from "../../../lib/products-data";
+import { requestFronts } from "../../../lib/stock-options";
 import { productStockByFront } from "../../../lib/stock";
 import { materialRequestNumber } from "../../../lib/document-numbers";
 import { isFiscalUnit } from "../../../lib/fiscal-units";
@@ -90,13 +91,6 @@ export async function loadRequests(id?: number) {
   const itemsByRequest = new Map<number, ItemRow[]>();
   for (const item of items) { const list = itemsByRequest.get(item.requestId) ?? []; list.push(item); itemsByRequest.set(item.requestId, list); }
   return rows.map((row) => serializeRequest(row, itemsByRequest.get(row.id) ?? []));
-}
-
-// Frentes para as quais a pessoa pode pedir: as vinculadas ao login. Uma só = preenchida sozinha;
-// mais de uma = escolha obrigatória. Login sem frente vinculada escolhe entre todas as ativas.
-async function requestFronts(db: Awaited<ReturnType<typeof getDb>>, user: SessionUser) {
-  const fronts = await visibleFrontList(db, user);
-  return fronts.length ? fronts : activeFrontList(db);
 }
 
 export async function GET(request: Request) {
