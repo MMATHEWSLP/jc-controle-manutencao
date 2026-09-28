@@ -12,15 +12,16 @@ on:
           - dry-run
           - confirmar
       tipo:
-        description: "relacao (cadastra funcionários da relação de uma frente) ou historico (ciclos de folga + afastamentos do sistema anterior)"
+        description: "relacao (cadastra funcionários da relação de uma frente), historico (ciclos de folga + afastamentos do sistema anterior) ou situacao (quem está em viagem para casa / de folga)"
         required: true
         default: "relacao"
         type: choice
         options:
           - relacao
           - historico
+          - situacao
       arquivo:
-        description: "Só na relacao: arquivo da relação em scripts/import-funcionarios/data/"
+        description: "Na relacao: arquivo da relação · na situacao: arquivo da situação (ambos em scripts/import-funcionarios/data/)"
         required: true
         default: "mamuru-2026-09-28.tsv"
       folgas:
@@ -70,6 +71,8 @@ jobs:
           DIR=scripts/import-funcionarios/data
           if [ "$TIPO" = "historico" ]; then
             node importar-historico-funcionarios.mjs $FLAG "--folgas=$DIR/$FOLGAS" "--afastamentos=$DIR/$AFASTAMENTOS" "--data=$DATA"
+          elif [ "$TIPO" = "situacao" ]; then
+            node importar-situacao-folgas.mjs $FLAG "--arquivo=$DIR/$ARQUIVO" "--data=$DATA"
           else
             node importar-funcionarios.mjs $FLAG "--arquivo=$DIR/$ARQUIVO" "--frente=$FRENTE" "--data=$DATA"
           fi
