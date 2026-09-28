@@ -670,6 +670,9 @@ export const materialRequestItems = pgTable("material_request_items", {
   description: text("description").notNull(),
   reference: text("reference"),
   quantityRequested: doublePrecision("quantity_requested").notNull(),
+  // Unidade fiscal (lib/fiscal-units.ts) — a que vai constar na nota/compra. NULL só nos itens
+  // anteriores à criação do campo.
+  fiscalUnit: text("fiscal_unit"),
   itemStatus: text("item_status", { enum:["PENDING","SENT","NOT_AVAILABLE"] }).notNull().default("PENDING"),
   quantitySent: doublePrecision("quantity_sent"),
   notes: text("notes"),

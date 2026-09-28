@@ -216,7 +216,7 @@ export function createMaintenancePdf(input:MaintenancePdfInput){
 }
 
 // productTag preenchido = item vinculado a produto cadastrado (estoque); null = item manual.
-export type MaterialRequestPdfItem={description:string;quantityRequested:number;reference:string|null;itemStatus:"PENDING"|"SENT"|"NOT_AVAILABLE";quantitySent:number|null;productTag?:string|null};
+export type MaterialRequestPdfItem={description:string;quantityRequested:number;fiscalUnit?:string|null;reference:string|null;itemStatus:"PENDING"|"SENT"|"NOT_AVAILABLE";quantitySent:number|null;productTag?:string|null};
 export type MaterialRequestPdfInput={
   requestNumber:string;requester:string;serviceFront:string;requestedAt:string;statusLabel:string;notes:string;
   items:MaterialRequestPdfItem[];generatedAt:string;originFront?:string|null;
@@ -278,11 +278,11 @@ function materialRequestPdfPages(input:MaterialRequestPdfInput,mode:"REQUEST"|"S
       const kind=item.productTag?`PRODUTO ${item.productTag}`:"ITEM MANUAL";const kindColor=item.productTag?"0.08 0.42 0.31":"0.42 0.51 0.58";
       if(mode==="REQUEST"){
         content+=text(44,top,8,truncate(item.description,46),true);content+=text(44,top-10,6,truncate(kind,40),true,kindColor);
-        content+=text(400,top,8,materialQuantityFormat.format(item.quantityRequested),false);
+        content+=text(400,top,8,`${materialQuantityFormat.format(item.quantityRequested)}${item.fiscalUnit?` ${item.fiscalUnit}`:""}`,false);
         content+=text(470,top,8,truncate(item.reference??"—",18),false);
       }else{
         content+=text(40,top,7.5,truncate(item.description,34),true);content+=text(40,top-10,6,truncate(kind,34),true,kindColor);
-        content+=text(255,top,7.5,materialQuantityFormat.format(item.quantityRequested),false);
+        content+=text(255,top,7.5,`${materialQuantityFormat.format(item.quantityRequested)}${item.fiscalUnit?` ${item.fiscalUnit}`:""}`,false);
         content+=text(315,top,7.5,truncate(item.reference??"—",14),false);
         content+=text(400,top,7,materialItemStatusLabels[item.itemStatus],true,materialItemStatusColor[item.itemStatus]);
         content+=text(470,top,7.5,item.quantitySent===null?"—":materialQuantityFormat.format(item.quantitySent),true);

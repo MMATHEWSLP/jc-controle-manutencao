@@ -4,7 +4,8 @@ import { getDb } from "../../../db";
 import { materialRequestItems, materialRequests, products, serviceFronts, users } from "../../../db/schema";
 import { assertSameOrigin, authorize, type SessionUser } from "../../../lib/auth";
 import { logMaterialRequestAudit } from "../../../lib/material-request-audit";
-import { productStockByFront, visibleFrontList } from "../../../lib/products-data";
+import { activeFrontList, productStockByFront, visibleFrontList } from "../../../lib/products-data";
+import { isFiscalUnit } from "../../../lib/fiscal-units";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 export type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
@@ -34,7 +35,7 @@ type RequestRow = {
 // productId preenchido = item vinculado a um produto cadastrado (movimenta estoque no envio); NULL =
 // item digitado à mão (sem estoque). `stock` = saldo atual do produto por frente (para o aviso de
 // saldo insuficiente na tela de envio).
-type ItemRow = { id: number; requestId: number; description: string; reference: string | null; quantityRequested: number; itemStatus: string; quantitySent: number | null; notes: string | null; productId: number | null; productTag?: string | null; stock?: Record<number, number> };
+type ItemRow = { id: number; requestId: number; description: string; reference: string | null; quantityRequested: number; fiscalUnit: string | null; itemStatus: string; quantitySent: number | null; notes: string | null; productId: number | null; productTag?: string | null; stock?: Record<number, number> };
 
 export function serializeRequest(row: RequestRow, items: ItemRow[]) {
   const status = row.status as RequestStatus;
@@ -49,7 +50,7 @@ export function serializeRequest(row: RequestRow, items: ItemRow[]) {
     reopenedAt: row.reopenedAt, reopenedBy: row.reopenedBy, reopenedByName: row.reopenedByName,
     isActive,
     items: items.map((item) => ({
-      id: item.id, description: item.description, reference: item.reference, quantityRequested: item.quantityRequested,
+      id: item.id, description: item.description, reference: item.reference, quantityRequested: item.quantityRequested, fiscalUnit: item.fiscalUnit,
       itemStatus: item.itemStatus as ItemStatus, itemStatusLabel: ITEM_STATUS_LABELS[item.itemStatus as ItemStatus] ?? item.itemStatus,
       quantitySent: item.quantitySent, notes: item.notes,
       productId: item.productId, productTag: item.productTag ?? null, linked: item.productId !== null, stock: item.stock ?? {},
@@ -89,6 +90,13 @@ export async function loadRequests(id?: number) {
   return rows.map((row) => serializeRequest(row, itemsByRequest.get(row.id) ?? []));
 }
 
+// Frentes para as quais a pessoa pode pedir: as vinculadas ao login. Uma só = preenchida sozinha;
+// mais de uma = escolha obrigatória. Login sem frente vinculada escolhe entre todas as ativas.
+async function requestFronts(db: Awaited<ReturnType<typeof getDb>>, user: SessionUser) {
+  const fronts = await visibleFrontList(db, user);
+  return fronts.length ? fronts : activeFrontList(db);
+}
+
 export async function GET(request: Request) {
   const auth = await authorize(request, "materials.view"); if (auth.response) return auth.response;
   try {
@@ -108,8 +116,9 @@ export async function GET(request: Request) {
     }));
     const canShip = auth.user!.permissions.includes("materials.ship");
     // Frentes de onde o almoxarifado pode tirar o estoque dos itens vinculados a produtos.
-    const originFronts = canShip ? await visibleFrontList(await getDb(), auth.user!) : [];
-    return Response.json({ requests: visible, canRequest: auth.user!.permissions.includes("materials.request"), canShip, canManage: seeAll, originFronts });
+    const db = await getDb();
+    const originFronts = canShip ? await visibleFrontList(db, auth.user!) : [];
+    return Response.json({ requests: visible, canRequest: auth.user!.permissions.includes("materials.request"), canShip, canManage: seeAll, originFronts, requestFronts: await requestFronts(db, auth.user!) });
   } catch (error) {
     console.error("[material-requests.get]", error);
     return Response.json({ error: "Não foi possível carregar as solicitações de materiais." }, { status: 500 });
@@ -131,9 +140,11 @@ export async function POST(request: Request) {
       const quantityRequested = Number(item.quantityRequested);
       const reference = clean(item.reference);
       const productId = Number(item.productId) > 0 ? Number(item.productId) : null;
+      const fiscalUnit = clean(item.fiscalUnit).toUpperCase();
       if (!description && !productId) throw new Error("ITEM_DESCRIPTION");
+      if (!isFiscalUnit(fiscalUnit)) throw new Error("ITEM_UNIT");
       if (!Number.isFinite(quantityRequested) || quantityRequested <= 0) throw new Error("ITEM_QUANTITY");
-      return { description, quantityRequested, reference: reference || null, productId };
+      return { description, quantityRequested, reference: reference || null, productId, fiscalUnit };
     });
 
     const db = await getDb();
@@ -147,16 +158,17 @@ export async function POST(request: Request) {
       item.description ||= product.name;
       item.reference ||= product.reference;
     }
-    const front = await db.select({ id: serviceFronts.id }).from(serviceFronts).where(and(eq(serviceFronts.id, serviceFrontId), eq(serviceFronts.active, true))).limit(1);
-    if (!front[0]) return Response.json({ error: "A frente de serviço selecionada não existe." }, { status: 400 });
+    const allowedFronts = await requestFronts(db, auth.user!);
+    if (!allowedFronts.some((front) => front.id === serviceFrontId)) return Response.json({ error: "Escolha uma das frentes vinculadas ao seu login." }, { status: 400 });
 
     const now = new Date().toISOString();
     const inserted = (await db.insert(materialRequests).values({ requesterId: auth.user!.id, serviceFrontId, requestedAt: now, status: "PENDING", notes: notes || null, updatedAt: now }).returning())[0];
-    await db.insert(materialRequestItems).values(items.map((item) => ({ requestId: inserted.id, description: item.description, reference: item.reference, quantityRequested: item.quantityRequested, productId: item.productId, itemStatus: "PENDING" as const, updatedAt: now })));
+    await db.insert(materialRequestItems).values(items.map((item) => ({ requestId: inserted.id, description: item.description, reference: item.reference, quantityRequested: item.quantityRequested, fiscalUnit: item.fiscalUnit, productId: item.productId, itemStatus: "PENDING" as const, updatedAt: now })));
     await logMaterialRequestAudit(auth.user!.id, inserted.id, "MATERIAL_REQUEST_CREATED", undefined, { serviceFrontId, itemCount: items.length, linkedItems: items.filter((item) => item.productId).length, notes: notes || null });
     return Response.json({ message: `Solicitação ${requestNumber(inserted.id)} enviada ao almoxarifado.` }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "ITEM_DESCRIPTION") return Response.json({ error: "Preencha a descrição de todos os itens." }, { status: 400 });
+    if (error instanceof Error && error.message === "ITEM_UNIT") return Response.json({ error: "Escolha a unidade fiscal de todos os itens." }, { status: 400 });
     if (error instanceof Error && error.message === "ITEM_QUANTITY") return Response.json({ error: "A quantidade solicitada deve ser maior que zero em todos os itens." }, { status: 400 });
     console.error("[material-requests.post]", error);
     return Response.json({ error: "Não foi possível registrar a solicitação." }, { status: 500 });

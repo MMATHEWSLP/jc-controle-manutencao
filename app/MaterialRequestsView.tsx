@@ -1,11 +1,12 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
 // linked = item vinculado a um produto cadastrado (movimenta estoque no envio); senão, item manual.
-type RequestItem = { id:number; description:string; reference:string|null; quantityRequested:number; itemStatus:ItemStatus; itemStatusLabel:string; quantitySent:number|null; notes:string|null; productId:number|null; productTag:string|null; linked:boolean; stock:Record<number,number> };
+type RequestItem = { id:number; description:string; reference:string|null; quantityRequested:number; fiscalUnit:string|null; itemStatus:ItemStatus; itemStatusLabel:string; quantitySent:number|null; notes:string|null; productId:number|null; productTag:string|null; linked:boolean; stock:Record<number,number> };
 type ProductOption = { id:number; tag:string; name:string; reference:string|null; references:string[] };
 type Shortage = { label:string; requested:number; available:number };
 type MaterialRequest = {
@@ -47,6 +48,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
   const [canShip,setCanShip]=useState(false);
   const [canManage,setCanManage]=useState(false);
   const [originFronts,setOriginFronts]=useState<Array<{id:number;name:string}>>([]);
+  const [requestFronts,setRequestFronts]=useState<Array<{id:number;name:string}>>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
@@ -57,7 +59,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
   const [viewing,setViewing]=useState<MaterialRequest|null>(null);
   const [cancelling,setCancelling]=useState<MaterialRequest|null>(null);
 
-  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{requests:MaterialRequest[];canRequest:boolean;canShip:boolean;canManage:boolean;originFronts:Array<{id:number;name:string}>}>("/api/material-requests"); setRequests(result.requests); setCanRequest(result.canRequest); setCanShip(result.canShip); setCanManage(result.canManage); setOriginFronts(result.originFronts ?? []); if(!initialized.current){ initialized.current=true; if(result.canManage||result.canShip) setTab("received"); } }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as solicitações."); }finally{ setLoading(false); } },[]);
+  const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{requests:MaterialRequest[];canRequest:boolean;canShip:boolean;canManage:boolean;originFronts:Array<{id:number;name:string}>;requestFronts:Array<{id:number;name:string}>}>("/api/material-requests"); setRequests(result.requests); setRequestFronts(result.requestFronts ?? []); setCanRequest(result.canRequest); setCanShip(result.canShip); setCanManage(result.canManage); setOriginFronts(result.originFronts ?? []); if(!initialized.current){ initialized.current=true; if(result.canManage||result.canShip) setTab("received"); } }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as solicitações."); }finally{ setLoading(false); } },[]);
   useEffect(()=>{ if(tab!=="history") load(); },[load,tab]);
   useEffect(()=>{ api<{fronts:Front[]}>("/api/service-fronts").then((result)=>setFronts(result.fronts)).catch(()=>setFronts([])); },[]);
 
@@ -105,7 +107,7 @@ export default function MaterialRequestsView({ authUser, flash }:{ authUser:Auth
         {filtered.length===0 && <div className="empty-state">Nenhuma solicitação {tab==="received"?"recebida":"enviada"} encontrada.{hasActiveFilters && <button type="button" className="secondary" onClick={clearFilters}>Limpar filtros</button>}</div>}
       </article>
     </>}
-    {creating && <CreateRequestModal authUser={authUser} fronts={fronts} close={()=>setCreating(false)} saved={async(message)=>{ setCreating(false); await load(); flash(message); }}/>}
+    {creating && <CreateRequestModal authUser={authUser} fronts={requestFronts} close={()=>setCreating(false)} saved={async(message)=>{ setCreating(false); await load(); flash(message); }}/>}
     {shipping && <ShipmentModal item={shipping} originFronts={originFronts} close={()=>setShipping(null)} saved={async(message,confirmed)=>{ const target=shipping; setShipping(null); await load(); flash(message); if(confirmed && target) exportPdf(target,"SHIPMENT"); }}/>}
     {cancelling && <CancelRequestModal item={cancelling} close={()=>setCancelling(null)} saved={async(message)=>{ setCancelling(null); await load(); flash(message); }}/>}
     {viewing && <RequestDetailsModal item={viewing} onReopen={viewing.canReopen?()=>{ setViewing(null); reopen(viewing); }:undefined} close={()=>setViewing(null)}/>}
@@ -200,8 +202,9 @@ function MaterialHistoryPanel({ canManage, fronts, openDetails }:{ canManage:boo
   </article>;
 }
 
-type DraftItem = { clientId:string; mode:"PRODUCT"|"MANUAL"; product:ProductOption|null; description:string; quantityRequested:string; reference:string };
-const newDraft=():DraftItem=>({ clientId:crypto.randomUUID(), mode:"PRODUCT", product:null, description:"", quantityRequested:"", reference:"" });
+type DraftItem = { clientId:string; mode:"PRODUCT"|"MANUAL"; product:ProductOption|null; description:string; quantityRequested:string; reference:string; fiscalUnit:string };
+const newDraft=():DraftItem=>({ clientId:crypto.randomUUID(), mode:"PRODUCT", product:null, description:"", quantityRequested:"", reference:"", fiscalUnit:DEFAULT_FISCAL_UNIT });
+const quantityWithUnit=(quantity:number,unit:string|null)=>`${numberFormat.format(quantity)}${unit?` ${unit}`:""}`;
 
 // Busca de produto cadastrado (TAG, nome ou referência) para o item da solicitação.
 function ProductPicker({ value, onPick }:{ value:ProductOption|null; onPick:(product:ProductOption|null)=>void }) {
@@ -217,8 +220,10 @@ function ProductPicker({ value, onPick }:{ value:ProductOption|null; onPick:(pro
   </div>;
 }
 
-function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUser; fronts:Front[]; close:()=>void; saved:(message:string)=>Promise<void> }) {
-  const [serviceFrontId,setServiceFrontId]=useState("");
+// Frente de origem do pedido: a do login. Com uma frente só ela vem preenchida (só leitura); com
+// várias, a escolha é obrigatória.
+function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUser; fronts:Array<{id:number;name:string}>; close:()=>void; saved:(message:string)=>Promise<void> }) {
+  const [serviceFrontId,setServiceFrontId]=useState(fronts.length===1?String(fronts[0].id):"");
   const [notes,setNotes]=useState("");
   const [items,setItems]=useState<DraftItem[]>([newDraft()]);
   const [busy,setBusy]=useState(false);
@@ -232,7 +237,7 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
     if(items.some((item)=>item.mode==="PRODUCT" && !item.product)) { setError("Escolha o produto cadastrado de cada item (ou mude para “Item manual”)."); return; }
     setBusy(true); setError("");
     try {
-      const result=await api<{message:string}>("/api/material-requests",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ serviceFrontId:Number(serviceFrontId), notes, items:items.map((item)=>item.mode==="PRODUCT" ? { productId:item.product?.id, description:item.product?.name ?? "", quantityRequested:Number(item.quantityRequested), reference:item.product?.references[0] ?? item.product?.reference ?? "" } : { description:item.description, quantityRequested:Number(item.quantityRequested), reference:item.reference }) }) });
+      const result=await api<{message:string}>("/api/material-requests",{ method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ serviceFrontId:Number(serviceFrontId), notes, items:items.map((item)=>item.mode==="PRODUCT" ? { productId:item.product?.id, description:item.product?.name ?? "", quantityRequested:Number(item.quantityRequested), reference:item.product?.references[0] ?? item.product?.reference ?? "", fiscalUnit:item.fiscalUnit } : { description:item.description, quantityRequested:Number(item.quantityRequested), reference:item.reference, fiscalUnit:item.fiscalUnit }) }) });
       await saved(result.message);
     } catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível enviar a solicitação."); }
     finally { setBusy(false); }
@@ -243,7 +248,9 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
     <div className="fleet-modal-body">
       <div className="fleet-form-grid">
         <label>Solicitante<input value={authUser.name} readOnly/></label>
-        <label className="span-2">Frente de serviço / Obra / Setor *<select required value={serviceFrontId} onChange={(event)=>setServiceFrontId(event.target.value)}><option value="" disabled>Selecione</option>{fronts.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
+        {fronts.length===1
+          ? <label className="span-2">Frente de serviço / Obra / Setor<input value={fronts[0].name} readOnly/></label>
+          : <label className="span-2">Frente de serviço / Obra / Setor *<select required value={serviceFrontId} onChange={(event)=>setServiceFrontId(event.target.value)}><option value="" disabled>Selecione para qual frente é este pedido</option>{fronts.map((front)=><option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
       </div>
       <section className="fleet-form-section">
         <div className="fleet-section-title"><h3>Itens solicitados</h3><button type="button" onClick={addItem}>＋ ADICIONAR ITEM</button></div>
@@ -255,6 +262,7 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
               <label>Referência<input value={item.reference} onChange={(event)=>patchItem(item.clientId,{ reference:event.target.value })}/></label>
             </>}
             <label>Quantidade solicitada *<input required type="number" min="0.01" step="0.01" value={item.quantityRequested} onChange={(event)=>patchItem(item.clientId,{ quantityRequested:event.target.value })}/></label>
+            <label>Unidade fiscal *<select required value={item.fiscalUnit} onChange={(event)=>patchItem(item.clientId,{ fiscalUnit:event.target.value })}>{FISCAL_UNITS.map(([code,label])=><option key={code} value={code}>{code} — {label}</option>)}</select></label>
           </div>
           {item.mode==="MANUAL" && <small className="material-item-hint">Item manual não movimenta estoque.</small>}
         </div>)}
@@ -311,7 +319,7 @@ function ShipmentModal({ item, originFronts, close, saved }:{ item:MaterialReque
         </div>}
         <h3>Itens solicitados</h3>
         {item.items.map((row)=>{ const status=statuses[row.id]; const balance=row.linked?available(row):null; const short=balance!==null && status==="SENT" && Number(quantities[row.id])>balance; return <div className={`fleet-order-editor ${short?"material-short":""}`} key={row.id}>
-          <header><b><ItemKind row={row}/> {row.description}</b><span>Solicitado: {numberFormat.format(row.quantityRequested)}{row.reference?` · Ref.: ${row.reference}`:""}{balance!==null && ` · Saldo na origem: ${numberFormat.format(balance)}`}</span></header>
+          <header><b><ItemKind row={row}/> {row.description}</b><span>Solicitado: {quantityWithUnit(row.quantityRequested,row.fiscalUnit)}{row.reference?` · Ref.: ${row.reference}`:""}{balance!==null && ` · Saldo na origem: ${numberFormat.format(balance)}`}</span></header>
           {short && <p className="material-short-warning">⚠ Saldo insuficiente na frente de origem ({numberFormat.format(balance!)}). Ao confirmar, o sistema pedirá confirmação.</p>}
           <div className="fleet-form-grid">
             <label>Marcação<div className="fleet-check" style={{ display:"flex", gap:"6px" }}>
@@ -361,7 +369,7 @@ function RequestDetailsModal({ item, onReopen, close }:{ item:MaterialRequest; o
     <div className="fleet-modal-body">
       <div className="fleet-current-banner"><span>Status do pedido</span><b className={`status-pill ${statusTone[item.status]}`}>{item.statusLabel}</b>{item.shippedByName && <small>Enviado por {item.shippedByName} em {formatDate(item.shippedAt)}</small>}{item.cancelledByName && <small>Cancelado por {item.cancelledByName} em {formatDate(item.cancelledAt)}</small>}{item.originServiceFront && <small>Estoque saiu de {item.originServiceFront} → {item.serviceFront}</small>}</div>
       <div className="table-scroll"><table><thead><tr><th>Tipo</th><th>Descrição</th><th>Qtd. solicitada</th><th>Referência</th><th>Status</th><th>Qtd. enviada</th></tr></thead><tbody>
-        {item.items.map((row)=><tr key={row.id}><td><ItemKind row={row}/></td><td>{row.description}</td><td>{numberFormat.format(row.quantityRequested)}</td><td>{row.reference ?? "—"}</td><td><span className={`status-pill ${row.itemStatus==="SENT"?"green":row.itemStatus==="NOT_AVAILABLE"?"red":"gray"}`}>{row.itemStatusLabel}</span></td><td>{row.quantitySent===null?"—":numberFormat.format(row.quantitySent)}</td></tr>)}
+        {item.items.map((row)=><tr key={row.id}><td><ItemKind row={row}/></td><td>{row.description}</td><td>{quantityWithUnit(row.quantityRequested,row.fiscalUnit)}</td><td>{row.reference ?? "—"}</td><td><span className={`status-pill ${row.itemStatus==="SENT"?"green":row.itemStatus==="NOT_AVAILABLE"?"red":"gray"}`}>{row.itemStatusLabel}</span></td><td>{row.quantitySent===null?"—":numberFormat.format(row.quantitySent)}</td></tr>)}
       </tbody></table></div>
       {item.notes && <p><strong>Observações:</strong> {item.notes}</p>}
       {item.shipmentNotes && <p><strong>Observações do envio:</strong> {item.shipmentNotes}</p>}
