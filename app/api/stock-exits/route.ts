@@ -10,7 +10,7 @@ import { isIsoDay } from "../../../lib/stock-options";
 const positive = (value: string | null) => { const parsed = Number(value); return Number.isInteger(parsed) && parsed > 0 ? parsed : null; };
 
 // Histórico da Movimentação: saídas de estoque (Movimentação e peças de O.S. fechadas) com filtros
-// rápidos por equipamento e por funcionário, além de período e produto.
+// por veículo, funcionário, departamento, produto e período.
 export async function GET(request: Request) {
   const auth = await authorize(request, "stock.exits_view");
   if (auth.response) return auth.response;
@@ -20,6 +20,7 @@ export async function GET(request: Request) {
     const from = url.searchParams.get("de"); const to = url.searchParams.get("ate");
     const filters = {
       equipmentId: positive(url.searchParams.get("equipamento")), employeeId: positive(url.searchParams.get("funcionario")),
+      departmentId: positive(url.searchParams.get("departamento")),
       productId: positive(url.searchParams.get("produto")), from: isIsoDay(from) ? from : null, to: isIsoDay(to) ? to : null,
     };
     if (filters.from && filters.to && filters.from > filters.to) return Response.json({ error: "O período inicial não pode ser depois do final." }, { status: 400 });

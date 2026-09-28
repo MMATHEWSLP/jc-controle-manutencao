@@ -98,8 +98,9 @@ export const PERMISSION_GROUPS = [
   ]},
   { label:"Movimentação de Estoque", items:[
     ["stock.exits_view","Visualizar o histórico de movimentação (saídas de estoque)"],
-    ["stock.exits_create","Lançar saída de produtos do estoque para funcionário ou equipamento"],
+    ["stock.exits_create","Lançar saída de produtos do estoque (veículo, funcionário e/ou departamento)"],
     ["stock.exits_cancel","Estornar uma saída lançada"],
+    ["departments.manage","Cadastrar e editar Departamentos (lista única usada na Movimentação e nas Compras)"],
   ]},
   { label:"Ordem de Serviço", items:[
     ["work_orders.view","Visualizar ordens de serviço"],

@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getDb } from "../../../../../db";
-import { auditLogs, purchaseOrderAttachments } from "../../../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { auditLogs, purchaseOrderAttachments, purchaseOrderItems } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { orderActions, orderItemStatuses, requirePurchaseOrder } from "../../../../../lib/purchases";
 import { purchaseFronts } from "../../../../../lib/purchase-scope";
@@ -9,10 +10,19 @@ import { ATTACHMENT_FORMAT_HINT, detectAttachment, displayFileName, isAttachment
 import { stockErrorResponse } from "../../../../../lib/stock";
 
 type Context = { params: Promise<{ id: string }> };
-const KIND_LABEL = { PHOTO: "FOTO DO PEDIDO ANEXADA", QUOTE_IMAGE: "ORÇAMENTO (IMAGEM) ANEXADO", QUOTE_DOCUMENT: "ORÇAMENTO (DOCUMENTO) ANEXADO" } as const;
+const KIND_LABEL = { PHOTO: "FOTO DO ITEM ANEXADA", QUOTE_IMAGE: "ORÇAMENTO (IMAGEM) ANEXADO", QUOTE_DOCUMENT: "ORÇAMENTO (DOCUMENTO) ANEXADO", PAYMENT_PROOF: "COMPROVANTE DE PAGAMENTO ANEXADO" } as const;
 
-// Anexos do pedido: fotos (quem pediu, na criação ou depois) e orçamentos por imagem ou por
-// documento (comprador, com item em cotação). Vários arquivos por envio.
+// Anexos do pedido, vários arquivos por envio: fotos de um item (quem pediu, na criação ou depois),
+// orçamentos por imagem ou por documento (comprador, com item em cotação) e comprovantes de
+// pagamento (quem confirma pagamentos, a partir da análise de pagamento).
+const DENIED = {
+  PHOTO: "Só quem pediu pode anexar fotos, enquanto o pedido está em andamento.",
+  QUOTE_IMAGE: "Só o comprador anexa orçamentos, com itens em cotação.",
+  QUOTE_DOCUMENT: "Só o comprador anexa orçamentos, com itens em cotação.",
+  PAYMENT_PROOF: "Só quem confirma pagamentos anexa o comprovante, a partir da análise de pagamento.",
+} as const;
+const allowedFor = (kind: keyof typeof DENIED, actions: { PHOTO: boolean; QUOTE: boolean; PAYMENT_PROOF: boolean }) =>
+  kind === "PHOTO" ? actions.PHOTO : kind === "PAYMENT_PROOF" ? actions.PAYMENT_PROOF : actions.QUOTE;
 export async function POST(request: Request, { params }: Context) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   const auth = await authorize(request, "purchases.view");
@@ -27,8 +37,13 @@ export async function POST(request: Request, { params }: Context) {
     const kind = form.get("kind");
     if (!isAttachmentKind(kind)) return Response.json({ error: "Tipo de anexo inválido." }, { status: 400 });
     const actions = orderActions(user, order, await orderItemStatuses(db, id));
-    if (kind === "PHOTO" ? !actions.PHOTO : !actions.QUOTE) {
-      return Response.json({ error: kind === "PHOTO" ? "Só quem pediu pode anexar fotos, enquanto o pedido está em andamento." : "Só o comprador anexa orçamentos, com itens em cotação." }, { status: 409 });
+    if (!allowedFor(kind, actions)) return Response.json({ error: DENIED[kind] }, { status: 409 });
+    // Foto sempre pertence a um item deste pedido.
+    const itemId = kind === "PHOTO" ? Number(form.get("itemId")) : null;
+    if (kind === "PHOTO") {
+      const item = Number.isInteger(itemId) && itemId! > 0
+        ? (await db.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems).where(and(eq(purchaseOrderItems.id, itemId!), eq(purchaseOrderItems.orderId, id))).limit(1))[0] : null;
+      if (!item) return Response.json({ error: "Escolha a qual item do pedido a foto se refere." }, { status: 400 });
     }
     const files = form.getAll("files").filter((file): file is File => file instanceof File);
     if (files.length === 0) return Response.json({ error: "Envie ao menos um arquivo." }, { status: 400 });
@@ -46,9 +61,9 @@ export async function POST(request: Request, { params }: Context) {
     for (const [index, item] of prepared.entries()) {
       const storageKey = `${id}-${Date.now()}-${index}-${crypto.randomUUID().slice(0, 8)}.${item.extension}`;
       await writeFile(path.join(QUOTE_DIR, storageKey), item.buffer);
-      await db.insert(purchaseOrderAttachments).values({ orderId: id, kind, storageKey, fileName: item.name, contentType: item.contentType, size: item.buffer.length, uploadedBy: user.id });
+      await db.insert(purchaseOrderAttachments).values({ orderId: id, kind, itemId, storageKey, fileName: item.name, contentType: item.contentType, size: item.buffer.length, uploadedBy: user.id });
     }
-    await db.insert(auditLogs).values({ userId: user.id, entityType: "PURCHASE_ORDER", entityId: String(id), action: KIND_LABEL[kind], newValue: JSON.stringify({ files: prepared.map((item) => item.name) }) });
+    await db.insert(auditLogs).values({ userId: user.id, entityType: "PURCHASE_ORDER", entityId: String(id), action: KIND_LABEL[kind], newValue: JSON.stringify({ itemId, files: prepared.map((item) => item.name) }) });
     return Response.json({ message: `${prepared.length} arquivo(s) anexado(s).` }, { status: 201 });
   } catch (error) {
     const known = stockErrorResponse(error); if (known) return known;

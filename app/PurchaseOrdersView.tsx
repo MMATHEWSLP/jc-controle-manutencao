@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
+import { DepartmentsModal, useDepartments, type Department } from "./DepartmentsManager";
 import {
   isActiveItem, isTerminalOrder, ITEM_STATUS_LABELS, matchesSituation, ORDER_STATUS_LABELS, PURCHASE_COMPANIES, SITUATION_FILTER_LABELS, URGENCIES, URGENCY_LABELS,
   type ItemAction, type ItemStatus, type OrderStatus, type SituationFilter, type Urgency,
@@ -13,10 +14,10 @@ import {
 
 type User = { id: number; name: string; permissions: string[] };
 type BatchActions = Record<ItemAction, boolean>;
-type Actions = BatchActions & { CANCEL: boolean; PHOTO: boolean };
+type Actions = BatchActions & { CANCEL: boolean; PHOTO: boolean; PAYMENT_PROOF: boolean };
 type OrderRow = {
   id: number; number: string; requesterId: number; createdBy: string; requesterName: string; serviceFrontId: number; front: string; requestedAt: string; orderDate: string;
-  status: OrderStatus; statusLabel: string; company: string | null; branch: string | null; title: string | null; department: string | null; urgency: Urgency;
+  status: OrderStatus; statusLabel: string; company: string | null; title: string | null; department: string | null; departmentId: number | null; urgency: Urgency;
   equipmentPrefix: string | null; items: Array<{ status: string }>; itemCount: number; activeItemCount: number; searchText: string; quoteCount: number; total: number | null; needsMe: boolean;
 };
 type ListResponse = {
@@ -33,10 +34,10 @@ type Item = {
   receivedAt: string | null; receivedByName: string | null; receivedQuantity: number | null; receivedUnitPrice: number | null; receivedSupplierName: string | null; receivedBrand: string | null; receiptNotes: string | null;
   events: ItemEvent[];
 };
-type Attachment = { id: number; kind: "PHOTO" | "QUOTE_IMAGE" | "QUOTE_DOCUMENT"; fileName: string; contentType: string; size: number; createdAt: string; uploadedByName: string | null };
+type Attachment = { id: number; kind: "PHOTO" | "QUOTE_IMAGE" | "QUOTE_DOCUMENT" | "PAYMENT_PROOF"; itemId: number | null; fileName: string; contentType: string; size: number; createdAt: string; uploadedByName: string | null };
 type Detail = {
   id: number; number: string; status: OrderStatus; statusLabel: string; front: string; requesterId: number; requesterName: string | null; createdByName: string | null; requestedAt: string; orderDate: string;
-  company: string | null; branch: string | null; title: string | null; department: string | null; urgency: Urgency; notes: string | null;
+  company: string | null; title: string | null; department: string | null; urgency: Urgency; notes: string | null;
   equipment: { id: number; prefix: string; description: string; chassis: string | null; year: number | null } | null;
   buyerNotes: string | null; paymentNotes: string | null; dispatchNotes: string | null; cancelledAt: string | null; cancelledByName: string | null; cancelReason: string | null;
   items: Item[]; attachments: Attachment[]; total: number | null; actions: Actions;
@@ -65,7 +66,7 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
   const [status, setStatus] = useState("");
   const [situations, setSituations] = useState<SituationFilter[]>([]);
   const [frontFilter, setFrontFilter] = useState("");
-  const [branchFilter, setBranchFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [suppliers, setSuppliers] = useState<CatalogOption[]>([]);
@@ -98,26 +99,26 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
 
   const inTab = useCallback((order: OrderRow, value: Tab) => value === "acao" ? order.needsMe : value === "ativas" ? !isTerminalOrder(order.status) : isTerminalOrder(order.status), []);
   const fronts = useMemo(() => [...new Map((data?.orders ?? []).map((order) => [order.serviceFrontId, order.front])).entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")), [data]);
-  const branches = useMemo(() => [...new Set((data?.orders ?? []).map((order) => order.branch).filter((value): value is string => Boolean(value)))].sort(), [data]);
-  const departments = useMemo(() => [...new Set((data?.orders ?? []).map((order) => order.department).filter((value): value is string => Boolean(value)))].sort(), [data]);
+  const departments = useDepartments();
+  const [managingDepartments, setManagingDepartments] = useState(false);
   // Filtros combináveis (AND): texto, situação geral, situações especiais, frente, filial e período.
   const orders = useMemo(() => {
     const key = normalize(query.trim());
     return (data?.orders ?? []).filter((order) => {
       if (!inTab(order, tab)) return false;
-      if (key && !normalize([order.number, order.title ?? "", order.company ?? "", order.front, order.branch ?? "", order.requesterName, order.createdBy, order.department ?? "", order.equipmentPrefix ?? "", order.searchText].join(" ")).includes(key)) return false;
+      if (key && !normalize([order.number, order.title ?? "", order.company ?? "", order.front, order.requesterName, order.createdBy, order.department ?? "", order.equipmentPrefix ?? "", order.searchText].join(" ")).includes(key)) return false;
       if (status && order.status !== status) return false;
       if (situations.some((situation) => !matchesSituation(order, situation))) return false;
       if (frontFilter && String(order.serviceFrontId) !== frontFilter) return false;
-      if (branchFilter && order.branch !== branchFilter) return false;
+      if (departmentFilter && String(order.departmentId) !== departmentFilter) return false;
       if (from && order.orderDate < from) return false;
       if (to && order.orderDate > to) return false;
       return true;
     });
-  }, [data, tab, query, status, situations, frontFilter, branchFilter, from, to, inTab]);
+  }, [data, tab, query, status, situations, frontFilter, departmentFilter, from, to, inTab]);
   const count = (value: Tab) => (data?.orders ?? []).filter((order) => inTab(order, value)).length;
-  const hasFilters = Boolean(query || status || situations.length || frontFilter || branchFilter || from || to);
-  const clearFilters = () => { setQuery(""); setStatus(""); setSituations([]); setFrontFilter(""); setBranchFilter(""); setFrom(""); setTo(""); };
+  const hasFilters = Boolean(query || status || situations.length || frontFilter || departmentFilter || from || to);
+  const clearFilters = () => { setQuery(""); setStatus(""); setSituations([]); setFrontFilter(""); setDepartmentFilter(""); setFrom(""); setTo(""); };
   const toggleSituation = (value: SituationFilter) => setSituations((current) => current.includes(value) ? current.filter((row) => row !== value) : [...current, value]);
   const statusOptions = tab === "historico" ? HISTORY_STATUSES : tab === "ativas" ? ACTIVE_STATUSES : [...ACTIVE_STATUSES, ...HISTORY_STATUSES];
 
@@ -125,7 +126,10 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
     <>
       <div className="page-heading module-heading">
         <div><p className="eyebrow">COMPRAS</p><h1>Solicitação de Pedidos</h1><span>Pedido de compra externa: aprovação e cotação item a item, pagamento, envio e recebimento com entrada no estoque.</span></div>
-        {data?.canRequest && <div className="heading-actions"><button className="primary" onClick={() => setCreating(true)}>＋ Novo pedido</button></div>}
+        {(data?.canRequest || departments.canManage) && <div className="heading-actions">
+          {departments.canManage && <button className="secondary" onClick={() => setManagingDepartments(true)}>Departamentos</button>}
+          {data?.canRequest && <button className="primary" onClick={() => setCreating(true)}>＋ Novo pedido</button>}
+        </div>}
       </div>
       <div className="main-tabs secondary-module-nav" role="tablist">
         <button type="button" className={tab === "ativas" ? "active" : ""} onClick={() => { setTab("ativas"); setStatus(""); }}>Ativas <b className="nav-badge soft">{count("ativas")}</b></button>
@@ -138,7 +142,7 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
           <label className="page-search span-wide"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar nº, título, solicitante, departamento, equipamento ou item..." /></label>
           <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos os status</option>{statusOptions.map((value) => <option key={value} value={value}>{ORDER_STATUS_LABELS[value]}</option>)}</select></label>
           {fronts.length > 1 && <label>Frente<select value={frontFilter} onChange={(event) => setFrontFilter(event.target.value)}><option value="">Todas</option>{fronts.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
-          {branches.length > 0 && <label>Filial<select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">Todas</option>{branches.map((value) => <option key={value}>{value}</option>)}</select></label>}
+          {departments.departments.length > 0 && <label>Departamento<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">Todos</option>{departments.departments.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>}
           <div className="date-range"><label>De<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>Até<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></div>
           {hasFilters && <button type="button" className="secondary clear-filters" onClick={clearFilters}>Limpar filtros</button>}
           <div className="po-situation-chips" role="group" aria-label="Situação do pedido">
@@ -152,7 +156,8 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
           </>
         )}
       </article>
-      {creating && data && <CreatePurchaseModal data={data} departments={departments} branches={branches} close={() => setCreating(false)} saved={async (message, id) => { setCreating(false); await load(); flash(message); setViewing(id); }} />}
+      {creating && data && <CreatePurchaseModal data={data} departments={departments.departments} createDepartment={departments.canManage ? departments.create : undefined} close={() => setCreating(false)} saved={async (message, id) => { setCreating(false); await load(); flash(message); setViewing(id); }} />}
+      {managingDepartments && <DepartmentsModal close={() => setManagingDepartments(false)} changed={departments.reload} flash={flash} />}
       {viewing !== null && data && <PurchaseDetailModal id={viewing} catalog={catalog} close={() => setViewing(null)} changed={load} flash={flash} authUserId={authUser.id} />}
     </>
   );
@@ -173,7 +178,7 @@ function PurchaseCard({ order, open }: { order: OrderRow; open: () => void }) {
         </div>
       </header>
       <div className="task-card-body">
-        <p className="material-card-route"><strong>{order.front}</strong>{order.branch ? ` · Filial ${order.branch}` : ""}{order.equipmentPrefix ? ` · ${order.equipmentPrefix}` : ""}</p>
+        <p className="material-card-route"><strong>{order.front}</strong>{order.equipmentPrefix ? ` · ${order.equipmentPrefix}` : ""}</p>
         <dl>
           <div><dt>Data de criação</dt><dd>{brDay(order.orderDate)}</dd></div>
           <div><dt>Itens</dt><dd>{order.itemCount} item(ns){order.activeItemCount !== order.itemCount ? ` · ${order.activeItemCount} seguem` : ""}</dd></div>
@@ -190,60 +195,67 @@ function PurchaseCard({ order, open }: { order: OrderRow; open: () => void }) {
 
 // ------------------------------------------------------------------------------ criação
 
-type DraftItem = { key: string; mode: "PRODUCT" | "MANUAL"; product: ProductOption | null; description: string; reference: string; notes: string; quantity: string; fiscalUnit: string };
-const newDraft = (): DraftItem => ({ key: crypto.randomUUID(), mode: "PRODUCT", product: null, description: "", reference: "", notes: "", quantity: "", fiscalUnit: DEFAULT_FISCAL_UNIT });
+type DraftPhoto = { file: File; url: string };
+type DraftItem = { key: string; mode: "PRODUCT" | "MANUAL"; product: ProductOption | null; description: string; reference: string; notes: string; quantity: string; fiscalUnit: string; photos: DraftPhoto[] };
+const newDraft = (): DraftItem => ({ key: crypto.randomUUID(), mode: "PRODUCT", product: null, description: "", reference: "", notes: "", quantity: "", fiscalUnit: DEFAULT_FISCAL_UNIT, photos: [] });
 
-async function uploadFiles(orderId: number, kind: Attachment["kind"], files: File[]) {
+async function uploadFiles(orderId: number, kind: Attachment["kind"], files: File[], itemId?: number) {
   const form = new FormData();
   form.append("kind", kind);
+  if (itemId) form.append("itemId", String(itemId));
   files.forEach((file) => form.append("files", file));
   return api<{ message: string }>(`/api/purchase-orders/${orderId}/attachments`, { method: "POST", body: form });
 }
 
-function CreatePurchaseModal({ data, departments, branches, close, saved }: { data: ListResponse; departments: string[]; branches: string[]; close: () => void; saved: (message: string, id: number) => Promise<void> }) {
+function CreatePurchaseModal({ data, departments, createDepartment, close, saved }: {
+  data: ListResponse; departments: Department[]; createDepartment?: (name: string) => Promise<Department>; close: () => void; saved: (message: string, id: number) => Promise<void>;
+}) {
   const fronts = data.requestFronts;
   const [frontId, setFrontId] = useState(fronts.length === 1 ? String(fronts[0].id) : "");
   const [company, setCompany] = useState<string>(PURCHASE_COMPANIES[0]);
-  const [branch, setBranch] = useState("");
   const [title, setTitle] = useState("");
-  const [department, setDepartment] = useState("");
+  const [department, setDepartment] = useState<CatalogOption | null>(null);
   const [orderDate, setOrderDate] = useState(localToday());
   const [requesterName, setRequesterName] = useState(data.userName);
   const [urgency, setUrgency] = useState<Urgency>("NORMAL");
   const [equipment, setEquipment] = useState<EquipmentOption | null>(null);
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<DraftItem[]>([newDraft()]);
-  const [photos, setPhotos] = useState<Array<{ file: File; url: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const photoInput = useRef<HTMLInputElement>(null);
   const photoUrls = useRef<string[]>([]);
   useEffect(() => () => photoUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   const patch = (key: string, value: Partial<DraftItem>) => setItems((current) => current.map((item) => (item.key === key ? { ...item, ...value } : item)));
-  const addPhotos = (files: FileList | null) => {
+  // Fotos ficam dentro do item a que se referem (a peça quebrada daquele item, por exemplo).
+  const addPhotos = (key: string, files: FileList | null) => {
     if (!files?.length) return;
     const added = [...files].map((file) => ({ file, url: URL.createObjectURL(file) }));
     photoUrls.current.push(...added.map((photo) => photo.url));
-    setPhotos((current) => [...current, ...added]);
-    if (photoInput.current) photoInput.current.value = "";
+    setItems((current) => current.map((item) => (item.key === key ? { ...item, photos: [...item.photos, ...added] } : item)));
   };
-  const removePhoto = (url: string) => { URL.revokeObjectURL(url); setPhotos((current) => current.filter((photo) => photo.url !== url)); };
+  const removePhoto = (key: string, url: string) => { URL.revokeObjectURL(url); setItems((current) => current.map((item) => (item.key === key ? { ...item, photos: item.photos.filter((photo) => photo.url !== url) } : item))); };
+  const photoCount = items.reduce((sum, item) => sum + item.photos.length, 0);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (items.some((item) => item.mode === "PRODUCT" && !item.product)) { setError("Escolha o produto de cada item (ou mude para “Item manual”)."); return; }
     setBusy(true); setError("");
     try {
-      const result = await api<{ id: number; message: string }>("/api/purchase-orders", jsonBody("POST", {
-        serviceFrontId: Number(frontId), company, branch, title, department, orderDate, requesterName, urgency, equipmentId: equipment?.id ?? null, notes,
+      const result = await api<{ id: number; message: string; itemIds: number[] }>("/api/purchase-orders", jsonBody("POST", {
+        serviceFrontId: Number(frontId), company, title, departmentId: department?.id ?? null, orderDate, requesterName, urgency, equipmentId: equipment?.id ?? null, notes,
         items: items.map((item) => item.mode === "PRODUCT"
           ? { productId: item.product!.id, description: item.product!.name, reference: item.product!.references[0] ?? item.product!.reference ?? "", notes: item.notes, quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }
           : { description: item.description, reference: item.reference, notes: item.notes, quantity: parseQty(item.quantity), fiscalUnit: item.fiscalUnit }),
       }));
       let message = result.message;
-      if (photos.length) {
-        try { await uploadFiles(result.id, "PHOTO", photos.map((photo) => photo.file)); message += ` ${photos.length} foto(s) anexada(s).`; }
-        catch (problem) { message += ` Atenção: as fotos não foram anexadas (${problemText(problem, "falha no envio")}) — anexe pelo detalhe do pedido.`; }
+      if (photoCount) {
+        const failed: string[] = [];
+        for (const [index, item] of items.entries()) {
+          if (!item.photos.length) continue;
+          try { await uploadFiles(result.id, "PHOTO", item.photos.map((photo) => photo.file), result.itemIds[index]); }
+          catch (problem) { failed.push(`item ${index + 1}: ${problemText(problem, "falha no envio")}`); }
+        }
+        message += failed.length ? ` Atenção: fotos não anexadas (${failed.join("; ")}) — anexe pelo detalhe do pedido.` : ` ${photoCount} foto(s) anexada(s) aos itens.`;
       }
       await saved(message, result.id);
     } catch (problem) { setError(problemText(problem, "Não foi possível registrar o pedido.")); }
@@ -258,10 +270,9 @@ function CreatePurchaseModal({ data, departments, branches, close, saved }: { da
           <div className="fleet-form-grid po-header-grid">
             <label>Pedido Nº<input readOnly value={data.nextNumber} title="Gerado automaticamente ao salvar (número previsto)" /></label>
             <label>Empresa *<select required value={company} onChange={(event) => setCompany(event.target.value)}>{PURCHASE_COMPANIES.map((value) => <option key={value}>{value}</option>)}</select></label>
-            <label>Filial<input value={branch} list="po-branches" onChange={(event) => setBranch(event.target.value)} placeholder="Ex.: Belém" /><datalist id="po-branches">{branches.map((value) => <option key={value} value={value} />)}</datalist></label>
             <label>Data *<input type="date" required value={orderDate} onChange={(event) => setOrderDate(event.target.value)} /></label>
             <label className="span-2">Descrição do pedido *<input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Peças para revisão da escavadeira" /></label>
-            <label>Departamento<input value={department} list="po-departments" onChange={(event) => setDepartment(event.target.value)} placeholder="Ex.: Manutenção" /><datalist id="po-departments">{departments.map((value) => <option key={value} value={value} />)}</datalist></label>
+            <label>Departamento<CatalogPicker options={departments.map((row) => ({ id: row.id, name: row.name }))} value={department} onPick={setDepartment} onCreate={createDepartment} placeholder="Buscar departamento..." createLabel="Cadastrar novo departamento" /></label>
             <label>Urgência *<select required value={urgency} onChange={(event) => setUrgency(event.target.value as Urgency)}>{URGENCIES.map((value) => <option key={value} value={value}>{URGENCY_LABELS[value]}</option>)}</select></label>
             <label>Solicitante *<input required value={requesterName} onChange={(event) => setRequesterName(event.target.value)} /></label>
             {fronts.length === 1
@@ -286,18 +297,16 @@ function CreatePurchaseModal({ data, departments, branches, close, saved }: { da
                 <label className="span-2">Observações<input value={item.notes} onChange={(event) => patch(item.key, { notes: event.target.value })} placeholder="Opcional (aplicação, medida, cor...)" /></label>
               </div>
               {item.mode === "MANUAL" && <small className="material-item-hint">Item manual (não cadastrado) só é marcado como recebido, sem entrada no estoque.</small>}
+              <div className="po-item-photos">
+                <label className="po-photo-add">📷 Foto(s) deste item<input type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { addPhotos(item.key, event.target.files); event.target.value = ""; }} /></label>
+                {item.photos.map((photo) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <figure key={photo.url}><img src={photo.url} alt={photo.file.name} /><figcaption>{photo.file.name}<button type="button" className="link-button" onClick={() => removePhoto(item.key, photo.url)}>remover</button></figcaption></figure>
+                ))}
+              </div>
             </div>
           ))}
           <button type="button" className="secondary po-add-item" onClick={() => setItems([...items, newDraft()])}>＋ Adicionar item</button>
-        </section>
-        <section className="fleet-form-section">
-          <div className="fleet-section-title"><h3>Fotos <small>(opcional)</small></h3><button type="button" onClick={() => photoInput.current?.click()}>＋ ANEXAR FOTO(S)</button><input ref={photoInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => addPhotos(event.target.files)} /></div>
-          {photos.length === 0 ? <p className="stock-summary">Foto da peça quebrada, do problema ou referência visual do que está sendo pedido.</p> : (
-            <div className="po-photo-grid">{photos.map((photo) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <figure key={photo.url}><img src={photo.url} alt={photo.file.name} /><figcaption>{photo.file.name}<button type="button" className="link-button" onClick={() => removePhoto(photo.url)}>remover</button></figcaption></figure>
-            ))}</div>
-          )}
         </section>
         <label className="fleet-notes">Observações / justificativa<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
         {error && <div className="equipment-form-error"><span>!</span><strong>{error}</strong></div>}
@@ -370,10 +379,10 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
   }
   const patchQuote = (itemId: number, value: Partial<QuoteDraft>) => setQuote((current) => ({ ...current, [itemId]: { ...current[itemId], ...value } }));
   const quoteItems = () => (order?.items ?? []).filter((item) => item.status === "EM_COTACAO").map((item) => ({ id: item.id, unitPrice: quote[item.id]?.unitPrice ?? "", supplierId: quote[item.id]?.supplier?.id ?? null, brand: quote[item.id]?.brand?.name ?? "" }));
-  async function upload(kind: Attachment["kind"], files: FileList | null) {
+  async function upload(kind: Attachment["kind"], files: FileList | null, itemId?: number) {
     if (!files?.length) return;
     setBusy(true); setError("");
-    try { flash((await uploadFiles(id, kind, [...files])).message); await load(); }
+    try { flash((await uploadFiles(id, kind, [...files], itemId)).message); await load(); }
     catch (problem) { setError(problemText(problem, "Não foi possível anexar.")); }
     finally { setBusy(false); }
   }
@@ -407,13 +416,16 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
   const selectable = (order?.items ?? []).filter((item) => isActiveItem(item.status) && item.status !== "RECEBIDO");
   const allSelected = selectable.length > 0 && selectable.every((item) => selected.includes(item.id));
   const quoting = Boolean(actions?.QUOTE);
-  const photos = (order?.attachments ?? []).filter((file) => file.kind === "PHOTO");
+  // Fotos antigas (antes do vínculo com item) aparecem à parte.
+  const looseFiles = (order?.attachments ?? []).filter((file) => file.kind === "PHOTO" && !file.itemId);
+  const photosOf = (itemId: number) => (order?.attachments ?? []).filter((file) => file.kind === "PHOTO" && file.itemId === itemId);
+  const proofs = (order?.attachments ?? []).filter((file) => file.kind === "PAYMENT_PROOF");
   const quoteImages = (order?.attachments ?? []).filter((file) => file.kind === "QUOTE_IMAGE");
   const quoteDocs = (order?.attachments ?? []).filter((file) => file.kind === "QUOTE_DOCUMENT");
 
   return (
     <div className="fleet-modal-backdrop" role="presentation"><section className="fleet-modal po-detail">
-      <header><div><p>SOLICITAÇÃO DE PEDIDOS{order?.company ? ` · ${order.company}` : ""}</p><h2>{order ? `${order.number} · ${order.title ?? ""}` : "Carregando..."}</h2><span>{order ? `${order.requesterName ?? "—"} · ${order.front}${order.branch ? ` · Filial ${order.branch}` : ""} · ${brDay(order.orderDate)}` : ""}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+      <header><div><p>SOLICITAÇÃO DE PEDIDOS{order?.company ? ` · ${order.company}` : ""}</p><h2>{order ? `${order.number} · ${order.title ?? ""}` : "Carregando..."}</h2><span>{order ? `${order.requesterName ?? "—"} · ${order.front} · ${brDay(order.orderDate)}` : ""}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
       <div className="fleet-modal-body">
         {!order && !error && <div className="page-loading"><span /><p>Carregando...</p></div>}
         {order && <>
@@ -426,7 +438,7 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
           <dl className="po-header-info">
             <div><dt>Pedido Nº</dt><dd>{order.number}</dd></div>
             <div><dt>Empresa</dt><dd>{order.company ?? "—"}</dd></div>
-            <div><dt>Frente / Filial</dt><dd>{order.front}{order.branch ? ` · ${order.branch}` : ""}</dd></div>
+            <div><dt>Frente de serviço</dt><dd>{order.front}</dd></div>
             <div><dt>Data</dt><dd>{brDay(order.orderDate)}</dd></div>
             <div><dt>Departamento</dt><dd>{order.department ?? "—"}</dd></div>
             <div><dt>Solicitante</dt><dd>{order.requesterName ?? "—"}</dd></div>
@@ -456,6 +468,7 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
                   <tr key={item.id} className={!isActiveItem(item.status) ? "po-item-out" : ""}>
                     {canSelect && <td><input type="checkbox" aria-label={`Selecionar ${item.description}`} disabled={!selectable.includes(item)} checked={selected.includes(item.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((value) => value !== item.id))} /></td>}
                     <td><strong>{item.product?.tag ? `${item.product.tag} · ` : ""}{item.description}</strong><small className="table-sub">{item.product ? "Produto do estoque" : "Item manual"}{item.reference ? ` · Ref. ${item.reference}` : ""}</small>{item.notes && <small className="table-sub">Obs.: {item.notes}</small>}
+                      <ItemPhotos files={photosOf(item.id)} canEdit={Boolean(actions?.PHOTO)} busy={busy} upload={(files) => upload("PHOTO", files, item.id)} remove={removeAttachment} />
                       <button type="button" className="link-button" onClick={() => setHistoryOf(historyOf === item.id ? null : item.id)}>{historyOf === item.id ? "ocultar histórico" : `histórico (${item.events.length})`}</button></td>
                     <td><QuantityCell item={item} />{editable && <button type="button" className="link-button" disabled={busy} onClick={() => adjustQuantity(item)}>ajustar qtd.</button>}</td>
                     <td><span className={`status-pill ${ITEM_TONE[item.status]}`}>{item.statusLabel}</span>{item.status === "RECUSADO" && <small className="table-sub">{item.rejectedByName ?? "—"}: {item.rejectReason}</small>}</td>
@@ -487,10 +500,12 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
             <div className="equipment-row-actions"><button type="button" className="secondary" disabled={busy} onClick={() => act({ action: "SAVE_QUOTE", items: quoteItems(), buyerNotes })}>Salvar cotação</button></div>
           </>}
 
-          <AttachmentSection title="Fotos do pedido" empty="Nenhuma foto anexada." files={photos} canEdit={Boolean(actions?.PHOTO)} accept="image/jpeg,image/png,image/webp" addLabel="＋ ANEXAR FOTO(S)" busy={busy} upload={(files) => upload("PHOTO", files)} remove={removeAttachment} />
+          {looseFiles.length > 0 && <AttachmentSection title="Fotos sem item vinculado" empty="" files={looseFiles} canEdit={false} accept="" addLabel="" busy={busy} upload={async () => undefined} remove={removeAttachment} />}
           <AttachmentSection title="Orçamento por imagem" empty="Nenhum orçamento por imagem (foto/print)." files={quoteImages} canEdit={quoting} accept="image/jpeg,image/png,image/webp" addLabel="＋ ANEXAR IMAGEM" busy={busy} upload={(files) => upload("QUOTE_IMAGE", files)} remove={removeAttachment} />
           <AttachmentSection title="Orçamento por documento" empty="Nenhum orçamento em documento (PDF, Word, Excel...)." files={quoteDocs} canEdit={quoting}
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.csv,.txt,application/pdf" addLabel="＋ ANEXAR DOCUMENTO" busy={busy} upload={(files) => upload("QUOTE_DOCUMENT", files)} remove={removeAttachment} />
+            accept={DOCUMENT_ACCEPT} addLabel="＋ ANEXAR DOCUMENTO" busy={busy} upload={(files) => upload("QUOTE_DOCUMENT", files)} remove={removeAttachment} />
+          <AttachmentSection title="Comprovante de pagamento" empty="Nenhum comprovante de pagamento (imagem ou documento)." files={proofs} canEdit={Boolean(actions?.PAYMENT_PROOF)}
+            accept={`image/jpeg,image/png,image/webp,${DOCUMENT_ACCEPT}`} addLabel="＋ ANEXAR COMPROVANTE" busy={busy} upload={(files) => upload("PAYMENT_PROOF", files)} remove={removeAttachment} />
           {receiving && <ReceiptCard item={receiving} catalog={catalog} busy={busy} cancel={() => setReceiving(null)} confirm={async (body) => { if (await act({ action: "RECEIVE_ITEM", itemId: receiving.id, ...body })) setReceiving(null); }} />}
           {!canSelect && !actions?.RECEIVE && order.requesterId !== authUserId && <p className="stock-summary">Você acompanha este pedido por ser da mesma frente (somente consulta).</p>}
         </>}
@@ -501,6 +516,25 @@ function PurchaseDetailModal({ id, catalog, close, changed, flash, authUserId }:
         {actions?.CANCEL && <button type="button" disabled={busy} onClick={() => { const reason = window.prompt("Motivo do cancelamento do pedido inteiro:"); if (reason?.trim()) act({ action: "CANCEL", reason }); }}>Cancelar pedido</button>}
       </footer>
     </section></div>
+  );
+}
+
+const DOCUMENT_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.csv,.txt,application/pdf";
+
+// Fotos vinculadas a um item: miniaturas dentro da linha do item, com "＋ foto" para quem pode anexar.
+function ItemPhotos({ files, canEdit, busy, upload, remove }: { files: Attachment[]; canEdit: boolean; busy: boolean; upload: (files: FileList | null) => Promise<void>; remove: (id: number) => void }) {
+  if (!files.length && !canEdit) return null;
+  return (
+    <div className="po-item-thumbs">
+      {files.map((file) => (
+        <span key={file.id}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <a href={`/api/purchase-orders/attachments/${file.id}`} target="_blank" rel="noreferrer" title={`${file.fileName} · ${file.uploadedByName ?? "—"}`}><img src={`/api/purchase-orders/attachments/${file.id}`} alt={file.fileName} loading="lazy" /></a>
+          {canEdit && <button type="button" className="link-button" aria-label={`Remover ${file.fileName}`} onClick={() => remove(file.id)}>×</button>}
+        </span>
+      ))}
+      {canEdit && <label className="po-photo-add small">＋ foto<input type="file" hidden multiple disabled={busy} accept="image/jpeg,image/png,image/webp" onChange={async (event) => { const input = event.currentTarget; await upload(input.files); input.value = ""; }} /></label>}
+    </div>
   );
 }
 

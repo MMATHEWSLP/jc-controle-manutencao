@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { brandName, catalogKey } from "../lib/catalog-rules.ts";
+import { brandName, catalogKey, departmentName } from "../lib/catalog-rules.ts";
 import { availableActions, canDo, matchesSituation, orderStatusFromItems, quantityProblem } from "../lib/purchase-rules.ts";
 import { detectAttachment, detectDocument, opensInline } from "../lib/quote-files.ts";
 
@@ -74,6 +74,8 @@ test("fornecedor/marca: mesma chave para grafias diferentes", () => {
   assert.equal(catalogKey("Ran-don "), "RANDON");
   assert.equal(catalogKey("São Paulo Peças"), "SAOPAULOPECAS");
   assert.equal(brandName("  randon   implementos "), "RANDON IMPLEMENTOS");
+  assert.equal(departmentName(" manutenção  da frota "), "MANUTENÇÃO DA FROTA");
+  assert.equal(catalogKey("Manutenção da Frota"), catalogKey("MANUTENCAO DA FROTA"));
 });
 
 test("anexos: imagem para foto/orçamento por imagem; PDF/Word/Excel para orçamento por documento", () => {
@@ -94,6 +96,9 @@ test("anexos: imagem para foto/orçamento por imagem; PDF/Word/Excel para orçam
   assert.equal(detectAttachment("QUOTE_IMAGE", pdf, "orcamento.pdf"), null, "PDF vai em orçamento por documento");
   assert.equal(detectAttachment("PHOTO", pdf, "foto.pdf"), null);
   assert.equal(detectAttachment("QUOTE_DOCUMENT", png, "print.png"), null, "imagem vai em orçamento por imagem");
+  assert.equal(detectAttachment("PAYMENT_PROOF", png, "comprovante.png").extension, "png", "comprovante por imagem");
+  assert.equal(detectAttachment("PAYMENT_PROOF", pdf, "comprovante.pdf").extension, "pdf", "comprovante por documento");
+  assert.equal(detectAttachment("PAYMENT_PROOF", Buffer.from([0x4d, 0x5a, 0, 1]), "x.exe"), null);
   assert.equal(opensInline("application/pdf"), true);
   assert.equal(opensInline("application/vnd.ms-excel"), false);
 });
