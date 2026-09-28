@@ -16,9 +16,10 @@ import ProductsView from "./ProductsView";
 import TasksView from "./TasksView";
 import FuelView from "./FuelView";
 import EmployeesView from "./EmployeesView";
+import StockExitsView from "./StockExitsView";
 import TaskRoleManagerModal from "./TaskRoleManagerModal";
 import { planBalanceText, planDetailStatus, planSortRank, type PlanState } from "../lib/maintenance-engine";
-type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "daily.register" | "daily.view_all" | "daily.manage" | "daily.field_operators" | "daily.front_requests" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "products.view" | "products.create" | "products.edit" | "products.delete" | "products.import" | "products.manage_models" | "suppliers.view" | "suppliers.create" | "suppliers.edit" | "suppliers.delete" | "fuel.view" | "fuel.register" | "fuel.manage" | "employees.view" | "employees.manage" | "employees.salary" | "employees.companies" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status" | "service_fronts.manage" | "fronts.cross_registry";
+type Permission = "dashboard.view" | "equipment.view" | "equipment.create" | "equipment.edit" | "equipment.transfer" | "equipment.applicable_types" | "equipment.edit_plan" | "meter.view" | "meter.create" | "meter.edit" | "maintenance.view" | "maintenance.create" | "maintenance.edit" | "maintenance.history" | "alerts.view" | "alerts.share" | "alerts.settings" | "whatsapp.view" | "whatsapp.send" | "whatsapp.manage" | "fleet.view" | "fleet.update" | "fleet.report" | "daily.register" | "daily.view_all" | "daily.manage" | "daily.field_operators" | "daily.front_requests" | "materials.view" | "materials.request" | "materials.ship" | "materials.manage" | "tasks.view" | "tasks.create" | "tasks.edit" | "products.view" | "products.create" | "products.edit" | "products.delete" | "products.import" | "products.manage_models" | "suppliers.view" | "suppliers.create" | "suppliers.edit" | "suppliers.delete" | "fuel.view" | "fuel.register" | "fuel.manage" | "employees.view" | "employees.manage" | "employees.salary" | "employees.companies" | "users.view" | "users.create" | "users.edit" | "users.permissions" | "users.status" | "service_fronts.manage" | "fronts.cross_registry" | "purchases.view" | "purchases.request" | "purchases.approve" | "purchases.buy" | "purchases.pay" | "purchases.dispatch" | "purchases.manage" | "stock.exits_view" | "stock.exits_create" | "stock.exits_cancel" | "work_orders.view" | "work_orders.manage" | "work_orders.close";
 type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFADO" | "CAMPO";
 type TaskRole = { id: number; name: string; visualOrder: number; isRoot: boolean };
 type AuthUser = {
@@ -169,7 +170,7 @@ type UserRecord = AuthUser & {
     serviceFrontNames: string[];
 };
 type ServiceFront = { id:number;name:string;location:string|null;active:boolean };
-type Section = "Dashboard" | "Equipamentos da troca" | "Equipamentos" | "QR Codes" | "Horímetros / KM" | "Registrar troca de óleo" | "Central de alertas" | "WhatsApp" | "Histórico" | "Status da Frota" | "Controle Diário" | "Solicitação de Materiais" | "Produtos" | "Combustível" | "Funcionários" | "Tarefas" | "Usuários";
+type Section = "Dashboard" | "Equipamentos da troca" | "Equipamentos" | "QR Codes" | "Horímetros / KM" | "Registrar troca de óleo" | "Central de alertas" | "WhatsApp" | "Histórico" | "Status da Frota" | "Controle Diário" | "Solicitação de Materiais" | "Produtos" | "Combustível" | "Funcionários" | "Tarefas" | "Usuários" | "Movimentação";
 const emptyData: SystemData = { generatedAt: "", equipment: [], maintenanceTypes: [], alerts: [], history: [], readings: [], dashboard: { equipmentTotal: 0, active: 0, stopped: 0, fronts: 0, normal: 0, attention: 0, urgent: 0, overdue: 0, unconfigured: 0, due7: 0, due30: 0, recentMaintenances: 0 } };
 const internalNav: Array<[
     string,
@@ -198,6 +199,9 @@ const permissionGroups: Array<{
     { label: "Combustível", items: [["fuel.view", "Visualizar saldos e histórico de combustível"], ["fuel.register", "Registrar lançamento de combustível"], ["fuel.manage", "Editar e excluir lançamentos de combustível"]] },
     { label: "Funcionários", items: [["employees.view", "Visualizar funcionários, transferências e afastamentos"], ["employees.manage", "Cadastrar, editar, transferir, demitir e controlar o ciclo de folga dos funcionários"], ["employees.salary", "Ver e informar o salário de carteira dos funcionários"], ["employees.companies", "Gerenciar a lista de empresas dos funcionários"]] },
     { label: "Usuários", items: [["users.view", "Visualizar usuários"], ["users.create", "Criar usuários"], ["users.edit", "Editar usuários"], ["users.permissions", "Alterar permissões"], ["users.status", "Ativar/desativar"]] },
+    { label: "Solicitação de Pedidos (Compras)", items: [["purchases.view", "Visualizar solicitações de pedido (as próprias; com as funções abaixo, as das frentes que enxerga)"], ["purchases.request", "Criar solicitação de pedido de compra"], ["purchases.approve", "Aprovar ou recusar solicitações de pedido"], ["purchases.buy", "Comprador: anexar orçamentos, preencher valores e enviar para pagamento"], ["purchases.pay", "Confirmar o pagamento dos pedidos"], ["purchases.dispatch", "Retirar/despachar as encomendas (marcar como enviado)"], ["purchases.manage", "Ver e cancelar todas as solicitações de pedido das frentes que enxerga"]] },
+    { label: "Movimentação de Estoque", items: [["stock.exits_view", "Visualizar o histórico de movimentação (saídas)"], ["stock.exits_create", "Lançar saída de produtos para funcionário ou equipamento"], ["stock.exits_cancel", "Estornar uma saída lançada"]] },
+    { label: "Ordem de Serviço", items: [["work_orders.view", "Visualizar ordens de serviço"], ["work_orders.manage", "Abrir e editar O.S., lançar peças e mecânicos"], ["work_orders.close", "Fechar e reabrir O.S."]] },
     { label: "Frentes de Serviço", items: [["service_fronts.manage", "Cadastrar, renomear e ativar/desativar frentes"], ["fronts.cross_registry", "Ver e transferir equipamentos e funcionários de todas as frentes (só em Equipamentos e Funcionários)"]] },
 ];
 const allPermissions = permissionGroups.flatMap((group) => group.items.map(([key]) => key));
@@ -364,8 +368,8 @@ export default function Home() {
     if (authUser.profile === "CAMPO")
         return <FieldShell user={authUser} logout={async () => { await fetchJson("/api/auth/logout", { method: "POST" }).catch(() => undefined); clearCachedUserData(); setAuthUser(null); }} flash={flash} notice={notice}/>;
     const allowed = internalNav.filter(([, , permission]) => can(authUser, permission));
-    const standaloneAllowed = active === "Status da Frota" && can(authUser, "fleet.view") || active === "Controle Diário" && canDaily(authUser) || active === "Equipamentos" && can(authUser, "equipment.view") || active === "Solicitação de Materiais" && can(authUser, "materials.view") || active === "Produtos" && can(authUser, "products.view") || active === "Combustível" && can(authUser, "fuel.view") || active === "Funcionários" && can(authUser, "employees.view") || active === "Tarefas" && can(authUser, "tasks.view") || active === "Usuários" && can(authUser, "users.view");
-    const effective = standaloneAllowed ? active : !allowed.some(([, label]) => label === active) ? allowed[0]?.[1] ?? (can(authUser, "equipment.view") ? "Equipamentos" : can(authUser, "fleet.view") ? "Status da Frota" : canDaily(authUser) ? "Controle Diário" : can(authUser, "materials.view") ? "Solicitação de Materiais" : can(authUser, "products.view") ? "Produtos" : can(authUser, "fuel.view") ? "Combustível" : can(authUser, "employees.view") ? "Funcionários" : can(authUser, "tasks.view") ? "Tarefas" : can(authUser, "users.view") ? "Usuários" : "Dashboard") : active;
+    const standaloneAllowed = active === "Status da Frota" && can(authUser, "fleet.view") || active === "Controle Diário" && canDaily(authUser) || active === "Equipamentos" && can(authUser, "equipment.view") || active === "Solicitação de Materiais" && can(authUser, "materials.view") || active === "Produtos" && can(authUser, "products.view") || active === "Movimentação" && can(authUser, "stock.exits_view") || active === "Combustível" && can(authUser, "fuel.view") || active === "Funcionários" && can(authUser, "employees.view") || active === "Tarefas" && can(authUser, "tasks.view") || active === "Usuários" && can(authUser, "users.view");
+    const effective = standaloneAllowed ? active : !allowed.some(([, label]) => label === active) ? allowed[0]?.[1] ?? (can(authUser, "equipment.view") ? "Equipamentos" : can(authUser, "fleet.view") ? "Status da Frota" : canDaily(authUser) ? "Controle Diário" : can(authUser, "materials.view") ? "Solicitação de Materiais" : can(authUser, "products.view") ? "Produtos" : can(authUser, "fuel.view") ? "Combustível" : can(authUser, "employees.view") ? "Funcionários" : can(authUser, "tasks.view") ? "Tarefas" : can(authUser, "stock.exits_view") ? "Movimentação" : can(authUser, "users.view") ? "Usuários" : "Dashboard") : active;
     const oilActive = allowed.some(([, label]) => label === effective);
     // Menu agrupado: Equipamentos (Cadastro/Listagem, Troca de Óleo, Status da Frota, Controle Diário)
     // e Produtos (Produtos, Solicitação de Materiais). As telas e permissões continuam as mesmas;
@@ -381,6 +385,7 @@ export default function Home() {
     const productsGroup: NavItem[] = [
         ...(can(authUser, "products.view") ? [{ key: "produtos", icon: "⛭", label: "Produtos", active: effective === "Produtos", go: () => setActive("Produtos"), badge: 0 }] : []),
         ...(can(authUser, "materials.view") ? [{ key: "materiais", icon: "▤", label: "Solicitação de Materiais", active: effective === "Solicitação de Materiais", go: () => setActive("Solicitação de Materiais"), badge: 0 }] : []),
+        ...(can(authUser, "stock.exits_view") ? [{ key: "movimentacao", icon: "⇄", label: "Movimentação", active: effective === "Movimentação", go: () => setActive("Movimentação"), badge: 0 }] : []),
     ];
     const group: "EQUIPAMENTOS" | "PRODUTOS" | null = equipmentGroup.some((item) => item.active) ? "EQUIPAMENTOS" : productsGroup.some((item) => item.active) ? "PRODUTOS" : null;
     const openGroup = (items: NavItem[]) => { if (!items.some((item) => item.active)) items[0]?.go(); };
@@ -421,7 +426,8 @@ function SectionView(props: {
     return <ProductsView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Combustível")
     return <FuelView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Funcionários")
     return <EmployeesView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Tarefas")
-    return <TasksView authUser={props.authUser} flash={props.flash}/>; return <UsersView {...props}/>; }
+    return <TasksView authUser={props.authUser} flash={props.flash}/>; if (props.section === "Movimentação")
+    return <StockExitsView authUser={props.authUser} flash={props.flash}/>; return <UsersView {...props}/>; }
 function ModuleHeader({ eyebrow, title, subtitle, action, onAction }: {
     eyebrow: string;
     title: string;

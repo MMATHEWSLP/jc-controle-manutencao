@@ -23,13 +23,13 @@ export type StockHistoryFilters = {
   limit?: number;
 };
 
-// Número do documento de origem do movimento (rastreio): SOL-/PED-/SAI-/OS- ou "Ajuste".
+// Número do documento de origem do movimento (rastreio): SOL-/PED-/SAI-/OS- ou "Ajuste" (manual).
 export function originNumber(row: { source: string; materialRequestId: number | null; purchaseOrderId: number | null; stockExitId: number | null; workOrderId: number | null }) {
   if (row.source === "MATERIAL_REQUEST" && row.materialRequestId) return materialRequestNumber(row.materialRequestId);
   if (row.source === "PURCHASE" && row.purchaseOrderId) return purchaseOrderNumber(row.purchaseOrderId);
   if (row.source === "STOCK_EXIT" && row.stockExitId) return stockExitNumber(row.stockExitId);
   if (row.source === "WORK_ORDER" && row.workOrderId) return workOrderNumber(row.workOrderId);
-  return "Ajuste";
+  return row.source === "ADJUSTMENT" ? "Ajuste" : "—";
 }
 
 export async function listStockMovements(db: Db, filters: StockHistoryFilters) {

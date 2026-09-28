@@ -1,0 +1,52 @@
+/* Movimentação, Ordem de Serviço e Solicitação de Pedidos (estoque). Segue os componentes já
+   usados em Materiais/Frota (fleet-modal, fleet-form-grid, material-product-picker). */
+.stock-quick-filters{margin:-4px -4px 10px;border-bottom:1px solid var(--line)}
+.stock-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-bottom:12px}
+.stock-filters>label{display:grid;gap:5px;min-width:150px}
+.stock-filters>label.stock-filter-wide{flex:1 1 260px}
+.stock-filters>button{min-height:42px}
+.stock-summary{margin:6px 2px 10px;color:var(--muted);font-size:12px}
+.stock-row-reversed td{opacity:.55;text-decoration:line-through;text-decoration-color:rgba(0,0,0,.25)}
+.stock-exit-line{display:block;font-size:11px;line-height:1.35}
+.stock-destination{display:grid;gap:8px}
+.stock-destination .material-item-mode{margin-left:0;width:max-content}
+.stock-label{font-size:12px;font-weight:700;color:var(--muted)}
+.stock-shortage{padding:12px 14px;border:1px solid #f0c48f;border-radius:10px;background:#fff7ec;color:#8a4b00;font-size:12px}
+.stock-shortage ul{margin:6px 0 10px;padding-left:18px}
+.product-modal-tabs{margin:0 20px}
+.product-history-panel{display:grid;gap:12px}
+.product-history-summary{margin:0;color:var(--muted);font-size:12px}
+/* Ordem de Serviço */
+.wo-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.wo-card{display:grid;gap:8px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.wo-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.wo-card header strong{font-size:15px}
+.wo-card p{margin:0;color:var(--muted);font-size:12px}
+.wo-card footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.wo-card footer button{min-height:34px;padding:6px 12px;font-size:12px}
+.wo-section{display:grid;gap:10px;margin-top:6px}
+.wo-mechanics{display:flex;flex-wrap:wrap;gap:6px}
+.wo-mechanics button{padding:6px 10px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-size:12px;cursor:pointer}
+.wo-mechanics button.active{border-color:#11704f;background:#e3f5ee;color:#11704f;font-weight:700}
+.wo-add-item{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,1.2fr) auto;gap:8px;align-items:end}
+.wo-add-item label{display:grid;gap:4px;font-size:11px}
+@media(max-width:1100px){.wo-add-item{grid-template-columns:1fr 1fr}}
+/* Compras */
+.po-steps{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;padding:0;list-style:none}
+.po-steps li{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:14px;font-size:11px;color:var(--muted)}
+.po-steps li.done{border-color:#9bcdbb;background:#eaf7f2;color:#0d7455}
+.po-steps li.current{border-color:#1f6b9c;background:#e5f1fb;color:#1f6b9c;font-weight:800}
+.po-steps li.rejected{border-color:#efb6bc;background:#fff0f2;color:#a62532;font-weight:800}
+.po-attachments{display:flex;flex-wrap:wrap;gap:8px}
+.po-attachments a{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;text-decoration:none;color:inherit}
+.po-receipt{display:grid;gap:10px;padding:12px 14px;border:1px solid #b9dccd;border-radius:10px;background:#f4fbf8}
+.po-receipt fieldset{display:grid;gap:6px;margin:0;padding:0;border:0}
+.po-receipt legend{font-size:12px;font-weight:800;margin-bottom:4px}
+.po-yesno{display:inline-flex;gap:4px}
+.po-yesno button{padding:5px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:12px;cursor:pointer}
+.po-yesno button.active{border-color:#11704f;background:#e3f5ee;color:#11704f;font-weight:800}
+html[data-theme="dark"] .stock-shortage{background:#2a2518;border-color:#6b5320;color:#f2c982}
+html[data-theme="dark"] .po-receipt{background:#1c2622;border-color:#2f4a3f}
+html[data-theme="dark"] .wo-mechanics button.active,html[data-theme="dark"] .po-yesno button.active{background:#1f3a30;color:#8fe0bf;border-color:#2f6b55}
+html[data-theme="dark"] .po-steps li.done{background:#1f3a30;color:#8fe0bf;border-color:#2f6b55}
+html[data-theme="dark"] .po-steps li.current{background:#1d2a36;color:#9ccbee;border-color:#2e5575}
