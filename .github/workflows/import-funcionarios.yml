@@ -11,18 +11,34 @@ on:
         options:
           - dry-run
           - confirmar
-      arquivo:
-        description: "Arquivo da relação em scripts/import-funcionarios/data/"
+      tipo:
+        description: "relacao (cadastra funcionários da relação de uma frente) ou historico (ciclos de folga + afastamentos do sistema anterior)"
         required: true
-        default: "arapiuns-2026-09-27.tsv"
+        default: "relacao"
+        type: choice
+        options:
+          - relacao
+          - historico
+      arquivo:
+        description: "Só na relacao: arquivo da relação em scripts/import-funcionarios/data/"
+        required: true
+        default: "mamuru-2026-09-28.tsv"
+      folgas:
+        description: "Só no historico: arquivo do histórico de folgas em scripts/import-funcionarios/data/"
+        required: false
+        default: "folgas-2026-09-28.tsv"
+      afastamentos:
+        description: "Só no historico: arquivo de afastamentos em scripts/import-funcionarios/data/"
+        required: false
+        default: "afastamentos-2026-09-28.tsv"
       frente:
         description: "Frente de serviço dos funcionários da relação"
         required: true
-        default: "Arapiuns"
+        default: "Mamuru"
       data:
         description: "Data da relação (AAAA-MM-DD) — início das folgas/afastamentos em aberto"
         required: true
-        default: "2026-09-27"
+        default: "2026-09-28"
 
 jobs:
   importar:
@@ -41,11 +57,19 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MODO: ${{ github.event.inputs.modo }}
+          TIPO: ${{ github.event.inputs.tipo }}
+          FOLGAS: ${{ github.event.inputs.folgas }}
+          AFASTAMENTOS: ${{ github.event.inputs.afastamentos }}
           ARQUIVO: ${{ github.event.inputs.arquivo }}
           FRENTE: ${{ github.event.inputs.frente }}
           DATA: ${{ github.event.inputs.data }}
         run: |
-          case "$ARQUIVO" in */*|*..*) echo "Informe só o nome do arquivo."; exit 1;; esac
+          for NOME in "$ARQUIVO" "$FOLGAS" "$AFASTAMENTOS"; do case "$NOME" in */*|*..*) echo "Informe só o nome do arquivo."; exit 1;; esac; done
           FLAG=""
           if [ "$MODO" = "confirmar" ]; then FLAG="--confirmar"; fi
-          node importar-funcionarios.mjs $FLAG "--arquivo=scripts/import-funcionarios/data/$ARQUIVO" "--frente=$FRENTE" "--data=$DATA"
+          DIR=scripts/import-funcionarios/data
+          if [ "$TIPO" = "historico" ]; then
+            node importar-historico-funcionarios.mjs $FLAG "--folgas=$DIR/$FOLGAS" "--afastamentos=$DIR/$AFASTAMENTOS" "--data=$DATA"
+          else
+            node importar-funcionarios.mjs $FLAG "--arquivo=$DIR/$ARQUIVO" "--frente=$FRENTE" "--data=$DATA"
+          fi
