@@ -21,8 +21,8 @@ export async function GET(request: Request, { params }: Context) {
   }
 }
 
-// Etapas do fluxo: APPROVE/REJECT, SAVE_QUOTE/SEND_TO_PAYMENT, CONFIRM_PAYMENT, DISPATCH,
-// RECEIVE_ITEM e CANCEL. A permissão de cada etapa é conferida em lib/purchases.ts.
+// Etapas por item (em lote, com itemIds): APPROVE/REJECT, REMOVE, SEND_TO_PAYMENT, CONFIRM_PAYMENT,
+// DISPATCH; e SAVE_QUOTE, ADJUST_QUANTITY, RECEIVE_ITEM e CANCEL. Permissões em lib/purchases.ts.
 export async function PUT(request: Request, { params }: Context) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   const auth = await authorize(request, "purchases.view");

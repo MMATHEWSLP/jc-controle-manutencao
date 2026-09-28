@@ -4,9 +4,9 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { purchaseOrderAttachments } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
-import { purchaseActions, requirePurchaseOrder } from "../../../../../lib/purchases";
+import { orderActions, orderItemStatuses, requirePurchaseOrder } from "../../../../../lib/purchases";
 import { purchaseFronts } from "../../../../../lib/purchase-scope";
-import { QUOTE_DIR } from "../../../../../lib/quote-files";
+import { opensInline, QUOTE_DIR } from "../../../../../lib/quote-files";
 import { stockErrorResponse } from "../../../../../lib/stock";
 
 type Context = { params: Promise<{ attachmentId: string }> };
@@ -18,7 +18,7 @@ async function findAttachment(value: string) {
   return (await db.select().from(purchaseOrderAttachments).where(eq(purchaseOrderAttachments.id, id)).limit(1))[0] ?? null;
 }
 
-// Abre o orçamento para quem enxerga o pedido.
+// Abre o anexo para quem enxerga o pedido (imagem e PDF no navegador; os demais são baixados).
 export async function GET(request: Request, { params }: Context) {
   const auth = await authorize(request, "purchases.view");
   if (auth.response) return auth.response;
@@ -30,7 +30,8 @@ export async function GET(request: Request, { params }: Context) {
     if (!buffer) return Response.json({ error: "Arquivo não encontrado no servidor." }, { status: 404 });
     return new Response(new Uint8Array(buffer), { headers: {
       "Content-Type": attachment.contentType, "Cache-Control": "private, max-age=600",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(attachment.fileName)}"`, "X-Content-Type-Options": "nosniff",
+      "Content-Disposition": `${opensInline(attachment.contentType) ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
+      "X-Content-Type-Options": "nosniff",
     } });
   } catch (error) {
     const known = stockErrorResponse(error); if (known) return known;
@@ -41,14 +42,17 @@ export async function GET(request: Request, { params }: Context) {
 
 export async function DELETE(request: Request, { params }: Context) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
-  const auth = await authorize(request, "purchases.buy");
+  const auth = await authorize(request, "purchases.view");
   if (auth.response) return auth.response;
   try {
     const attachment = await findAttachment((await params).attachmentId);
     if (!attachment) return Response.json({ error: "Anexo não encontrado." }, { status: 404 });
     const db = await getDb();
-    const order = await requirePurchaseOrder(db, auth.user!, purchaseFronts(auth.user!, request), attachment.orderId);
-    if (!purchaseActions(auth.user!, order).quote) return Response.json({ error: "Só é possível remover anexos com o pedido em cotação." }, { status: 409 });
+    const user = auth.user!;
+    const order = await requirePurchaseOrder(db, user, purchaseFronts(user, request), attachment.orderId);
+    const actions = orderActions(user, order, await orderItemStatuses(db, order.id));
+    const allowed = attachment.kind === "PHOTO" ? actions.PHOTO : actions.QUOTE;
+    if (!allowed) return Response.json({ error: attachment.kind === "PHOTO" ? "Só quem pediu remove fotos, enquanto o pedido está em andamento." : "Só o comprador remove orçamentos, com itens em cotação." }, { status: 409 });
     await db.delete(purchaseOrderAttachments).where(eq(purchaseOrderAttachments.id, attachment.id));
     await unlink(path.join(QUOTE_DIR, attachment.storageKey)).catch(() => undefined);
     return Response.json({ message: "Anexo removido." });

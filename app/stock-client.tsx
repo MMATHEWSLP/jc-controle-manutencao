@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
+import { catalogKey } from "../lib/catalog-rules";
 
 // Peças de tela compartilhadas pelos módulos que lançam estoque (Movimentação, Ordem de Serviço e
 // Solicitação de Pedidos): chamada à API, busca de produto com saldo, funcionário e equipamento.
@@ -26,7 +27,7 @@ export function localToday() {
 export const parseQty = (value: string) => { const parsed = Number(value.replace(",", ".")); return Number.isFinite(parsed) ? parsed : NaN; };
 
 export type Front = { id: number; name: string };
-export type EquipmentOption = { id: number; prefix: string; description: string; serviceFrontId: number | null; front: string | null; meterUnit: "HOURS" | "KM"; currentReading: number };
+export type EquipmentOption = { id: number; prefix: string; description: string; serviceFrontId: number | null; front: string | null; meterUnit: "HOURS" | "KM"; currentReading: number; chassis?: string | null; year?: number | null };
 export type StockOptions = { fronts: Front[]; defaultFrontId: number | null; equipment: EquipmentOption[] };
 export type ProductOption = { id: number; tag: string; name: string; reference: string | null; references: string[]; price?: number; brand?: string | null; supplierId?: number | null; balance?: number | null };
 export type EmployeeOption = { id: number; name: string; jobTitle: string; company: string; frontName: string };
@@ -58,7 +59,7 @@ export function ProductPicker({ value, frontId, onPick, placeholder, endpoint = 
     <div className="material-product-chip">
       <span className="material-item-kind linked">{value.tag}</span><strong>{value.name}</strong>
       {typeof value.balance === "number" && <small>Saldo: {qtyFormat.format(value.balance)}</small>}
-      <button type="button" onClick={() => onPick(null)}>Trocar</button>
+      <button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button>
     </div>
   );
   return (
@@ -68,7 +69,7 @@ export function ProductPicker({ value, frontId, onPick, placeholder, endpoint = 
         <label className="page-search products-tag-search" title="Somente o produto com esta TAG exata (sem correspondências parciais)"><span>#</span><input value={tagQuery} onChange={(event) => { setTagQuery(event.target.value); if (event.target.value) setQuery(""); }} onFocus={() => setOpen(true)} placeholder="TAG exata" inputMode="numeric" aria-label="Buscar por TAG exata" /></label>
       </div>
       {open && options.length > 0 && <ul>{options.map((option) => (
-        <li key={option.id}><button type="button" onClick={() => pick(option)}>
+        <li key={option.id}><button type="button" onClick={(event) => { event.preventDefault(); pick(option); }}>
           <b>{option.tag}</b> {option.name}{option.references.length > 0 && <small> · Ref. {option.references.join(", ")}</small>}{typeof option.balance === "number" && <small> · Saldo {qtyFormat.format(option.balance)}</small>}
         </button></li>
       ))}</ul>}
@@ -90,13 +91,13 @@ export function EmployeePicker({ value, frontId, onPick, placeholder }: { value:
     return () => window.clearTimeout(timer);
   }, [query, frontId]);
   if (value) return (
-    <div className="material-product-chip"><strong>{value.name}</strong><small>{value.jobTitle} · {value.frontName}</small><button type="button" onClick={() => onPick(null)}>Trocar</button></div>
+    <div className="material-product-chip"><strong>{value.name}</strong><small>{value.jobTitle} · {value.frontName}</small><button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button></div>
   );
   return (
     <div className="material-product-picker">
       <input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setOpen(true)} placeholder={placeholder ?? "Buscar funcionário pelo nome..."} />
       {open && options.length > 0 && <ul>{options.map((option) => (
-        <li key={option.id}><button type="button" onClick={() => { onPick(option); setQuery(""); setOpen(false); }}><b>{option.name}</b><small> · {option.jobTitle} · {option.frontName}</small></button></li>
+        <li key={option.id}><button type="button" onClick={(event) => { event.preventDefault(); onPick(option); setQuery(""); setOpen(false); }}><b>{option.name}</b><small> · {option.jobTitle} · {option.frontName}</small></button></li>
       ))}</ul>}
       {open && query.trim().length >= 2 && options.length === 0 && <p className="material-product-empty">Nenhum funcionário encontrado.</p>}
     </div>
@@ -112,14 +113,56 @@ export function EquipmentPicker({ options, value, onPick, placeholder }: { optio
     return (key ? options.filter((item) => `${item.prefix} ${item.description} ${item.front ?? ""}`.toUpperCase().includes(key)) : options).slice(0, 40);
   }, [options, query]);
   if (value) return (
-    <div className="material-product-chip"><span className="material-item-kind linked">{value.prefix}</span><strong>{value.description}</strong><small>{value.front ?? "Sem frente"}</small><button type="button" onClick={() => onPick(null)}>Trocar</button></div>
+    <div className="material-product-chip"><span className="material-item-kind linked">{value.prefix}</span><strong>{value.description}</strong><small>{value.front ?? "Sem frente"}</small><button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button></div>
   );
   return (
     <div className="material-product-picker">
       <input value={query} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} placeholder={placeholder ?? "Buscar equipamento pelo prefixo..."} />
       {open && results.length > 0 && <ul>{results.map((item) => (
-        <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { onPick(item); setQuery(""); setOpen(false); }}><b>{item.prefix}</b> {item.description}<small> · {item.front ?? "Sem frente"}</small></button></li>
+        <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(item); setQuery(""); setOpen(false); }}><b>{item.prefix}</b> {item.description}<small> · {item.front ?? "Sem frente"}</small></button></li>
       ))}</ul>}
+    </div>
+  );
+}
+
+// Os botões das listas abaixo cancelam o clique (preventDefault) porque os campos ficam dentro de
+// <label>: sem isso o navegador repassa o clique para o botão "Trocar" recém-desenhado e desfaz a escolha.
+export type CatalogOption = { id?: number; name: string };
+
+// Busca/seleção sobre a base única de fornecedores ou de marcas (a mesma do cadastro de Produtos),
+// com "Cadastrar novo" na hora quando o que foi digitado não existe. A comparação ignora acentos,
+// espaços e pontuação ("Randon" = "RANDON" = "Ran-don"), para não cadastrar a mesma coisa duas vezes.
+export function CatalogPicker({ options, value, onPick, onCreate, placeholder, createLabel, disabled }: {
+  options: CatalogOption[]; value: CatalogOption | null; onPick: (option: CatalogOption | null) => void;
+  onCreate?: (name: string) => Promise<CatalogOption>; placeholder?: string; createLabel: string; disabled?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const key = catalogKey(query);
+  const results = useMemo(() => (key ? options.filter((option) => catalogKey(option.name).includes(key)) : options).slice(0, 40), [options, key]);
+  const exact = key ? options.find((option) => catalogKey(option.name) === key) : undefined;
+  if (value) return (
+    <div className="material-product-chip catalog-chip"><strong>{value.name}</strong>{!disabled && <button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button>}</div>
+  );
+  async function create() {
+    if (!onCreate || !query.trim()) return;
+    setBusy(true); setError("");
+    try { onPick(await onCreate(query.trim())); setQuery(""); setOpen(false); }
+    catch (problem) { setError(problemText(problem, "Não foi possível cadastrar.")); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="material-product-picker">
+      <input value={query} disabled={disabled} onChange={(event) => { setQuery(event.target.value); setOpen(true); setError(""); }} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} placeholder={placeholder ?? "Buscar..."} />
+      {open && (results.length > 0 || (onCreate && key && !exact)) && <ul>
+        {results.map((option) => (
+          <li key={option.id ?? option.name}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(option); setQuery(""); setOpen(false); }}>{option.name}</button></li>
+        ))}
+        {onCreate && key && !exact && <li><button type="button" className="catalog-create" disabled={busy} onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); create(); }}>＋ {createLabel}: “{query.trim().toUpperCase()}”</button></li>}
+      </ul>}
+      {error && <p className="material-product-empty">{error}</p>}
     </div>
   );
 }

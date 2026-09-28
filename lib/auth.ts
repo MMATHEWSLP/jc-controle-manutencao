@@ -88,13 +88,13 @@ export const PERMISSION_GROUPS = [
     ["suppliers.delete","Excluir fornecedor"],
   ]},
   { label:"Solicitação de Pedidos (Compras)", items:[
-    ["purchases.view","Visualizar solicitações de pedido de compra (as próprias; com as funções abaixo, as das frentes que enxerga)"],
+    ["purchases.view","Visualizar solicitações de pedido de compra (todas as das frentes que enxerga, só consulta)"],
     ["purchases.request","Criar solicitação de pedido de compra"],
     ["purchases.approve","Aprovar ou recusar solicitações de pedido"],
     ["purchases.buy","Comprador: anexar orçamentos, preencher valores e enviar para pagamento"],
     ["purchases.pay","Confirmar o pagamento dos pedidos"],
     ["purchases.dispatch","Retirar/despachar as encomendas (marcar como enviado)"],
-    ["purchases.manage","Ver e cancelar todas as solicitações de pedido das frentes que enxerga"],
+    ["purchases.manage","Cancelar solicitações de pedido e confirmar recebimentos das frentes que enxerga"],
   ]},
   { label:"Movimentação de Estoque", items:[
     ["stock.exits_view","Visualizar o histórico de movimentação (saídas de estoque)"],

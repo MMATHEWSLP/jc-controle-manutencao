@@ -5,6 +5,7 @@ import { getDb } from "../../../../db";
 import { productFrontStock, productPhotos, products, suppliers } from "../../../../db/schema";
 import { setStockLevel } from "../../../../lib/stock";
 import { frentesEmExibicao } from "../../../../lib/active-front";
+import { ensureBrand } from "../../../../lib/catalog";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { normalizeTag, parseReferenceList } from "../../../../lib/product-rules";
 import {
@@ -120,7 +121,7 @@ export async function PUT(request: Request, { params }: Context) {
         tag,
         name,
         price,
-        brand: body.brand === undefined ? existing.brand : clean(body.brand) || null,
+        brand: body.brand === undefined ? existing.brand : await ensureBrand(tx, clean(body.brand), user.id),
         supplierId,
         needsReview: body.needsReview === undefined ? existing.needsReview : Boolean(body.needsReview),
         active: body.active === undefined ? existing.active : Boolean(body.active),
