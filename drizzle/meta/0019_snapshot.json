@@ -1,5 +1,5 @@
 {
-  "id": "814677cf-1078-4202-8a79-a05d58c9a3ae",
+  "id": "ccf12336-71b4-435e-a204-ae42eb79dc58",
   "prevId": "c6b27cbe-9cbb-4ce9-82c5-6baf7e079362",
   "version": "7",
   "dialect": "postgresql",
@@ -10790,6 +10790,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -10868,6 +10880,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "work_order_items_removed_by_users_id_fk": {
+          "name": "work_order_items_removed_by_users_id_fk",
+          "tableFrom": "work_order_items",
+          "tableTo": "users",
+          "columnsFrom": [
+            "removed_by"
           ],
           "columnsTo": [
             "id"

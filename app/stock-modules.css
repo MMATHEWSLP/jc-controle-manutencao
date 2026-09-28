@@ -25,11 +25,16 @@
 .wo-card footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .wo-card footer button{min-height:34px;padding:6px 12px;font-size:12px}
 .wo-section{display:grid;gap:10px;margin-top:6px}
+.wo-full{grid-column:1 / -1;display:grid;gap:6px}
+.wo-actions{display:flex;justify-content:flex-start;margin:8px 0 4px}
+.wo-detail label small{display:block;margin-top:6px;font-weight:600;color:var(--muted)}
+.wo-mechanics{max-height:170px;overflow:auto}
 .wo-mechanics{display:flex;flex-wrap:wrap;gap:6px}
 .wo-mechanics button{padding:6px 10px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-size:12px;cursor:pointer}
 .wo-mechanics button.active{border-color:#11704f;background:#e3f5ee;color:#11704f;font-weight:700}
 .wo-add-item{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,1.2fr) auto;gap:8px;align-items:end}
-.wo-add-item label{display:grid;gap:4px;font-size:11px}
+.wo-add-item label{display:grid;gap:4px;font-size:11px;align-self:end}
+.wo-add-item>button{min-height:42px}
 @media(max-width:1100px){.wo-add-item{grid-template-columns:1fr 1fr}}
 /* Compras */
 .po-steps{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;padding:0;list-style:none}

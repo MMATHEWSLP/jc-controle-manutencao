@@ -1356,5 +1356,8 @@ export const workOrderItems = pgTable("work_order_items", {
   application: text("application"),
   unitPrice: doublePrecision("unit_price"),
   createdBy: integer("created_by").references(() => users.id),
+  // Peça retirada da O.S. (lançada por engano): o estoque volta e a linha fica como histórico.
+  removedAt: text("removed_at"),
+  removedBy: integer("removed_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("work_order_items_order_idx").on(table.workOrderId)]);
