@@ -21,6 +21,9 @@ import pg from "pg";
 // - Cidade vai para o campo Cidade; empresa em maiúsculas (e entra na lista de empresas).
 // - Linhas marcadas como duplicata na própria relação "(DUP…" são ignoradas.
 // - Nome cortado na relação (terminado em "…") é importado sem o "…" e sinalizado para correção.
+// - Coluna opcional "nascimento" (AAAA-MM-DD): gravada quando for uma data plausível (depois de 1900 e
+//   antes da admissão); se não for, fica em branco e o valor da relação vai para as observações.
+// - Quem já está cadastrado não é alterado, exceto para completar nascimento e cidade em branco.
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
@@ -54,9 +57,9 @@ async function main() {
   try {
     const front = (await pool.query(`SELECT id, name FROM service_fronts WHERE lower(name) = lower($1) AND active = TRUE`, [FRENTE])).rows[0];
     if (!front) throw new Error(`Frente "${FRENTE}" não encontrada (ou inativa).`);
-    const existing = new Map((await pool.query(`SELECT e.id, e.name, sf.name AS front FROM employees e JOIN service_fronts sf ON sf.id = e.service_front_id`)).rows.map((row) => [nameKey(row.name), row]));
+    const existing = new Map((await pool.query(`SELECT e.id, e.name, e.birth_date, e.city, sf.name AS front FROM employees e JOIN service_fronts sf ON sf.id = e.service_front_id`)).rows.map((row) => [nameKey(row.name), row]));
 
-    const plan = { inserir: [], jaExiste: [], duplicataNaRelacao: [], nomeCortado: [], invalidos: [] };
+    const plan = { inserir: [], jaExiste: [], completar: [], duplicataNaRelacao: [], nomeCortado: [], invalidos: [], nascimentoInvalido: [] };
     const seen = new Set();
     for (const row of rows) {
       const truncated = row.nome.endsWith("…");
@@ -66,10 +69,19 @@ async function main() {
       if (!name || !row.funcao || !row.empresa || !/^\d{4}-\d{2}-\d{2}$/.test(row.admissao) || !["Trabalhando", "De folga", "Afastado"].includes(row.situacao)) { plan.invalidos.push(row); continue; }
       if (seen.has(key)) { plan.duplicataNaRelacao.push(row); continue; }
       seen.add(key);
-      if (existing.has(key)) { plan.jaExiste.push({ ...row, cadastro: existing.get(key) }); continue; }
-      const city = row.cidade.replace(/…$/, "").trim();
-      const notes = [row.cidade.endsWith("…") ? "Nome da cidade cortado na relação" : null, ORIGEM, truncated ? "ATENÇÃO: nome cortado na relação original — conferir e completar." : null].filter(Boolean).join(" · ");
-      const item = { ...row, name, city: city ? city.toUpperCase() : null, company: row.empresa.trim().toUpperCase(), notes, status: row.situacao === "Afastado" ? "AFASTADO" : row.situacao === "De folga" ? "FOLGA" : "ATIVO", absence: row.situacao === "De folga" ? "FOLGA" : row.situacao === "Afastado" ? "AFASTAMENTO" : null };
+      const city = (row.cidade ?? "").replace(/…$/, "").trim();
+      const birth = row.nascimento?.trim() || null;
+      const birthOk = birth && /^\d{4}-\d{2}-\d{2}$/.test(birth) && birth > "1900-01-01" && birth < row.admissao;
+      if (birth && !birthOk) plan.nascimentoInvalido.push({ ...row, name });
+      if (existing.has(key)) {
+        const cadastro = existing.get(key);
+        const fill = { birthDate: !cadastro.birth_date && birthOk ? birth : null, city: !cadastro.city && city && !(row.cidade ?? "").endsWith("…") ? city.toUpperCase() : null };
+        plan.jaExiste.push({ ...row, cadastro });
+        if (fill.birthDate || fill.city) plan.completar.push({ ...row, cadastro, fill });
+        continue;
+      }
+      const notes = [(row.cidade ?? "").endsWith("…") ? "Nome da cidade cortado na relação" : null, birth && !birthOk ? `Data de nascimento na relação: ${birth.split("-").reverse().join("/")} (inválida — conferir)` : null, ORIGEM, truncated ? "ATENÇÃO: nome cortado na relação original — conferir e completar." : null].filter(Boolean).join(" · ");
+      const item = { ...row, name, city: city ? city.toUpperCase() : null, birthDate: birthOk ? birth : null, company: row.empresa.trim().toUpperCase(), notes, status: row.situacao === "Afastado" ? "AFASTADO" : row.situacao === "De folga" ? "FOLGA" : "ATIVO", absence: row.situacao === "De folga" ? "FOLGA" : row.situacao === "Afastado" ? "AFASTAMENTO" : null };
       plan.inserir.push(item);
       if (truncated) plan.nomeCortado.push(item);
     }
@@ -82,9 +94,12 @@ async function main() {
     console.log(`  · de folga ................ ${plan.inserir.filter((item) => item.absence === "FOLGA").length}`);
     console.log(`  · afastados ............... ${plan.inserir.filter((item) => item.absence === "AFASTAMENTO").length}`);
     console.log(`Já cadastrados (pulados) .... ${plan.jaExiste.length}`);
+    console.log(`  · completar nasc./cidade .. ${plan.completar.length}`);
     console.log(`Duplicatas na relação ....... ${plan.duplicataNaRelacao.length}`);
     console.log(`Linhas inválidas ............ ${plan.invalidos.length}`);
-    for (const row of plan.jaExiste) console.log(`  = já existe: ${row.nome} (cadastro em ${row.cadastro.front})`);
+    for (const row of plan.jaExiste) console.log(`  = já existe: ${row.nome} (cadastro em ${row.cadastro.front}${row.cadastro.front.toLowerCase() !== front.name.toLowerCase() ? ` — NA RELAÇÃO ESTÁ EM ${front.name.toUpperCase()}, conferir transferência` : ""})`);
+    for (const row of plan.completar) console.log(`  + completar ${row.cadastro.name}: ${[row.fill.birthDate ? `nascimento ${row.fill.birthDate}` : null, row.fill.city ? `cidade ${row.fill.city}` : null].filter(Boolean).join(", ")}`);
+    for (const row of plan.nascimentoInvalido) console.log(`  ? nascimento inválido na relação, não gravado: #${row.n} ${row.name} (${row.nascimento})`);
     for (const row of plan.duplicataNaRelacao) console.log(`  ~ duplicata ignorada: #${row.n} ${row.nome}`);
     for (const row of plan.invalidos) console.log(`  ! inválida: #${row.n} ${JSON.stringify(row)}`);
     for (const row of plan.nomeCortado) console.log(`  ✂ nome cortado na relação (importado como "${row.name}"): #${row.n} — completar depois em Funcionários`);
@@ -102,8 +117,8 @@ async function main() {
       await client.query("BEGIN");
       for (const item of plan.inserir) {
         const { rows: [created] } = await client.query(
-          `INSERT INTO employees (name, job_title, company, admission_date, service_front_id, status, city, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, cycle_work_days, cycle_off_days`,
-          [item.name, item.funcao, item.company, item.admissao, front.id, item.status, item.city, item.notes],
+          `INSERT INTO employees (name, job_title, company, admission_date, service_front_id, status, city, birth_date, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, cycle_work_days, cycle_off_days`,
+          [item.name, item.funcao, item.company, item.admissao, front.id, item.status, item.city, item.birthDate, item.notes],
         );
         await client.query(`INSERT INTO companies (name) VALUES ($1) ON CONFLICT DO NOTHING`, [item.company]);
         await client.query(
@@ -126,8 +141,18 @@ async function main() {
           [String(created.id), JSON.stringify({ name: item.name, jobTitle: item.funcao, company: item.empresa, front: front.name, situacao: item.situacao })],
         );
       }
+      for (const row of plan.completar) {
+        await client.query(
+          `UPDATE employees SET birth_date = COALESCE(birth_date, $2), city = COALESCE(city, $3), updated_at = $4 WHERE id = $1`,
+          [row.cadastro.id, row.fill.birthDate, row.fill.city, new Date().toISOString()],
+        );
+        await client.query(
+          `INSERT INTO audit_logs (user_id, entity_type, entity_id, action, new_value) VALUES (NULL, 'EMPLOYEE', $1, 'FUNCIONÁRIO COMPLETADO PELA RELAÇÃO', $2)`,
+          [String(row.cadastro.id), JSON.stringify({ ...row.fill, origem: ORIGEM })],
+        );
+      }
       await client.query("COMMIT");
-      console.log(`Importação concluída: ${plan.inserir.length} funcionários cadastrados em ${front.name}.`);
+      console.log(`Importação concluída: ${plan.inserir.length} funcionários cadastrados em ${front.name}; ${plan.completar.length} cadastros completados.`);
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
