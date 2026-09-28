@@ -84,25 +84,40 @@ export default function WorkOrdersView({ authUser, flash }: { authUser: User; fl
           </div>
         )}
       </article>
-      {opening && data && <OpenWorkOrderModal options={options} mechanics={data.mechanics} close={() => setOpening(false)} saved={async (message, id) => { setOpening(false); await load(); flash(message); setViewing(id); }} />}
-      {viewing !== null && data && <WorkOrderDetailModal id={viewing} mechanics={data.mechanics} canManage={data.canManage} canClose={data.canClose} close={() => setViewing(null)} changed={load} flash={flash} currentUser={authUser.name} />}
+      {opening && data && <OpenWorkOrderModal options={options} close={() => setOpening(false)} saved={async (message, id) => { setOpening(false); await load(); flash(message); setViewing(id); }} />}
+      {viewing !== null && data && <WorkOrderDetailModal id={viewing} canManage={data.canManage} canClose={data.canClose} close={() => setViewing(null)} changed={load} flash={flash} currentUser={authUser.name} />}
     </>
   );
 }
 
-function MechanicsSelect({ all, value, onChange }: { all: string[]; value: string[]; onChange: (value: string[]) => void }) {
-  const [extra, setExtra] = useState("");
-  const toggle = (name: string) => onChange(value.includes(name) ? value.filter((item) => item !== name) : [...value, name]);
-  const names = [...new Set([...all, ...value])];
+// Mecânicos da O.S.: busca na lista de Funcionários (a mesma do Combustível e dos outros módulos) e
+// "adiciona" quantos forem necessários; cada um pode ser removido se entrou por engano.
+function MechanicsSelect({ value, onChange, frontId }: { value: string[]; onChange: (value: string[]) => void; frontId?: number | null }) {
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<EmployeeOption[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (query.trim().length < 2) { setOptions([]); return; }
+    const timer = window.setTimeout(() => {
+      api<{ employees: EmployeeOption[] }>(`/api/employees/lookup?q=${encodeURIComponent(query.trim())}${frontId ? `&serviceFrontId=${frontId}` : ""}`)
+        .then((result) => { setOptions(result.employees); setOpen(true); }).catch(() => setOptions([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, frontId]);
+  const add = (name: string) => { const clean = name.trim().toUpperCase(); if (clean && !value.includes(clean)) onChange([...value, clean]); setQuery(""); setOpen(false); };
   return (
     <div className="wo-section">
-      <div className="wo-mechanics">{names.map((name) => <button type="button" key={name} className={value.includes(name) ? "active" : ""} onClick={() => toggle(name)}>{value.includes(name) ? "✓ " : ""}{name}</button>)}</div>
-      <div className="combo-with-create"><input value={extra} onChange={(event) => setExtra(event.target.value)} placeholder="Outro mecânico (nome)" /><button type="button" onClick={() => { const name = extra.trim().toUpperCase(); if (name && !value.includes(name)) onChange([...value, name]); setExtra(""); }}>Adicionar</button></div>
+      {value.length > 0 && <div className="wo-mechanics">{value.map((name) => <span className="wo-mechanic-chip" key={name}>{name}<button type="button" aria-label={`Remover ${name}`} onClick={() => onChange(value.filter((item) => item !== name))}>×</button></span>)}</div>}
+      <div className="material-product-picker">
+        <input value={query} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} placeholder="Buscar mecânico pelo nome e clicar para adicionar..." />
+        {open && options.length > 0 && <ul>{options.map((option) => <li key={option.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => add(option.name)} disabled={value.includes(option.name.toUpperCase())}><b>＋ {option.name}</b><small> · {option.jobTitle} · {option.frontName}</small></button></li>)}</ul>}
+        {open && query.trim().length >= 2 && options.length === 0 && <p className="material-product-empty">Nenhum funcionário encontrado com esse nome.</p>}
+      </div>
     </div>
   );
 }
 
-function OpenWorkOrderModal({ options, mechanics, close, saved }: { options: StockOptions; mechanics: string[]; close: () => void; saved: (message: string, id: number) => Promise<void> }) {
+function OpenWorkOrderModal({ options, close, saved }: { options: StockOptions; close: () => void; saved: (message: string, id: number) => Promise<void> }) {
   const [equipmentItem, setEquipmentItem] = useState<EquipmentOption | null>(null);
   const [openedAt, setOpenedAt] = useState(localToday());
   const [meterReading, setMeterReading] = useState("");
@@ -134,7 +149,7 @@ function OpenWorkOrderModal({ options, mechanics, close, saved }: { options: Sto
           <label>Data de abertura *<input type="date" required max={localToday()} value={openedAt} onChange={(event) => setOpenedAt(event.target.value)} /></label>
           <label>{equipmentItem?.meterUnit === "KM" ? "KM" : "Horímetro"} {equipmentItem && <small>(última leitura: {qtyFormat.format(equipmentItem.currentReading)} {unitLabel(equipmentItem.meterUnit)})</small>}<input inputMode="decimal" value={meterReading} onChange={(event) => setMeterReading(event.target.value)} /></label>
           <label className="span-2">O que está sendo feito / diagnóstico *<textarea required value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-          <div className="wo-full"><span className="stock-label">Mecânicos responsáveis</span><MechanicsSelect all={mechanics} value={chosen} onChange={setChosen} /></div>
+          <div className="wo-full"><span className="stock-label">Mecânicos responsáveis</span><MechanicsSelect value={chosen} onChange={setChosen} frontId={equipmentItem?.serviceFrontId ?? null} /></div>
         </div>
         {error && <div className="equipment-form-error"><span>!</span><strong>{error}</strong></div>}
       </div>
@@ -143,7 +158,7 @@ function OpenWorkOrderModal({ options, mechanics, close, saved }: { options: Sto
   );
 }
 
-function WorkOrderDetailModal({ id, mechanics, canManage, canClose, close, changed, flash, currentUser }: { id: number; mechanics: string[]; canManage: boolean; canClose: boolean; close: () => void; changed: () => Promise<void>; flash: (message: string) => void; currentUser: string }) {
+function WorkOrderDetailModal({ id, canManage, canClose, close, changed, flash, currentUser }: { id: number; canManage: boolean; canClose: boolean; close: () => void; changed: () => Promise<void>; flash: (message: string) => void; currentUser: string }) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [error, setError] = useState("");
   const [description, setDescription] = useState("");
@@ -178,7 +193,7 @@ function WorkOrderDetailModal({ id, mechanics, canManage, canClose, close, chang
           <div className="fleet-form-grid">
             <label className="span-2">O que está sendo feito / diagnóstico<textarea value={description} disabled={!editable} onChange={(event) => setDescription(event.target.value)} /></label>
             <label>{order.meterUnit === "KM" ? "KM" : "Horímetro"} na abertura<input inputMode="decimal" value={meterReading} disabled={!editable} onChange={(event) => setMeterReading(event.target.value)} /><small>Situação: <b>{order.status === "OPEN" ? "Aberta" : "Fechada"}</b></small></label>
-            <div className="wo-full"><span className="stock-label">Mecânicos responsáveis</span>{editable ? <MechanicsSelect all={mechanics} value={chosen} onChange={setChosen} /> : <p>{order.mechanics.join(", ") || "—"}</p>}</div>
+            <div className="wo-full"><span className="stock-label">Mecânicos responsáveis</span>{editable ? <MechanicsSelect value={chosen} onChange={setChosen} frontId={order.serviceFrontId} /> : <p>{order.mechanics.join(", ") || "—"}</p>}</div>
           </div>
           {editable && <div className="wo-actions"><button type="button" className="secondary" disabled={busy} onClick={() => act({ action: "UPDATE", description, meterReading, mechanics: chosen }, "O.S. atualizada.")}>Salvar alterações</button></div>}
 

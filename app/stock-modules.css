@@ -67,3 +67,6 @@ html[data-theme="dark"] .po-steps li.current{background:#1d2a36;color:#9ccbee;bo
 .product-picker-inputs .page-search{display:flex;align-items:center;gap:6px;min-height:42px;margin:0;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .product-picker-inputs .page-search input{flex:1;min-width:0;min-height:38px;border:0;background:transparent;padding:0;box-shadow:none}
 .product-picker-inputs .page-search span{color:var(--muted)}
+.wo-mechanic-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 11px;border:1px solid #9bcdbb;border-radius:16px;background:#eaf7f2;color:#0d7455;font-size:12px;font-weight:700}
+.wo-mechanic-chip button{width:22px;height:22px;border:0;border-radius:50%;background:rgba(13,116,85,.12);color:inherit;font-size:14px;line-height:1;cursor:pointer}
+html[data-theme="dark"] .wo-mechanic-chip{background:#1f3a30;color:#8fe0bf;border-color:#2f6b55}

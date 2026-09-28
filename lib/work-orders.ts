@@ -43,14 +43,6 @@ export async function mechanicNames(db: Db) {
   return [...new Set([...fleet, ...workshop, ...staff].map((row) => row.name.trim().toUpperCase()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
-// Nome digitado que ainda não está na lista entra no cadastro de mecânicos (mesma regra da Frota).
-async function ensureMechanics(tx: Tx, names: string[]) {
-  const now = new Date().toISOString();
-  for (const name of names) {
-    await tx.insert(fleetMechanics).values({ id: crypto.randomUUID(), name, active: true, createdAt: now, updatedAt: now }).onConflictDoNothing();
-  }
-}
-
 function parseMechanics(value: unknown) {
   const list = Array.isArray(value) ? value : [];
   return [...new Set(list.map((item) => clean(item).toUpperCase().replace(/\s+/g, " ")).filter(Boolean))].slice(0, 20);
@@ -165,7 +157,6 @@ export async function openWorkOrder(db: Db, user: SessionUser, input: OpenWorkOr
       equipmentId: item.id, serviceFrontId: item.serviceFrontId!, openedAt: input.openedAt, meterReading: input.meterReading, meterUnit,
       description: input.description, status: "OPEN", createdBy: user.id,
     }).returning({ id: workOrders.id });
-    await ensureMechanics(tx, input.mechanics);
     if (input.mechanics.length) await tx.insert(workOrderMechanics).values(input.mechanics.map((mechanicName) => ({ workOrderId: row.id, mechanicName })));
     await audit(tx, user.id, row.id, "O.S. ABERTA", { ...input, number: workOrderNumber(row.id) });
     return { id: row.id, number: workOrderNumber(row.id) };
@@ -184,7 +175,6 @@ export async function updateWorkOrder(db: Db, user: SessionUser, id: number, bod
   await db.transaction(async (tx) => {
     await tx.update(workOrders).set({ description, meterReading, updatedAt: new Date().toISOString() }).where(eq(workOrders.id, id));
     if (mechanics) {
-      await ensureMechanics(tx, mechanics);
       await tx.delete(workOrderMechanics).where(eq(workOrderMechanics.workOrderId, id));
       if (mechanics.length) await tx.insert(workOrderMechanics).values(mechanics.map((mechanicName) => ({ workOrderId: id, mechanicName })));
     }
