@@ -8,6 +8,7 @@ import {
 } from "./employees-client";
 
 type Detail = Employee & {
+  canChange?: boolean;
   cycles: Cycle[];
   transfers: Array<{ id: number; transferDate: string; until: string | null; current: boolean; days: number; previousFront: string | null; newFront: string; note: string | null; by: string | null }>;
   absences: Array<{ id: number; kind: AbsenceKind; kindLabel: string; startDate: string; endDate: string | null; days: number; notes: string | null; by: string | null }>;
@@ -15,7 +16,7 @@ type Detail = Employee & {
   counters: { workedDaysCurrentCycle: number | null; totalOffDays: number; totalTravelDays: number; cycles: number; tenure: { days: number; label: string } | null };
 };
 
-export default function EmployeeProfile({ id, canManage, canSeeSalary, fronts, close, changed, flash, edit }: {
+export default function EmployeeProfile({ id, canManage: canManageModule, canSeeSalary, fronts, close, changed, flash, edit }: {
   id: number; canManage: boolean; canSeeSalary: boolean; fronts: Front[]; close: () => void; changed: () => Promise<void>; flash: (message: string) => void; edit: (item: Employee) => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -27,6 +28,9 @@ export default function EmployeeProfile({ id, canManage, canSeeSalary, fronts, c
     catch (problem) { setError(problemText(problem, "Não foi possível carregar.")); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  // Funcionário de outra frente: pode consultar e transferir; as demais alterações são da frente dele.
+  const canTransfer = canManageModule;
+  const canManage = canManageModule && detail?.canChange !== false;
   async function afterChange(message: string) { setAbsenceOpen(false); setModal(null); await Promise.all([load(), changed()]); flash(message); }
   async function closeAbsence(absence: Detail["absences"][number]) {
     const endDate = window.prompt("Data de término/retorno (AAAA-MM-DD):", localToday());
@@ -58,13 +62,13 @@ export default function EmployeeProfile({ id, canManage, canSeeSalary, fronts, c
             <div className="sheet-identity"><span className="equipment-avatar sheet-avatar">{initials(detail.name)}</span><div><p>{detail.jobTitle.toUpperCase()}{detail.registration ? ` · MATRÍCULA ${detail.registration}` : ""}</p><h2>{detail.name}</h2><span>{detail.company} · {detail.frontName}{dismissed ? "" : ` · há ${dayCount(detail.daysInFront)} nesta frente`}</span></div></div>
             <button className="sheet-close" onClick={close}>×</button>
           </header>
-          {canManage && (
+          {canTransfer && (
             <div className="sheet-actions employee-profile-actions">
-              <div><SituationPills item={detail} /></div>
-              <button className="secondary" onClick={() => edit(detail)}>Editar cadastro</button>
+              <div><SituationPills item={detail} />{!canManage && <small className="table-sub">Funcionário de outra frente: consulta e transferência.</small>}</div>
+              {canManage && <button className="secondary" onClick={() => edit(detail)}>Editar cadastro</button>}
               {!dismissed && <button className="secondary" onClick={() => setModal("transfer")}>Transferir de frente</button>}
-              {!dismissed && <button className="secondary danger-action" onClick={() => setModal("dismiss")}>Demitir</button>}
-              {dismissed && <button className="primary" onClick={() => setModal("rehire")}>Readmitir</button>}
+              {canManage && !dismissed && <button className="secondary danger-action" onClick={() => setModal("dismiss")}>Demitir</button>}
+              {canManage && dismissed && <button className="primary" onClick={() => setModal("rehire")}>Readmitir</button>}
             </div>
           )}
           <div className="sheet-content">

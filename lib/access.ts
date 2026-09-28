@@ -13,11 +13,12 @@ export function frentesVisiveis(user: SessionUser): number[] | "ALL" {
   return user.serviceFrontIds;
 }
 
-// Equipamentos e Funcionários (cadastro/listagem/transferência) têm uma exceção por usuário: a
-// permissão "fronts.cross_registry" libera enxergar TODAS as frentes só nesses dois módulos, para
-// localizar e transferir um equipamento ou funcionário que está em outra frente. Os demais módulos
-// continuam usando frentesVisiveis().
-export function frentesVisiveisCadastro(user: SessionUser): number[] | "ALL" {
-  if (user.permissions.includes("fronts.cross_registry")) return "ALL";
-  return frentesVisiveis(user);
+// Equipamentos e Funcionários (cadastro/listagem/transferência) são a exceção: QUALQUER pessoa com
+// acesso a esses módulos enxerga TODAS as frentes neles, para localizar e transferir um equipamento
+// ou funcionário que está em outra frente. É só VISUALIZAÇÃO e TRANSFERÊNCIA — editar, lançar ciclo,
+// demitir etc. continuam limitados às frentes do login (frentesVisiveis). Os demais módulos continuam
+// usando frentesVisiveis().
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function frentesVisiveisCadastro(_user: SessionUser): number[] | "ALL" {
+  return "ALL";
 }

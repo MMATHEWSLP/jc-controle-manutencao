@@ -10,7 +10,7 @@ import {
   type Alerts, type Company, type CycleStep, type Employee, type Front, type Phase, type User,
 } from "./employees-client";
 
-type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canManageCompanies: boolean; frontButtons?: boolean };
+type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canManageCompanies: boolean; frontButtons?: boolean; changeFrontIds?: number[] | "ALL" };
 type Tab = "painel" | "viagem" | "folga" | "retorno" | "historico" | "restritos";
 const EMPTY: ListResponse = { employees: [], fronts: [], scopeFrontIds: [], companies: [], alerts: { offOverdue: 0, workExceeded: 0, approaching: 0 }, canManage: false, canSeeSalary: false, canManageCompanies: false };
 
@@ -46,6 +46,8 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
   const [details, setDetails] = useState<number | null>(null);
   const [moduleFront, setModuleFront] = useState<number | "ALL">("ALL");
   const canManage = authUser.permissions.includes("employees.manage");
+  // Todas as frentes aparecem para consulta e transferência; as demais alterações só nas frentes do login.
+  const canChange = (item: { serviceFrontId: number }) => data.changeFrontIds === undefined || data.changeFrontIds === "ALL" || data.changeFrontIds.includes(item.serviceFrontId);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,7 +84,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
   // No Painel, o lote é "Iniciar folga" (e "Iniciar ciclo" para quem ainda não tem início): só
   // para quem está trabalhando na frente.
   const selectable = (item: Employee) => {
-    if (!canManage || item.status === "DEMITIDO") return false;
+    if (!canManage || item.status === "DEMITIDO" || !canChange(item)) return false;
     if (tab === "painel") return item.status !== "AFASTADO" && (phaseOf(item) === "TRABALHANDO" || phaseOf(item) === "SEM_CICLO");
     return Boolean(TAB_PHASES[tab]);
   };
@@ -165,7 +167,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
                   {items.map((item) => {
                     const cycle = item.cycle;
                     const summary = cycle?.summary;
-                    const action = canManage ? nextAction(item) : null;
+                    const action = canManage && canChange(item) ? nextAction(item) : null;
                     const danger = summary?.alert?.kind === "OFF_OVERDUE" || summary?.alert?.kind === "WORK_EXCEEDED";
                     return (
                       <tr key={item.id} className={`${danger ? "employee-row-danger" : summary?.alert ? "employee-row-warning" : ""} ${selected.has(item.id) ? "employee-row-selected" : ""}`}>
@@ -184,7 +186,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
                         <td><div className="equipment-row-actions">
                           <button onClick={() => setDetails(item.id)}>Ver</button>
                           {action && item.status !== "AFASTADO" && <button className="primary-lite" onClick={() => setStepping({ employees: [item], ...action })}>{action.label}</button>}
-                          {canManage && tab === "painel" && item.status !== "DEMITIDO" && <button onClick={() => setEditing(item)}>Editar</button>}
+                          {canManage && canChange(item) && tab === "painel" && item.status !== "DEMITIDO" && <button onClick={() => setEditing(item)}>Editar</button>}
                           {canManage && tab === "painel" && item.status !== "DEMITIDO" && <button className="transfer-action" onClick={() => setTransferring(item)}>Transferir</button>}
                         </div></td>
                       </tr>
@@ -197,7 +199,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
           )}
         </article>
       )}
-      {editing && <EmployeeForm item={editing === "new" ? null : editing} fronts={data.fronts} companies={data.companies} canSeeSalary={data.canSeeSalary} close={() => setEditing(null)} saved={refreshAfter} />}
+      {editing && <EmployeeForm item={editing === "new" ? null : editing} fronts={data.fronts.filter((front) => canChange({ serviceFrontId: front.id }))} companies={data.companies} canSeeSalary={data.canSeeSalary} close={() => setEditing(null)} saved={refreshAfter} />}
       {transferring && <TransferModal item={transferring} fronts={data.fronts} close={() => setTransferring(null)} saved={refreshAfter} />}
       {stepping && <StepModal employees={stepping.employees} steps={stepping.steps} title={stepping.label} close={() => setStepping(null)} saved={refreshAfter} />}
       {companiesOpen && <CompaniesModal companies={data.companies} close={() => setCompaniesOpen(false)} changed={async (message) => { await load(); flash(message); }} />}

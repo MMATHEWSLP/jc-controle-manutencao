@@ -16,14 +16,14 @@ export async function POST(request: Request, { params }: Context) {
     const user = auth.user!;
     const db = await getDb();
     const id = Number((await params).id);
-    const employee = await requireEmployee(db, user, id);
+    const employee = await requireEmployee(db, user, id, "VIEW");
     const body = (await request.json()) as Record<string, unknown>;
     const newFrontId = Number(body.newServiceFrontId);
     const transferDate = typeof body.transferDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.transferDate) ? body.transferDate : employeeToday();
     const note = typeof body.note === "string" ? body.note.trim() || null : null;
     const front = (await db.select({ id: serviceFronts.id, name: serviceFronts.name }).from(serviceFronts).where(and(eq(serviceFronts.id, newFrontId), eq(serviceFronts.active, true))).limit(1))[0];
     if (!front) return Response.json({ error: "Escolha a frente de destino." }, { status: 400 });
-    if (!canSeeEmployeeFront(user, front.id)) return Response.json({ error: "Você não tem acesso à frente de destino." }, { status: 403 });
+    if (!canSeeEmployeeFront(user, front.id, "VIEW")) return Response.json({ error: "Você não tem acesso à frente de destino." }, { status: 403 });
     if (front.id === employee.serviceFrontId) return Response.json({ error: `O funcionário já está em ${front.name}.` }, { status: 409 });
     if (transferDate > employeeToday()) return Response.json({ error: "A data da transferência não pode ser futura." }, { status: 400 });
     await db.transaction(async (tx) => {

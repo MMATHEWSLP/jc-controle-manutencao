@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { employeeLeaveCycles, employees } from "../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { validateEmployee } from "../../../../lib/employee-rules";
-import { assertUniqueDocuments, canSeeSalary, employeeAudit, employeeDetail, employeeErrorResponse, employeeToday, parseEmployeeBody, requireCompany, requireEmployee } from "../../../../lib/employees";
+import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSalary, employeeAudit, employeeDetail, employeeErrorResponse, employeeToday, parseEmployeeBody, requireCompany, requireEmployee } from "../../../../lib/employees";
 import { statusForPhase, summarizeStoredCycle } from "../../../../lib/leave-cycle";
 
 type Context = { params: Promise<{ id: string }> };
@@ -14,8 +14,10 @@ export async function GET(request: Request, { params }: Context) {
   try {
     const db = await getDb();
     const id = Number((await params).id);
-    await requireEmployee(db, auth.user!, id);
-    return Response.json({ employee: await employeeDetail(db, id, { showSalary: canSeeSalary(auth.user!) }) });
+    const row = await requireEmployee(db, auth.user!, id, "VIEW");
+    // De outra frente: consulta e transferência; salário e demais alterações só na frente do login.
+    const canChange = canSeeEmployeeFront(auth.user!, row.serviceFrontId, "CHANGE");
+    return Response.json({ employee: { ...await employeeDetail(db, id, { showSalary: canSeeSalary(auth.user!) && canChange }), canChange } });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.id.get]", error);
