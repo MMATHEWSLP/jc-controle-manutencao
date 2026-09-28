@@ -304,8 +304,8 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
                           {product.tag}
                           {product.needsReview && <span className="products-review-badge">Revisar</span>}
                         </td>
-                        <td>
-                          {product.name}
+                        <td className="product-name-cell">
+                          <strong>{product.name}</strong>
                           <div className="product-front-badges">
                             {activeFronts.length === 0 ? <span className="product-front-badge none">Inativo em todas as frentes</span> : activeFronts.map((front) => <span key={front.serviceFrontId} className="product-front-badge">{front.name}</span>)}
                           </div>
