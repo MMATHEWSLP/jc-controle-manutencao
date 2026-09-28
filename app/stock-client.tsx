@@ -28,39 +28,51 @@ export const parseQty = (value: string) => { const parsed = Number(value.replace
 export type Front = { id: number; name: string };
 export type EquipmentOption = { id: number; prefix: string; description: string; serviceFrontId: number | null; front: string | null; meterUnit: "HOURS" | "KM"; currentReading: number };
 export type StockOptions = { fronts: Front[]; defaultFrontId: number | null; equipment: EquipmentOption[] };
-export type ProductOption = { id: number; tag: string; name: string; reference: string | null; references: string[]; price: number; brand: string | null; supplierId: number | null; balance: number | null };
+export type ProductOption = { id: number; tag: string; name: string; reference: string | null; references: string[]; price?: number; brand?: string | null; supplierId?: number | null; balance?: number | null };
 export type EmployeeOption = { id: number; name: string; jobTitle: string; company: string; frontName: string };
 export type Shortage = { productId: number; label: string; requested: number; available: number };
 
-// Busca por TAG, nome ou referência; mostra o saldo na frente informada.
-export function ProductPicker({ value, frontId, onPick, placeholder }: { value: ProductOption | null; frontId: number | null; onPick: (product: ProductOption | null) => void; placeholder?: string }) {
+// Busca de produto ÚNICA do sistema (Ordem de Serviço, Solicitação de Materiais, Solicitação de
+// Pedidos, Movimentação...): mesma dupla de lupas do módulo Produtos — busca ampla (TAG, nome ou
+// referência) e "# TAG exata" (só o produto cuja TAG é idêntica). Mostra o saldo na frente informada
+// quando o endpoint devolve. `endpoint` muda só a rota (cada módulo confere as próprias permissões).
+export function ProductPicker({ value, frontId, onPick, placeholder, endpoint = "/api/stock/products" }: { value: ProductOption | null; frontId: number | null; onPick: (product: ProductOption | null) => void; placeholder?: string; endpoint?: string }) {
   const [query, setQuery] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
   const [options, setOptions] = useState<ProductOption[]>([]);
   const [open, setOpen] = useState(false);
+  const exact = tagQuery.trim();
+  const broad = query.trim();
   useEffect(() => {
-    if (query.trim().length < 2) { setOptions([]); return; }
+    if (!exact && broad.length < 2) { setOptions([]); return; }
+    const params = new URLSearchParams(exact ? { tag: exact } : { q: broad });
+    if (frontId) params.set("frente", String(frontId));
     const timer = window.setTimeout(() => {
-      api<{ products: ProductOption[] }>(`/api/stock/products?q=${encodeURIComponent(query.trim())}${frontId ? `&frente=${frontId}` : ""}`)
+      api<{ products: ProductOption[] }>(`${endpoint}?${params.toString()}`)
         .then((result) => { setOptions(result.products); setOpen(true); }).catch(() => setOptions([]));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query, frontId]);
+  }, [exact, broad, frontId, endpoint]);
+  const pick = (option: ProductOption) => { onPick(option); setQuery(""); setTagQuery(""); setOpen(false); };
   if (value) return (
     <div className="material-product-chip">
       <span className="material-item-kind linked">{value.tag}</span><strong>{value.name}</strong>
-      {value.balance !== null && <small>Saldo: {qtyFormat.format(value.balance)}</small>}
+      {typeof value.balance === "number" && <small>Saldo: {qtyFormat.format(value.balance)}</small>}
       <button type="button" onClick={() => onPick(null)}>Trocar</button>
     </div>
   );
   return (
-    <div className="material-product-picker">
-      <input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setOpen(true)} placeholder={placeholder ?? "Buscar por TAG, nome ou referência..."} />
+    <div className="material-product-picker product-picker-two-search">
+      <div className="product-picker-inputs">
+        <label className="page-search" title="Busca ampla: TAG, nome ou referência (aproximada)"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value) setTagQuery(""); }} onFocus={() => setOpen(true)} placeholder={placeholder ?? "Buscar por TAG, nome ou referência..."} /></label>
+        <label className="page-search products-tag-search" title="Somente o produto com esta TAG exata (sem correspondências parciais)"><span>#</span><input value={tagQuery} onChange={(event) => { setTagQuery(event.target.value); if (event.target.value) setQuery(""); }} onFocus={() => setOpen(true)} placeholder="TAG exata" inputMode="numeric" aria-label="Buscar por TAG exata" /></label>
+      </div>
       {open && options.length > 0 && <ul>{options.map((option) => (
-        <li key={option.id}><button type="button" onClick={() => { onPick(option); setQuery(""); setOpen(false); }}>
-          <b>{option.tag}</b> {option.name}{option.references.length > 0 && <small> · Ref. {option.references.join(", ")}</small>}{option.balance !== null && <small> · Saldo {qtyFormat.format(option.balance)}</small>}
+        <li key={option.id}><button type="button" onClick={() => pick(option)}>
+          <b>{option.tag}</b> {option.name}{option.references.length > 0 && <small> · Ref. {option.references.join(", ")}</small>}{typeof option.balance === "number" && <small> · Saldo {qtyFormat.format(option.balance)}</small>}
         </button></li>
       ))}</ul>}
-      {open && query.trim().length >= 2 && options.length === 0 && <p className="material-product-empty">Nenhum produto encontrado.</p>}
+      {open && (exact || broad.length >= 2) && options.length === 0 && <p className="material-product-empty">{exact ? `Nenhum produto com a TAG exata "${exact}".` : "Nenhum produto encontrado."}</p>}
     </div>
   );
 }

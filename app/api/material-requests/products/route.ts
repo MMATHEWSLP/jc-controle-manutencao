@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
     const url = new URL(request.url);
-    if ((url.searchParams.get("q") ?? "").trim().length < 2) return Response.json({ products: [] });
+    if ((url.searchParams.get("q") ?? "").trim().length < 2 && !(url.searchParams.get("tag") ?? "").trim()) return Response.json({ products: [] });
     const db = await getDb();
     const rows = await db.select({ id: products.id, tag: products.tag, name: products.name, reference: products.reference }).from(products)
       .where(buildProductWhere(url, "ALL")).orderBy(asc(products.name)).limit(20);

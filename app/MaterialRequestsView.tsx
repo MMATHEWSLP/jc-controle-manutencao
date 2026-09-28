@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
+import { ProductPicker as SharedProductPicker } from "./stock-client";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
@@ -206,20 +207,6 @@ type DraftItem = { clientId:string; mode:"PRODUCT"|"MANUAL"; product:ProductOpti
 const newDraft=():DraftItem=>({ clientId:crypto.randomUUID(), mode:"PRODUCT", product:null, description:"", quantityRequested:"", reference:"", fiscalUnit:DEFAULT_FISCAL_UNIT });
 const quantityWithUnit=(quantity:number,unit:string|null)=>`${numberFormat.format(quantity)}${unit?` ${unit}`:""}`;
 
-// Busca de produto cadastrado (TAG, nome ou referência) para o item da solicitação.
-function ProductPicker({ value, onPick }:{ value:ProductOption|null; onPick:(product:ProductOption|null)=>void }) {
-  const [query,setQuery]=useState("");
-  const [options,setOptions]=useState<ProductOption[]>([]);
-  const [open,setOpen]=useState(false);
-  useEffect(()=>{ if(query.trim().length<2){ setOptions([]); return; } const timer=window.setTimeout(()=>{ api<{products:ProductOption[]}>(`/api/material-requests/products?q=${encodeURIComponent(query.trim())}`).then((result)=>{ setOptions(result.products); setOpen(true); }).catch(()=>setOptions([])); },250); return ()=>window.clearTimeout(timer); },[query]);
-  if(value) return <div className="material-product-chip"><span className="material-item-kind linked">{value.tag}</span><strong>{value.name}</strong>{value.references.length>0 && <small>Ref.: {value.references.join(", ")}</small>}<button type="button" onClick={()=>onPick(null)}>Trocar</button></div>;
-  return <div className="material-product-picker">
-    <input value={query} onChange={(event)=>setQuery(event.target.value)} onFocus={()=>setOpen(true)} placeholder="Buscar por TAG, nome ou referência..." required/>
-    {open && options.length>0 && <ul>{options.map((option)=><li key={option.id}><button type="button" onClick={()=>{ onPick(option); setQuery(""); setOpen(false); }}><b>{option.tag}</b> {option.name}{option.references.length>0 && <small> · Ref. {option.references.join(", ")}</small>}</button></li>)}</ul>}
-    {open && query.trim().length>=2 && options.length===0 && <p className="material-product-empty">Nenhum produto encontrado — use “Item manual” se não estiver cadastrado.</p>}
-  </div>;
-}
-
 // Frente de origem do pedido: a do login. Com uma frente só ela vem preenchida (só leitura); com
 // várias, a escolha é obrigatória.
 function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUser; fronts:Array<{id:number;name:string}>; close:()=>void; saved:(message:string)=>Promise<void> }) {
@@ -257,7 +244,7 @@ function CreateRequestModal({ authUser, fronts, close, saved }:{ authUser:AuthUs
         {items.map((item,index)=><div className="fleet-order-editor" key={item.clientId}>
           <header><b>Item {index+1}</b><div className="material-item-mode" role="group" aria-label="Tipo do item"><button type="button" className={item.mode==="PRODUCT"?"active":""} onClick={()=>patchItem(item.clientId,{ mode:"PRODUCT" })}>Produto cadastrado</button><button type="button" className={item.mode==="MANUAL"?"active":""} onClick={()=>patchItem(item.clientId,{ mode:"MANUAL", product:null })}>Item manual</button></div>{items.length>1 && <button type="button" onClick={()=>removeItem(item.clientId)}>Remover</button>}</header>
           <div className="fleet-form-grid">
-            {item.mode==="PRODUCT" ? <label className="span-2">Produto *<ProductPicker value={item.product} onPick={(product)=>patchItem(item.clientId,{ product })}/></label> : <>
+            {item.mode==="PRODUCT" ? <label className="span-2">Produto *<SharedProductPicker endpoint="/api/material-requests/products" frontId={null} value={item.product} onPick={(product)=>patchItem(item.clientId,{ product: product as ProductOption | null })}/></label> : <>
               <label className="span-2">Descrição do item *<input required value={item.description} onChange={(event)=>patchItem(item.clientId,{ description:event.target.value })}/></label>
               <label>Referência<input value={item.reference} onChange={(event)=>patchItem(item.clientId,{ reference:event.target.value })}/></label>
             </>}

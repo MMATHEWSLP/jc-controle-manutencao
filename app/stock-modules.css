@@ -61,3 +61,9 @@ html[data-theme="dark"] .po-steps li.done{background:#1f3a30;color:#8fe0bf;borde
 html[data-theme="dark"] .po-steps li.current{background:#1d2a36;color:#9ccbee;border-color:#2e5575}
 .wo-actions button,.po-detail td button.secondary,.stock-filters>button.secondary{min-height:34px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:inherit;font-weight:800;font-size:12px;cursor:pointer}
 .po-receipt .equipment-row-actions button.primary{background:linear-gradient(135deg,#00a879,#05845f);border-color:#007e5b;color:#fff}
+
+/* Busca de produto com as duas lupas (ampla + TAG exata), igual ao módulo Produtos. */
+.product-picker-inputs{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:6px}
+.product-picker-inputs .page-search{display:flex;align-items:center;gap:6px;min-height:42px;margin:0;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.product-picker-inputs .page-search input{flex:1;min-width:0;min-height:38px;border:0;background:transparent;padding:0;box-shadow:none}
+.product-picker-inputs .page-search span{color:var(--muted)}
