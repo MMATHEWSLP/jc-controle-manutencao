@@ -6,7 +6,8 @@
 export type ProductionType = "BALDEIO" | "PORTO";
 export type ReadingUnit = "HOURS" | "KM";
 
-export type FuelingDraft = { liters: string; location: string };
+// Cada abastecimento guarda os litros e a leitura (KM ou horímetro) no momento do abastecimento.
+export type FuelingDraft = { liters: string; reading: string };
 export type TripDraft = { logs: string; meters: string };
 
 export type DailyRecordDraft = {
@@ -45,7 +46,7 @@ export type DailyRecordValue = {
   location: string | null;
   startReading: number | null;
   endReading: number | null;
-  fuelings: Array<{ liters: number; location: string }>;
+  fuelings: Array<{ liters: number; reading: number }>;
   inactiveOrProblem: boolean;
   problemReason: string | null;
   hadProduction: boolean;
@@ -59,7 +60,7 @@ export type DailyRecordValue = {
 export const MAX_FUELINGS = 20;
 export const MAX_TRIPS = 60;
 
-export function emptyFueling(): FuelingDraft { return { liters: "", location: "" }; }
+export function emptyFueling(): FuelingDraft { return { liters: "", reading: "" }; }
 export function emptyTrip(): TripDraft { return { logs: "", meters: "" }; }
 
 // Ajusta a lista de cards dinâmicos ao número digitado: preserva os primeiros
@@ -163,8 +164,9 @@ export function validateDailyRecord(draft: DailyRecordDraft, today: string, opti
   const fuelings = (fuelingCount ? draft.fuelings.slice(0, fuelingCount) : []).map((item, index) => {
     const liters = parseDecimal(item.liters);
     if (liters === null || liters <= 0) errors[`fuelings.${index}.liters`] = "Informe os litros.";
-    if (!clean(item.location)) errors[`fuelings.${index}.location`] = "Informe o local/posto.";
-    return { liters: liters ?? 0, location: clean(item.location) };
+    const reading = parseDecimal(item.reading);
+    if (reading === null || reading < 0) errors[`fuelings.${index}.reading`] = "Informe a leitura no abastecimento.";
+    return { liters: liters ?? 0, reading: reading ?? 0 };
   });
   if (fuelingCount && draft.fuelings.length < fuelingCount) errors.fuelingCount = "Preencha todos os abastecimentos.";
 

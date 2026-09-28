@@ -24,7 +24,7 @@ type RecordItem = {
   readingUnit:ReadingUnit; startReading:number|null; endReading:number|null; inactiveOrProblem:boolean; problemReason:string|null; hasProblemPhoto:boolean;
   hadProduction:boolean; productionType:ProductionType|null; hasProductionPhoto:boolean; notes:string|null;
   officialServiceFrontId:number|null; frontRequestStatus:"PENDING"|"APPROVED"|"REJECTED"|null;
-  fuelings:Array<{number:number;liters:number;location:string}>; trips:Array<{number:number;logs:number;meters:number|null}>;
+  fuelings:Array<{number:number;liters:number;reading:number|null;location:string|null}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
 type Tab = "new" | "mine" | "history" | "fronts" | "operators";
@@ -32,6 +32,8 @@ type Tab = "new" | "mine" | "history" | "fronts" | "operators";
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
 const unitSuffix=(unit:ReadingUnit)=>unit==="KM"?"km":"h";
+// Abastecimentos novos mostram a leitura; os antigos (antes da troca do campo) mostram o local/posto.
+const fuelingPlace=(item:{reading:number|null;location:string|null},unit:ReadingUnit)=>item.reading!==null?`${readingLabel(unit)} ${numberFormat.format(item.reading)}`:item.location??"—";
 const formatDay=(value:string|null)=>value?value.split("-").reverse().join("/"):"—";
 function localToday() { const now=new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`; }
 
@@ -87,7 +89,7 @@ function draftFromRecord(record:RecordItem):DailyRecordDraft {
   return {
     recordDate:record.recordDate, equipmentId:record.equipmentId, workedToday:record.workedToday, noWorkReason:record.noWorkReason??"",
     serviceFrontId:record.serviceFrontId, location:record.location??"", startReading:decimal(record.startReading), endReading:decimal(record.endReading),
-    fuelingCount:record.fuelings.length?String(record.fuelings.length):"", fuelings:record.fuelings.map((item)=>({ liters:decimal(item.liters), location:item.location })),
+    fuelingCount:record.fuelings.length?String(record.fuelings.length):"", fuelings:record.fuelings.map((item)=>({ liters:decimal(item.liters), reading:decimal(item.reading) })),
     inactiveOrProblem:record.workedToday?record.inactiveOrProblem:null, problemReason:record.problemReason??"",
     hadProduction:record.workedToday?record.hadProduction:null, productionType:record.productionType,
     tripCount:record.trips.length?String(record.trips.length):"", trips:record.trips.map((trip)=>({ logs:String(trip.logs), meters:decimal(trip.meters) })),
@@ -321,7 +323,7 @@ function DailyForm({ context, currentUser, flash, onSent, editing, onCancel }:{ 
           <header><b>Abastecimento {index+1}</b></header>
           <div className="fleet-form-grid">
             <Field label="Litros *" error={errorFor(`fuelings.${index}.liters`)}><input inputMode="decimal" value={item.liters} onChange={(event)=>setDraft((current)=>({ ...current, fuelings:current.fuelings.map((fueling,position)=>position===index?{ ...fueling, liters:event.target.value }:fueling) }))} onBlur={()=>touch(`fuelings.${index}.liters`)}/></Field>
-            <Field label="Local / posto *" className="span-2" error={errorFor(`fuelings.${index}.location`)}><input value={item.location} onChange={(event)=>setDraft((current)=>({ ...current, fuelings:current.fuelings.map((fueling,position)=>position===index?{ ...fueling, location:event.target.value }:fueling) }))} onBlur={()=>touch(`fuelings.${index}.location`)} placeholder="Comboio, posto, tanque da frente..."/></Field>
+            <Field label={`${readingLabel(unit)} *`} error={errorFor(`fuelings.${index}.reading`)}><input inputMode="decimal" value={item.reading} onChange={(event)=>setDraft((current)=>({ ...current, fuelings:current.fuelings.map((fueling,position)=>position===index?{ ...fueling, reading:event.target.value }:fueling) }))} onBlur={()=>touch(`fuelings.${index}.reading`)} placeholder={`Leitura no abastecimento (${unitSuffix(unit)})`}/></Field>
           </div>
         </div>)}
       </section>
@@ -497,7 +499,7 @@ function ReviewModal({ manualOperator, draft, equipment, fronts, unit, readingCh
   else {
     rows.push(["Frente de serviço",fronts.find((front)=>front.id===draft.serviceFrontId)?.name??"—"],["Localização",draft.location.trim()],
       [`${readingLabel(unit)} inicial → final`,`${numberFormat.format(start??0)} → ${numberFormat.format(end??0)} ${unitSuffix(unit)} (${numberFormat.format((end??0)-(start??0))} ${unitSuffix(unit)})`],
-      ["Abastecimentos",count?draft.fuelings.slice(0,count).map((item,index)=>`${index+1}) ${numberFormat.format(parseDecimal(item.liters)??0)} L — ${item.location.trim()}`).join("; "):"Nenhum"],
+      ["Abastecimentos",count?draft.fuelings.slice(0,count).map((item,index)=>`${index+1}) ${numberFormat.format(parseDecimal(item.liters)??0)} L — ${readingLabel(unit)} ${numberFormat.format(parseDecimal(item.reading)??0)}`).join("; "):"Nenhum"],
       ["Inativo ou com problema?",draft.inactiveOrProblem?`Sim — ${draft.problemReason.trim()}${problemPhoto?" (com foto)":""}`:"Não"],
       ["Produção",draft.hadProduction?`${draft.productionType==="PORTO"?"Porto":"Baldeio"} — ${trips.length} viagem(ns), ${trips.reduce((total,trip)=>total+Number(trip.logs||0),0)} tora(s)${draft.productionType==="PORTO"?`, ${numberFormat.format(trips.reduce((total,trip)=>total+(parseDecimal(trip.meters)??0),0))} m`:""}`:"Não"]);
   }
@@ -579,7 +581,7 @@ function RecordsPanel({ equipment, canManage, flash, onEdit }:{ equipment:Equipm
           {!record.workedToday ? <div className="wide"><dt>Motivo</dt><dd>{record.noWorkReason}</dd></div> : <>
             <div><dt>Frente / local</dt><dd>{record.front??"—"} · {record.location}{record.frontRequestStatus==="PENDING" && <span className="daily-front-pending small">Aguardando aprovação</span>}</dd></div>
             <div><dt>{readingLabel(record.readingUnit)}</dt><dd>{numberFormat.format(record.startReading??0)} → {numberFormat.format(record.endReading??0)} {unitSuffix(record.readingUnit)}</dd></div>
-            <div><dt>Abastecimentos</dt><dd>{record.fuelings.length?record.fuelings.map((item)=>`${numberFormat.format(item.liters)} L (${item.location})`).join(", "):"Nenhum"}</dd></div>
+            <div><dt>Abastecimentos</dt><dd>{record.fuelings.length?record.fuelings.map((item)=>`${numberFormat.format(item.liters)} L (${fuelingPlace(item,record.readingUnit)})`).join(", "):"Nenhum"}</dd></div>
             {record.inactiveOrProblem && <div className="wide"><dt>Problema</dt><dd>{record.problemReason}{record.hasProblemPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=problem`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
             {record.hadProduction && <div className="wide"><dt>Produção ({record.productionType==="PORTO"?"Porto":"Baldeio"})</dt><dd>{record.trips.map((trip)=>`V${trip.number}: ${trip.logs} tora(s)${trip.meters!==null?` / ${numberFormat.format(trip.meters)} m`:""}`).join(" · ")}{record.hasProductionPhoto && <> · <a href={`/api/daily-records/${record.id}/photo?kind=production`} target="_blank" rel="noreferrer">ver foto</a></>}</dd></div>}
           </>}

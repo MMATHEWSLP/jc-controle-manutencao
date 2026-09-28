@@ -120,6 +120,13 @@
       "when": 1790541938142,
       "tag": "0016_employees_cycles_and_material_stock",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790605885210,
+      "tag": "0017_daily_fueling_reading",
+      "breakpoints": true
     }
   ]
 }

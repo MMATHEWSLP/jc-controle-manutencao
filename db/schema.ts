@@ -1002,7 +1002,11 @@ export const dailyRecordFuelings = pgTable("daily_record_fuelings", {
   dailyRecordId: integer("daily_record_id").notNull().references(() => dailyRecords.id, { onDelete:"cascade" }),
   fuelingNumber: integer("fueling_number").notNull(),
   liters: doublePrecision("liters").notNull(),
-  location: text("location").notNull(),
+  // Leitura (KM ou horímetro, na unidade do registro) no momento deste abastecimento. NULL só nos
+  // abastecimentos lançados antes da troca do campo "Local/Posto" por esta leitura.
+  meterReading: doublePrecision("meter_reading"),
+  // Campo antigo "Local / posto": só leitura, preservado nos registros anteriores.
+  location: text("location"),
   ...timestamps,
 }, (table) => [uniqueIndex("daily_record_fuelings_number_unique").on(table.dailyRecordId, table.fuelingNumber)]);
 
