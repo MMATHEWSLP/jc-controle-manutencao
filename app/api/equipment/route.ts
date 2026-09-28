@@ -6,7 +6,7 @@ import { naturalSortKey } from "../../../lib/equipment-sort";
 import { activeServiceFronts, allowedEquipmentIds, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
 import { canonicalEquipmentPrefix, reconcileEquipmentMeasurement } from "../../../lib/maintenance-history";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
-import { frentesEmExibicao } from "../../../lib/active-front";
+import { frentesEmExibicao, frentesEmExibicaoCadastro, showsRegistryFrontButtons } from "../../../lib/active-front";
 
 type ControlType = "HOURS" | "KM" | "HOURS_KM";
 type EquipmentStatus = "ACTIVE" | "STOPPED" | "MAINTENANCE" | "INACTIVE";
@@ -74,12 +74,14 @@ export async function GET(request:Request) {
     const [rows, applicableMap, typeRows,fronts,allowed] = await Promise.all([
       getEquipmentRows(), getApplicableMap(),
       db.select({ name:maintenanceTypes.name, category:maintenanceTypes.category }).from(maintenanceTypes).where(and(eq(maintenanceTypes.active, true),eq(maintenanceTypes.category,"OIL"))).orderBy(maintenanceTypes.name),
-      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,frentesEmExibicao(auth.user!,request)),
+      activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,mode==="MANAGEMENT"?frentesEmExibicaoCadastro(auth.user!,request):frentesEmExibicao(auth.user!,request)),
     ]);
     return Response.json({
       equipment:rows.filter((row)=>allowed.has(row.id)).map((row)=>normalize(row,applicableMap[row.id] ?? [])),
       maintenanceTypes:typeRows.map((row)=>row.name),
       fronts,
+      // Botões de frente dentro do módulo (só para quem tem a permissão e não tem o seletor global).
+      frontButtons:mode==="MANAGEMENT"&&showsRegistryFrontButtons(auth.user!),
     });
   } catch (error) {
     const detail = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";

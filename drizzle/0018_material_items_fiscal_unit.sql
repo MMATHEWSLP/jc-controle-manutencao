@@ -1,0 +1,1 @@
+ALTER TABLE "material_request_items" ADD COLUMN "fiscal_unit" text;

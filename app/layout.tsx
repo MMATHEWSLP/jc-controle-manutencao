@@ -8,6 +8,8 @@ import "./task-roles.css";
 import "./daily-control.css";
 import "./products-fuel.css";
 import "./app-runtime.css";
+import "./stock-modules.css";
+import "./compact-tables.css";
 import AppRuntime from "./AppRuntime";
 
 const geistSans = Geist({

@@ -1,6 +1,7 @@
 import { getDb } from "../../../db";
 import { employees, employeeTransfers } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
+import { showsRegistryFrontButtons } from "../../../lib/active-front";
 import { validateEmployee } from "../../../lib/employee-rules";
 import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSalary, employeeAlerts, employeeAudit, employeeErrorResponse, employeeScope, employeeToday, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
 
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
       listCompanies(db, { includeInactive: user.permissions.includes("employees.companies") }),
     ]);
     return Response.json({
-      employees: items, fronts, scopeFrontIds: scope, companies, today: employeeToday(), alerts: employeeAlerts(items),
+      employees: items, fronts, scopeFrontIds: scope, companies, today: employeeToday(), alerts: employeeAlerts(items), frontButtons: showsRegistryFrontButtons(user),
       canManage: user.permissions.includes("employees.manage"), canSeeSalary: canSeeSalary(user), canManageCompanies: user.permissions.includes("employees.companies"),
     });
   } catch (error) {

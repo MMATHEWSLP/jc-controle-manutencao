@@ -197,7 +197,7 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
         await tx.update(dailyRecords).set({ frontChangeRequestId: requestId }).where(eq(dailyRecords.id, record.id));
       }
       if (value.fuelings.length) await tx.insert(dailyRecordFuelings).values(value.fuelings.map((fueling, index) => ({
-        dailyRecordId: record.id, fuelingNumber: index + 1, liters: fueling.liters, location: fueling.location, createdAt: now, updatedAt: now })));
+        dailyRecordId: record.id, fuelingNumber: index + 1, liters: fueling.liters, meterReading: fueling.reading, createdAt: now, updatedAt: now })));
       if (value.trips.length) await tx.insert(dailyRecordTrips).values(value.trips.map((trip, index) => ({
         dailyRecordId: record.id, tripNumber: index + 1, logsQuantity: trip.logs, meters: trip.meters, createdAt: now, updatedAt: now })));
       await tx.insert(equipmentCurrentAssignments).values({ userId: user.id, equipmentId: value.equipmentId, createdAt: now, updatedAt: now })
@@ -248,7 +248,7 @@ export async function listDailyRecords(user: SessionUser, filters: { from?: stri
   ]) : [[], []];
   return rows.map((row) => ({
     ...row, hasProblemPhoto: Boolean(row.hasProblemPhoto), hasProductionPhoto: Boolean(row.hasProductionPhoto),
-    fuelings: fuelings.filter((item) => item.dailyRecordId === row.id).map((item) => ({ number: item.fuelingNumber, liters: item.liters, location: item.location })),
+    fuelings: fuelings.filter((item) => item.dailyRecordId === row.id).map((item) => ({ number: item.fuelingNumber, liters: item.liters, reading: item.meterReading, location: item.location })),
     trips: trips.filter((item) => item.dailyRecordId === row.id).map((item) => ({ number: item.tripNumber, logs: item.logsQuantity, meters: item.meters })),
   }));
 }
@@ -327,7 +327,7 @@ export async function updateDailyRecord(user: SessionUser, recordId: number, val
       await tx.delete(dailyRecordFuelings).where(eq(dailyRecordFuelings.dailyRecordId, recordId));
       await tx.delete(dailyRecordTrips).where(eq(dailyRecordTrips.dailyRecordId, recordId));
       if (value.fuelings.length) await tx.insert(dailyRecordFuelings).values(value.fuelings.map((fueling, index) => ({
-        dailyRecordId: recordId, fuelingNumber: index + 1, liters: fueling.liters, location: fueling.location, createdAt: now, updatedAt: now })));
+        dailyRecordId: recordId, fuelingNumber: index + 1, liters: fueling.liters, meterReading: fueling.reading, createdAt: now, updatedAt: now })));
       if (value.trips.length) await tx.insert(dailyRecordTrips).values(value.trips.map((trip, index) => ({
         dailyRecordId: recordId, tripNumber: index + 1, logsQuantity: trip.logs, meters: trip.meters, createdAt: now, updatedAt: now })));
       await tx.insert(auditLogs).values({ userId: user.id, entityType: "DAILY_RECORD", entityId: String(recordId), action: "CONTROLE DIÁRIO EDITADO",

@@ -4,6 +4,7 @@ import { alertMessage, calculatePlanState } from "../../../lib/maintenance-engin
 import { loadEquipmentCore, loadPlansForEquipment, loadThresholds } from "../../../lib/maintenance-data";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
 import { equipmentAccessResponse,requireEquipmentAccess } from "../../../lib/front-scope";
+import { workOrderNumber } from "../../../lib/document-numbers";
 
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
 const numeric=(value:unknown)=>{const parsed=Number(value);return Number.isFinite(parsed)?parsed:null;};
@@ -45,7 +46,21 @@ export async function POST(request:Request){
       if(auth.user!.profile!=="ADMIN")return Response.json({error:"A leitura da manutenção é inferior à leitura atual. Somente o administrador pode autorizar esse registro."},{status:403});
       if(body.authorizeRegression!==true)return Response.json({error:"A leitura é inferior à atual. Confirme a correção administrativa para continuar.",requiresConfirmation:true},{status:409});
     }
-    const now=new Date().toISOString();const workOrder=clean(body.workOrder).toUpperCase()||`MAN-${now.slice(0,10).replaceAll("-","")}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+    const now=new Date().toISOString();let workOrder=clean(body.workOrder).toUpperCase()||`MAN-${now.slice(0,10).replaceAll("-","")}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+    // Número no formato OS-000123 = O.S. do módulo Ordem de Serviço: precisa existir e ser deste
+    // equipamento; a troca fica vinculada a ela (aparece dentro da O.S.). Outros textos seguem como
+    // número de OS livre, como antes.
+    let workOrderId:number|null=null;
+    const osMatch=/^OS-?0*(\d{1,9})$/.exec(workOrder);
+    if(osMatch){
+      const linked=await d1.prepare(`SELECT id,equipment_id FROM work_orders WHERE id=?`).bind(Number(osMatch[1])).first<{id:number;equipment_id:number}>();
+      if(!linked)return Response.json({error:`A O.S. ${workOrderNumber(Number(osMatch[1]))} não existe. Confira o número ou deixe em branco.`},{status:400});
+      if(Number(linked.equipment_id)!==equipmentId)return Response.json({error:`A O.S. ${workOrderNumber(Number(linked.id))} é de outro equipamento. Informe a O.S. deste equipamento.`},{status:400});
+      workOrderId=Number(linked.id);workOrder=workOrderNumber(workOrderId);
+      const repeated=await d1.prepare(`SELECT t.name FROM maintenances m INNER JOIN maintenance_types t ON t.id=m.maintenance_type_id WHERE m.work_order=? AND m.maintenance_type_id=ANY(?) LIMIT 1`)
+        .bind(workOrder,selected.map((plan)=>plan.maintenanceTypeId)).first<{name:string}>();
+      if(repeated)return Response.json({error:`A ${workOrder} já tem uma ${repeated.name} registrada. Se esta troca é de outro serviço, informe outra O.S. (ou deixe em branco).`},{status:409});
+    }
     const notes=clean(body.notes)||null;const mechanic=clean(body.mechanic)||auth.user!.name;const cost=Math.max(0,numeric(body.cost)??0);const thresholds=await loadThresholds(d1);
     const updatedEquipment={...equipment,current_hours:Math.max(equipment.current_hours,nextHours),current_km:Math.max(equipment.current_km,nextKm)};
     const statements:D1PreparedStatementLike[]=[];
@@ -58,8 +73,8 @@ export async function POST(request:Request){
       const unit=plan.triggerMode==="KM"?"KM":"HOURS";const reading=unit==="KM"?nextKm:nextHours;const interval=unit==="KM"?plan.intervalKm!:plan.intervalHours!;
       const nextValue=reading+interval;const nextPlan={...plan,lastHours:unit==="HOURS"?reading:null,lastKm:unit==="KM"?reading:null,nextHours:unit==="HOURS"?nextValue:null,nextKm:unit==="KM"?nextValue:null};
       const state=calculatePlanState(nextPlan,updatedEquipment.current_hours,updatedEquipment.current_km,thresholds);const fingerprint=`PLAN:${equipmentId}:TYPE:${plan.maintenanceTypeId}`;
-      statements.push(d1.prepare(`INSERT INTO maintenances (equipment_id,service_front_id,plan_id,maintenance_type_id,performed_at,hours,km,mechanic,work_order,cost,notes,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(equipmentId,access.serviceFrontId,plan.id,plan.maintenanceTypeId,performedAt,requiresHours?nextHours:null,requiresKm?nextKm:null,mechanic,workOrder,cost,notes,auth.user!.id,now,now));
+      statements.push(d1.prepare(`INSERT INTO maintenances (equipment_id,service_front_id,plan_id,maintenance_type_id,performed_at,hours,km,mechanic,work_order,work_order_id,cost,notes,created_by,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(equipmentId,access.serviceFrontId,plan.id,plan.maintenanceTypeId,performedAt,requiresHours?nextHours:null,requiresKm?nextKm:null,mechanic,workOrder,workOrderId,cost,notes,auth.user!.id,now,now));
       statements.push(d1.prepare(`INSERT INTO maintenance_items (maintenance_id,description,item_type,quantity,unit,unit_cost,created_at,updated_at)
         SELECT id,?,'OIL',1,'SERVIÇO',?,?,? FROM maintenances WHERE work_order=? AND maintenance_type_id=?`)
         .bind(plan.maintenanceName,cost,now,now,workOrder,plan.maintenanceTypeId));

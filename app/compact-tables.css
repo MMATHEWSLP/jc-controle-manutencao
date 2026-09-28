@@ -1,0 +1,42 @@
+/* ---------------------------------------------------------------------------------------------
+   REGRA DO PROJETO: em notebook/desktop nenhuma tabela obriga rolagem para o lado. Vale para as
+   tabelas existentes e para as novas. Em vez de largura mínima fixa, a tabela se ajusta à tela:
+   fonte e espaçamento menores, cabeçalho que quebra linha (nome completo no title/tooltip) e
+   informação secundária numa segunda linha dentro da célula (.table-sub / .stage-cell).
+   Em celular (abaixo de 900px) a rolagem lateral continua como última opção.
+   --------------------------------------------------------------------------------------------- */
+@media (min-width:900px){
+  table,
+  .fleet-table,
+  .equipment-management-table,
+  .plan-sheet-card table,
+  .equipment-plan-card .editable-plan,
+  .import-preview-table table{min-width:0 !important;width:100%}
+  th{padding:9px 8px;font-size:9px;letter-spacing:.04em;white-space:normal;vertical-align:bottom;line-height:1.25}
+  td{padding:9px 8px;font-size:12px;overflow-wrap:break-word;vertical-align:middle}
+  .users-table td{white-space:normal}
+  .history-table td:last-child,
+  .history-row-actions,
+  .threshold-row,
+  .threshold-edit-row,
+  .user-name-cell,
+  .qr-equipment,
+  .employee-progress,
+  .progress-cell{min-width:0}
+  .editable-plan select{min-width:0;width:100%}
+  .fleet-description span{max-width:180px}
+  .fleet-people b{max-width:120px}
+  .table-sub{font-size:10px;line-height:1.3}
+  /* Botões de ação empilham em vez de alargar a coluna. */
+  td .equipment-row-actions{flex-wrap:wrap}
+}
+@media (min-width:900px) and (max-width:1366px){
+  th{padding:8px 6px;font-size:8.5px}
+  td{padding:8px 6px;font-size:11px}
+}
+/* Etapa numa célula só: período em cima, dias embaixo. */
+.stage-cell{display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.stage-cell b{font-weight:700;color:inherit}
+.stage-cell small{color:#7b8b96;font-size:10px}
+.stage-cell.muted{color:#9aa6ae}
+html[data-theme="dark"] .stage-cell small{color:#a9a6a0}

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (auth.response) return auth.response;
   try {
     const db = await getDb();
-    const { scope } = await employeeScope(db, auth.user!, request);
+    const { scope } = await employeeScope(db, auth.user!, request, { ownFrontsOnly: true });
     return Response.json({ alerts: employeeAlerts(await listEmployees(db, scope)) });
   } catch (error) {
     console.error("[employees.alerts]", error);

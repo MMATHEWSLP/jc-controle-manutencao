@@ -35,6 +35,12 @@ export const STATUS_OPTIONS: Array<[Status, string]> = [["ATIVO", "Ativo"], ["FO
 export const ABSENCE_OPTIONS: Array<[AbsenceKind, string]> = [["FERIAS", "Férias"], ["ATESTADO", "Atestado médico"], ["AFASTAMENTO", "Afastamento"], ["OUTRO", "Outro"]];
 
 export const brDay = (value: string | null | undefined) => (value ? value.split("-").reverse().join("/") : "—");
+
+// Etapa do ciclo numa célula só (tabelas sem rolagem lateral): "05/09 → 09/09" e os dias embaixo.
+export function StageCell({ from, to, days }: { from: string | null | undefined; to: string | null | undefined; days: number | null | undefined }) {
+  if (!from && !to) return <span className="stage-cell muted">—</span>;
+  return <span className="stage-cell"><b>{brDay(from)} → {to ? brDay(to) : "…"}</b><small>{days === null || days === undefined ? "—" : `${days} dia${days === 1 ? "" : "s"}`}</small></span>;
+}
 export const localToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("");
 export const money = (value: number | null) => (value === null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));

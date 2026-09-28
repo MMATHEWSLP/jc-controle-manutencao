@@ -87,6 +87,25 @@ export const PERMISSION_GROUPS = [
     ["suppliers.edit","Editar fornecedor"],
     ["suppliers.delete","Excluir fornecedor"],
   ]},
+  { label:"Solicitação de Pedidos (Compras)", items:[
+    ["purchases.view","Visualizar solicitações de pedido de compra (as próprias; com as funções abaixo, as das frentes que enxerga)"],
+    ["purchases.request","Criar solicitação de pedido de compra"],
+    ["purchases.approve","Aprovar ou recusar solicitações de pedido"],
+    ["purchases.buy","Comprador: anexar orçamentos, preencher valores e enviar para pagamento"],
+    ["purchases.pay","Confirmar o pagamento dos pedidos"],
+    ["purchases.dispatch","Retirar/despachar as encomendas (marcar como enviado)"],
+    ["purchases.manage","Ver e cancelar todas as solicitações de pedido das frentes que enxerga"],
+  ]},
+  { label:"Movimentação de Estoque", items:[
+    ["stock.exits_view","Visualizar o histórico de movimentação (saídas de estoque)"],
+    ["stock.exits_create","Lançar saída de produtos do estoque para funcionário ou equipamento"],
+    ["stock.exits_cancel","Estornar uma saída lançada"],
+  ]},
+  { label:"Ordem de Serviço", items:[
+    ["work_orders.view","Visualizar ordens de serviço"],
+    ["work_orders.manage","Abrir e editar O.S., lançar peças e mecânicos"],
+    ["work_orders.close","Fechar e reabrir O.S."],
+  ]},
   { label:"Combustível", items:[
     ["fuel.view","Visualizar saldos e histórico de combustível"],
     ["fuel.register","Registrar lançamento de combustível"],
@@ -107,6 +126,7 @@ export const PERMISSION_GROUPS = [
   ]},
   { label:"Frentes de Serviço", items:[
     ["service_fronts.manage","Cadastrar, renomear e ativar/desativar frentes de serviço"],
+    ["fronts.cross_registry","Ver e transferir equipamentos e funcionários de todas as frentes (só nos módulos Equipamentos e Funcionários)"],
   ]},
 ] as const;
 

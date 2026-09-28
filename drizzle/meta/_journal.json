@@ -120,6 +120,27 @@
       "when": 1790541938142,
       "tag": "0016_employees_cycles_and_material_stock",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790605885210,
+      "tag": "0017_daily_fueling_reading",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790606002829,
+      "tag": "0018_material_items_fiscal_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790607122231,
+      "tag": "0019_stock_purchases_exits_work_orders",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
-import { getD1 } from "../../../../db";
+import { getD1, getDb } from "../../../../db";
+import { lastWorkOrderOf } from "../../../../lib/work-orders";
 import { getSessionUser } from "../../../../lib/auth";
 import { loadHistoryEntries } from "../../../../lib/history-data";
 import { calculatePlanState, levelPriority, type ControlType, type PlanTriggerMode } from "../../../../lib/maintenance-engine";
@@ -55,6 +56,8 @@ export async function GET(request:Request,{params}:Context){
         category:String(equipment.prefix).split("-")[0].toUpperCase(),control,currentHours,currentKm,updatedAt:String(equipment.updated_at),
         situation:worst?.state.label??"Sem histórico",tone:worst?.state.tone??"gray"},
       plans,history:equipmentHistory,
+      // Última O.S. do equipamento (aberta ou fechada): vem preenchida no registro da troca de óleo.
+      lastWorkOrder:user?.permissions.includes("maintenance.create")?await lastWorkOrderOf(await getDb(),equipmentId):null,
       viewer:{authenticated:Boolean(user),name:user?.name??null,canUpdateReading:Boolean(user?.permissions.includes("meter.create")),
         canRegisterMaintenance:Boolean(user?.permissions.includes("maintenance.create")),isAdmin:user?.profile==="ADMIN"},
     },{headers:{"Cache-Control":"no-store, private"}});

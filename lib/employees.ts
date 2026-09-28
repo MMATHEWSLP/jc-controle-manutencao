@@ -2,8 +2,8 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
 import { auditLogs, companies, employeeAbsences, employeeDismissals, employeeLeaveCycles, employees, employeeTransfers, serviceFronts, users } from "../db/schema";
-import { frentesVisiveis } from "./access";
-import { frentesEmExibicao } from "./active-front";
+import { frentesVisiveisCadastro } from "./access";
+import { frentesEmExibicao, frentesEmExibicaoCadastro } from "./active-front";
 import type { SessionUser } from "./auth";
 import { ABSENCE_LABELS, absenceBadge, currentAbsence, EMPLOYEE_STATUS_LABELS, formatCpf, nameKey, onlyDigits, type AbsenceKind } from "./employee-rules";
 import { fuelLocalDay } from "./fuel";
@@ -21,22 +21,25 @@ export function employeeErrorResponse(error: unknown) {
   return error instanceof EmployeeError ? Response.json({ error: error.message, ...error.extra }, { status: error.status }) : null;
 }
 
-// Frentes ativas que a pessoa enxerga — mesma regra de visibilidade dos equipamentos.
+// Frentes ativas que a pessoa enxerga — mesma regra de visibilidade dos equipamentos (inclusive a
+// permissão de ver todas as frentes só em Equipamentos/Funcionários, lib/access.ts).
 export async function employeeVisibleFronts(db: Db, user: SessionUser) {
   const fronts = await db.select({ id: serviceFronts.id, name: serviceFronts.name }).from(serviceFronts).where(eq(serviceFronts.active, true)).orderBy(asc(serviceFronts.name));
-  const visible = frentesVisiveis(user);
+  const visible = frentesVisiveisCadastro(user);
   return visible === "ALL" ? fronts : fronts.filter((front) => visible.includes(front.id));
 }
 
 export function canSeeEmployeeFront(user: SessionUser, frontId: number) {
-  const visible = frentesVisiveis(user);
+  const visible = frentesVisiveisCadastro(user);
   return visible === "ALL" || visible.includes(frontId);
 }
 
-// Frentes em exibição (seletor global) ∩ frentes que a pessoa enxerga.
-export async function employeeScope(db: Db, user: SessionUser, request: Request) {
+// Frentes em exibição (seletor global ou botões do módulo) ∩ frentes que a pessoa enxerga.
+// `ownFrontsOnly`: ignora a permissão de ver todas as frentes (contadores de alerta do menu, que
+// continuam só das frentes da própria pessoa).
+export async function employeeScope(db: Db, user: SessionUser, request: Request, options: { ownFrontsOnly?: boolean } = {}) {
   const fronts = await employeeVisibleFronts(db, user);
-  const displayed = frentesEmExibicao(user, request);
+  const displayed = options.ownFrontsOnly ? frentesEmExibicao(user, request) : frentesEmExibicaoCadastro(user, request);
   return { fronts, scope: fronts.map((front) => front.id).filter((id) => displayed === "ALL" || displayed.includes(id)) };
 }
 

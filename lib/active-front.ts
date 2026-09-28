@@ -1,4 +1,4 @@
-import { frentesVisiveis } from "./access";
+import { frentesVisiveis, frentesVisiveisCadastro } from "./access";
 import type { SessionUser } from "./auth";
 
 // Seletor global de frente (topo do sistema). Quem enxerga mais de uma frente escolhe uma frente
@@ -44,4 +44,21 @@ export function frentesEmExibicao(user: SessionUser, request: Request): number[]
 export function seesMultipleFronts(user: SessionUser) {
   const visible = frentesVisiveis(user);
   return visible === "ALL" || visible.length > 1;
+}
+
+// Frentes em exibição nos módulos Equipamentos e Funcionários (ver frentesVisiveisCadastro). Quem tem
+// o seletor global continua usando só ele; quem não tem (uma frente só) e recebeu a permissão de ver
+// todas as frentes nesses módulos escolhe a frente pelos botões dentro do próprio módulo, que chegam
+// no parâmetro ?frente=<id|ALL>. O parâmetro também só restringe.
+export function frentesEmExibicaoCadastro(user: SessionUser, request: Request): number[] | "ALL" {
+  const visible = frentesVisiveisCadastro(user);
+  if (seesMultipleFronts(user)) return scopeFronts(visible, readActiveFront(request, user.id));
+  const param = new URL(request.url).searchParams.get("frente");
+  return param && /^\d+$/.test(param) ? scopeFronts(visible, Number(param)) : visible;
+}
+
+// Mostra os botões de frente dentro de Equipamentos/Funcionários: tem a permissão e NÃO tem o
+// seletor global (quem tem o seletor global usa só ele, sem duplicar).
+export function showsRegistryFrontButtons(user: SessionUser) {
+  return user.permissions.includes("fronts.cross_registry") && !seesMultipleFronts(user);
 }

@@ -4,7 +4,7 @@ import { materialRequestItems, materialRequests, serviceFronts } from "../../../
 import { frentesVisiveis } from "../../../../lib/access";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { loadMaterialRequestHistory, logMaterialRequestAudit } from "../../../../lib/material-request-audit";
-import { moveProductStock, reverseMaterialRequestStock, stockShortages } from "../../../../lib/products-data";
+import { reverseStockMovements, stockShortages, transferStock } from "../../../../lib/stock";
 import { ACTIVE_STATUSES, canSeeAllRequests, loadRequests, requestNumber } from "../route";
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -76,7 +76,7 @@ export async function PUT(request: Request, { params }: Context) {
       // O estoque que o envio movimentou (itens vinculados a produtos) volta para a frente de origem.
       const reversed = await db.transaction(async (tx) => {
         await tx.update(materialRequests).set({ status: "PENDING", reopenedAt: now, reopenedBy: auth.user!.id, updatedAt: now }).where(eq(materialRequests.id, id));
-        return reverseMaterialRequestStock(tx, id, auth.user!.id, `Reabertura da solicitação ${requestNumber(id)}`);
+        return reverseStockMovements(tx, { materialRequestId: id }, auth.user!.id, `Reabertura da solicitação ${requestNumber(id)}`);
       });
       await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_REOPENED", { status: found.status }, { status: "PENDING", stockMovementsReversed: reversed });
       return Response.json({ message: `Solicitação ${requestNumber(id)} reaberta e movida para as solicitações ativas.${reversed ? " O estoque movimentado no envio foi estornado." : ""}` });
@@ -133,7 +133,7 @@ export async function PUT(request: Request, { params }: Context) {
       }
       await tx.update(materialRequests).set({ status: finalStatus, shippedBy: auth.user!.id, shippedAt: now, shipmentNotes: shipmentNotes || null, originServiceFrontId: originFrontId, updatedAt: now }).where(eq(materialRequests.id, id));
       for (const line of stockLines) {
-        await moveProductStock(tx, { productId: line.productId, fromFrontId: originFrontId!, toFrontId: found.serviceFrontId!, quantity: line.quantity, reason: `Envio da solicitação ${requestNumber(id)}`, materialRequestId: id, materialRequestItemId: line.itemId, userId: auth.user!.id });
+        await transferStock(tx, { productId: line.productId, fromFrontId: originFrontId!, toFrontId: found.serviceFrontId!, quantity: line.quantity, source: "MATERIAL_REQUEST", reason: `Envio da solicitação ${requestNumber(id)}`, refs: { materialRequestId: id, materialRequestItemId: line.itemId }, userId: auth.user!.id });
       }
     });
     await logMaterialRequestAudit(auth.user!.id, id, "MATERIAL_REQUEST_SHIPPED", { status: found.status }, { status: finalStatus, shipmentNotes: shipmentNotes || null, originServiceFrontId: originFrontId, stockItems: stockLines.length });

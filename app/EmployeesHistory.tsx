@@ -1,21 +1,20 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState } from "react";
-import { api, brDay, problemText, type Company, type CycleSummary, type Restricted } from "./employees-client";
+import { api, brDay, problemText, StageCell, type Company, type CycleSummary, type Restricted } from "./employees-client";
 
 type CycleRow = { kind: "FOLGA"; id: number; employeeId: number; name: string; company: string; frontName: string; cycleNumber: number; workStart: string | null; frontDeparture: string | null; homeArrival: string | null; homeDeparture: string | null; frontArrival: string | null; summary: CycleSummary };
 type AbsenceRow = { kind: "AFASTAMENTO"; id: number; employeeId: number; name: string; company: string; frontName: string; absenceKind: string; startDate: string; endDate: string | null; days: number; notes: string | null };
 type Filters = { nome: string; empresa: string; tipo: "FOLGA" | "AFASTAMENTO"; de: string; ate: string };
-const days = (value: number | null) => (value === null ? "—" : value);
 
 // Histórico: folgas (ciclos) ou afastamentos, com filtros aplicados no botão Filtrar e PDF da mesma consulta.
-export function EmployeesHistory({ companies, open }: { companies: Company[]; open: (id: number) => void }) {
+export function EmployeesHistory({ companies, open, frontQuery = "" }: { companies: Company[]; open: (id: number) => void; frontQuery?: string }) {
   const [draft, setDraft] = useState<Filters>({ nome: "", empresa: "", tipo: "FOLGA", de: "", ate: "" });
   const [applied, setApplied] = useState<Filters>(draft);
   const [rows, setRows] = useState<Array<CycleRow | AbsenceRow>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const query = new URLSearchParams(Object.entries(applied).filter(([, value]) => value)).toString();
+  const query = [new URLSearchParams(Object.entries(applied).filter(([, value]) => value)).toString(), frontQuery].filter(Boolean).join("&");
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -41,25 +40,28 @@ export function EmployeesHistory({ companies, open }: { companies: Company[]; op
         <div className="table-scroll">
           {applied.tipo === "FOLGA" ? (
             <table className="equipment-management-table employee-cycles-table">
-              <thead><tr><th>Funcionário</th><th>Empresa</th><th>Ciclo nº</th><th>Início</th><th>Dias trabalhados</th><th>Saída frente</th><th>Chegada casa</th><th>Dias de viagem (ida)</th><th>Saída casa</th><th>Dias de folga</th><th>Chegada frente</th><th>Dias de viagem (volta)</th></tr></thead>
+              <thead><tr><th>Funcionário</th><th title="Número do ciclo">Ciclo</th><th title="Início do ciclo → saída da frente · dias trabalhados">Trabalho</th><th title="Saída da frente → chegada em casa · dias de viagem (ida)">Viagem ida</th><th title="Chegada em casa → saída de casa · dias de folga">Folga</th><th title="Saída de casa → chegada na frente · dias de viagem (volta)">Viagem volta</th></tr></thead>
               <tbody>
                 {rows.filter((row): row is CycleRow => row.kind === "FOLGA").map((row) => (
                   <tr key={row.id}>
-                    <td><button className="link-button" onClick={() => open(row.employeeId)}>{row.name}</button><small className="table-sub">{row.summary.phaseLabel}</small></td>
-                    <td>{row.company}</td><td>{row.cycleNumber}</td><td>{brDay(row.workStart)}</td><td>{days(row.summary.workedDays)}</td><td>{brDay(row.frontDeparture)}</td><td>{brDay(row.homeArrival)}</td>
-                    <td>{days(row.summary.travelOutDays)}</td><td>{brDay(row.homeDeparture)}</td><td>{days(row.summary.offDays)}</td><td>{brDay(row.frontArrival)}</td><td>{days(row.summary.travelBackDays)}</td>
+                    <td><button className="link-button" onClick={() => open(row.employeeId)}>{row.name}</button><small className="table-sub">{row.company} · {row.frontName} · {row.summary.phaseLabel}</small></td>
+                    <td>{row.cycleNumber}</td>
+                    <td><StageCell from={row.workStart} to={row.frontDeparture} days={row.summary.workedDays} /></td>
+                    <td><StageCell from={row.frontDeparture} to={row.homeArrival} days={row.summary.travelOutDays} /></td>
+                    <td><StageCell from={row.homeArrival} to={row.homeDeparture} days={row.summary.offDays} /></td>
+                    <td><StageCell from={row.homeDeparture} to={row.frontArrival} days={row.summary.travelBackDays} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
             <table className="equipment-management-table">
-              <thead><tr><th>Funcionário</th><th>Empresa</th><th>Frente</th><th>Tipo</th><th>Início</th><th>Término</th><th>Dias</th><th>Observações</th></tr></thead>
+              <thead><tr><th>Funcionário</th><th>Tipo</th><th title="Início → término (ou em aberto) · dias">Período</th><th>Observações</th></tr></thead>
               <tbody>
                 {rows.filter((row): row is AbsenceRow => row.kind === "AFASTAMENTO").map((row) => (
                   <tr key={row.id}>
-                    <td><button className="link-button" onClick={() => open(row.employeeId)}>{row.name}</button></td>
-                    <td>{row.company}</td><td>{row.frontName}</td><td>{row.absenceKind}</td><td>{brDay(row.startDate)}</td><td>{row.endDate ? brDay(row.endDate) : <em>em aberto</em>}</td><td>{row.days}</td><td>{row.notes ?? "—"}</td>
+                    <td><button className="link-button" onClick={() => open(row.employeeId)}>{row.name}</button><small className="table-sub">{row.company} · {row.frontName}</small></td>
+                    <td>{row.absenceKind}</td><td><span className="stage-cell"><b>{brDay(row.startDate)} → {row.endDate ? brDay(row.endDate) : "em aberto"}</b><small>{row.days} dia{row.days === 1 ? "" : "s"}</small></span></td><td>{row.notes ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -46,10 +46,10 @@ test("trabalhou: frente, localização, leituras e respostas Sim/Não são obrig
 });
 
 test("abastecimentos: cada card precisa de litros e local", () => {
-  const draft = base({ fuelingCount: "2", fuelings: [{ liters: "150,5", location: "Comboio" }, { liters: "", location: "" }] });
-  assert.deepEqual(Object.keys(validateDailyRecord(draft, TODAY).errors).sort(), ["fuelings.1.liters", "fuelings.1.location"]);
-  draft.fuelings[1] = { liters: "80", location: "Posto BR" };
-  assert.deepEqual(validateDailyRecord(draft, TODAY).value.fuelings, [{ liters: 150.5, location: "Comboio" }, { liters: 80, location: "Posto BR" }]);
+  const draft = base({ fuelingCount: "2", fuelings: [{ liters: "150,5", reading: "11228,5" }, { liters: "", reading: "" }] });
+  assert.deepEqual(Object.keys(validateDailyRecord(draft, TODAY).errors).sort(), ["fuelings.1.liters", "fuelings.1.reading"]);
+  draft.fuelings[1] = { liters: "80", reading: "11233" };
+  assert.deepEqual(validateDailyRecord(draft, TODAY).value.fuelings, [{ liters: 150.5, reading: 11228.5 }, { liters: 80, reading: 11233 }]);
 });
 
 test("problema: motivo obrigatório, foto opcional", () => {
