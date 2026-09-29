@@ -6,3 +6,5 @@ padrão lido por `importar-abastecimento.mjs` e pelo workflow "Importar históri
 
 Só a aba **Dados_Limpos** é importada. As abas de auditoria (Revisar_Combustivel_Ausente,
 ARLA_Teste_Removido, Duplicatas_Removidas, Responsavel_Invalido e Rodape_Removido) são ignoradas.
+Linhas de ARLA 32 dentro de Dados_Limpos também são ignoradas (o ARLA não é usado no sistema) e aparecem
+contadas no relatório.

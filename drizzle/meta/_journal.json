@@ -169,6 +169,13 @@
       "when": 1790691008280,
       "tag": "0023_fuel_history_import",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790704703241,
+      "tag": "0024_remove_arla",
+      "breakpoints": true
     }
   ]
 }

@@ -10,10 +10,13 @@ import { createHash } from "node:crypto";
 //   - vehicle_pending = true quando o veículo é "A IDENTIFICAR" ou não existe no cadastro;
 //   - import_source = lote; import_hash = hash da linha (não duplica se rodar de novo).
 // Veículo, responsável e preço total podem vir vazios: a carga retroativa não passa pelas
-// validações obrigatórias dos lançamentos novos.
+// validações obrigatórias dos lançamentos novos. Combustíveis que não são usados no sistema
+// (IGNORED_FUELS, ex.: ARLA 32) ficam de fora e aparecem no relatório como ignorados.
 // ---------------------------------------------------------------------------
 
 export const SHEET_NAME = "Dados_Limpos";
+// Prefixos (sem acento/espaço) de combustíveis da planilha que não entram no sistema.
+export const IGNORED_FUELS = ["ARLA"];
 
 export function normalizeText(value) {
   return String(value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
@@ -146,12 +149,18 @@ const textOrNull = (value) => { const text = String(value ?? "").replace(/\s+/g,
 
 // rows = [{ rowNumber, cells: { date, fuel, movement, quantity, totalPrice, vehicle, responsible } }]
 // destination = { frontId, location } do destino das transferências (origem é sempre a Frente).
-export function buildImportPlan({ rows, fuelTypes, equipment, employees, existingHashes, frontId, importSource, fileName, destination }) {
+export function isIgnoredFuel(value, ignoredFuels = IGNORED_FUELS) {
+  const key = compact(value);
+  return key !== "" && ignoredFuels.some((prefix) => key.startsWith(compact(prefix)));
+}
+
+export function buildImportPlan({ rows, fuelTypes, equipment, employees, existingHashes, frontId, importSource, fileName, destination, ignoredFuels = IGNORED_FUELS }) {
   const equipmentIndex = buildEquipmentIndex(equipment);
   const employeeIndex = buildEmployeeIndex(employees);
   const seen = new Set();
   const items = [];
   for (const { rowNumber, cells } of rows) {
+    if (isIgnoredFuel(cells.fuel, ignoredFuels)) { items.push({ rowNumber, status: "IGNORADO", fuel: textOrNull(cells.fuel) }); continue; }
     const errors = [];
     const when = parseDateTime(cells.date);
     if (!when) errors.push("data inválida");
