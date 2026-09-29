@@ -17,6 +17,23 @@ on:
           - confirmar
           - reverter-simulacao
           - reverter
+          - ajustar-saldo-simulacao
+          - ajustar-saldo
+      arquivo:
+        description: "Planilha a importar (vazio = scripts/import-abastecimento/data/Historico_de_Abastecimento_LIMPO_2026-09-29.xlsx)"
+        required: false
+        default: ""
+        type: string
+      lote:
+        description: "Identificador do lote (vazio = historico_planilha_2026-09-29; no ajuste de saldo = ajuste_saldo_<data>)"
+        required: false
+        default: ""
+        type: string
+      saldos_alvo:
+        description: "Só no ajuste de saldo. Ex.: Diesel S10:FRENTE=83174; Diesel S10:PORTO=16379,99; Gasolina Comum:FRENTE=2508,97"
+        required: false
+        default: ""
+        type: string
       destino_transferencia:
         description: "Destino das linhas de Transferência: PORTO (Frente → Porto da própria Arapiuns) ou o nome de outra frente"
         required: true
@@ -52,8 +69,20 @@ jobs:
           DESTINO: ${{ github.event.inputs.destino_transferencia }}
           IGNORAR: ${{ github.event.inputs.ignorar_erros }}
           AUSENTE: ${{ github.event.inputs.combustivel_ausente }}
+          ARQUIVO: ${{ github.event.inputs.arquivo }}
+          LOTE: ${{ github.event.inputs.lote }}
+          ALVO: ${{ github.event.inputs.saldos_alvo }}
         run: |
+          if [ "$MODO" = "ajustar-saldo-simulacao" ] || [ "$MODO" = "ajustar-saldo" ]; then
+            ARGS=("--alvo=$ALVO")
+            if [ -n "$LOTE" ]; then ARGS+=("--lote=$LOTE"); fi
+            if [ "$MODO" = "ajustar-saldo" ]; then ARGS+=("--confirmar"); fi
+            node ajustar-saldo-combustivel.mjs "${ARGS[@]}"
+            exit $?
+          fi
           ARGS=("--destino-transferencia=$DESTINO")
+          if [ -n "$ARQUIVO" ]; then ARGS+=("--arquivo=$ARQUIVO"); fi
+          if [ -n "$LOTE" ]; then ARGS+=("--lote=$LOTE"); fi
           if [ "$IGNORAR" = "true" ]; then ARGS+=("--ignorar-erros"); fi
           if [ -n "$AUSENTE" ]; then ARGS+=("--combustivel-ausente=$AUSENTE"); fi
           case "$MODO" in

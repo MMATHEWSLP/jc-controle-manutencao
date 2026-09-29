@@ -125,3 +125,14 @@ test("linhas inválidas vão para ERRO com o motivo", () => {
   assert.equal(result.items[0].status, "ERRO");
   assert.match(result.items[0].error, /data inválida.*combustível não cadastrado.*movimentação inválido.*quantidade inválida/);
 });
+
+test("ajuste de saldo: entrada quando falta, saída quando sobra, nada quando já bate", async () => {
+  const { parseBalanceTargets, planBalanceAdjustments } = await import("../scripts/import-abastecimento/plan.mjs");
+  const targets = parseBalanceTargets("Diesel S10:BASE=83174; Diesel S10:PORTO=16379,99; Gasolina Comum:FRENTE=2508.97; Gasolina Comum:PORTO=0");
+  assert.deepEqual(targets.map((item) => item.location), ["FRENTE", "PORTO", "FRENTE", "PORTO"]);
+  const balances = { "1:FRENTE": 60000, "1:PORTO": 74315, "2:FRENTE": 2508.97, "2:PORTO": 2040 };
+  const plan = planBalanceAdjustments({ targets, fuelTypes, current: (id, location) => balances[`${id}:${location}`] ?? 0, frontId: 3, date: "2026-09-29", importSource: "ajuste" });
+  assert.deepEqual(plan.map((item) => item.record && [item.record.movementType, item.record.quantity, item.record.stockLocation]),
+    [["ENTRADA", 23174, "FRENTE"], ["SAIDA", 57935.01, "PORTO"], null, ["SAIDA", 2040, "PORTO"]]);
+  assert.throws(() => parseBalanceTargets("Diesel S10=10"), /inválido/);
+});

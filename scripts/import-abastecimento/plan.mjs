@@ -237,3 +237,45 @@ export function summarize(records) {
     withEmployee: records.filter((record) => record.responsibleEmployeeId).length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Ajuste de saldo (ajustar-saldo-combustivel.mjs): o saldo nunca é gravado, é a soma dos
+// lançamentos. Para igualar ao saldo de outro sistema, entra um lançamento de ajuste (Entrada se
+// falta combustível, Saída se sobra) por combustível/estoque, identificado por import_source.
+// ---------------------------------------------------------------------------
+
+// "Diesel S10:FRENTE=83174; Diesel S10:PORTO=16379,99" -> [{ fuel, location, target }]
+export function parseBalanceTargets(text) {
+  return String(text ?? "").split(/[;\n]+/).map((part) => part.trim()).filter(Boolean).map((part) => {
+    const match = /^(.+?):\s*(FRENTE|BASE|PORTO)\s*=\s*(-?[\d.,]+)$/i.exec(part);
+    if (!match) throw new Error(`Saldo-alvo inválido: "${part}" (use Combustível:FRENTE=valor ou Combustível:PORTO=valor).`);
+    const target = parseNumber(match[3]);
+    if (target === null || Number.isNaN(target)) throw new Error(`Valor inválido em "${part}".`);
+    const location = normalizeText(match[2]) === "PORTO" ? "PORTO" : "FRENTE";
+    return { fuel: match[1].trim(), location, target };
+  });
+}
+
+// current = (fuelTypeId, location) -> saldo atual. Devolve os lançamentos de ajuste (diferença ≠ 0).
+export function planBalanceAdjustments({ targets, fuelTypes, current, frontId, date, importSource }) {
+  return targets.map((item) => {
+    const fuelType = resolveFuelType(item.fuel, fuelTypes);
+    if (!fuelType) throw new Error(`Combustível não cadastrado: "${item.fuel}".`);
+    const before = Math.round(current(fuelType.id, item.location) * 1000) / 1000;
+    const diff = Math.round((item.target - before) * 1000) / 1000;
+    const label = item.location === "PORTO" ? "Porto" : "Frente";
+    const base = { fuelTypeId: fuelType.id, fuelName: fuelType.name, location: item.location, before, target: item.target, diff };
+    if (Math.abs(diff) < 0.005) return { ...base, record: null };
+    return {
+      ...base,
+      record: {
+        serviceFrontId: frontId, fuelTypeId: fuelType.id, fuelName: fuelType.name, movementType: diff > 0 ? "ENTRADA" : "SAIDA", movementDate: date,
+        quantity: Math.abs(diff), stockLocation: item.location, thirdParty: false, unitPrice: null, equipmentId: null,
+        destinationFrontId: null, destinationLocation: null, responsible: null, responsibleEmployeeId: null,
+        notes: `Ajuste de saldo (${label}) para igualar ao saldo do sistema anterior: ${before.toFixed(2)} L → ${item.target.toFixed(2)} L.`,
+        importSource, importHash: createHash("sha256").update(["AJUSTE", importSource, frontId, fuelType.id, item.location, date, item.target.toFixed(3), before.toFixed(3)].join("|")).digest("hex"),
+        originConfirmed: true, vehiclePending: false, importedVehicle: null,
+      },
+    };
+  });
+}
