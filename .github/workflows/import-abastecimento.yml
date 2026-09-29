@@ -19,6 +19,18 @@ on:
           - reverter
           - ajustar-saldo-simulacao
           - ajustar-saldo
+          - vincular-terceiros-simulacao
+          - vincular-terceiros
+      vinculos:
+        description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
+        required: false
+        default: ""
+        type: string
+      empresa:
+        description: "Só em vincular-terceiros: prestador onde cadastrar os caminhões que ainda não estão no cadastro"
+        required: false
+        default: ""
+        type: string
       arquivo:
         description: "Planilha a importar (vazio = scripts/import-abastecimento/data/Historico_de_Abastecimento_LIMPO_2026-09-29.xlsx)"
         required: false
@@ -72,7 +84,16 @@ jobs:
           ARQUIVO: ${{ github.event.inputs.arquivo }}
           LOTE: ${{ github.event.inputs.lote }}
           ALVO: ${{ github.event.inputs.saldos_alvo }}
+          VINCULOS: ${{ github.event.inputs.vinculos }}
+          EMPRESA: ${{ github.event.inputs.empresa }}
         run: |
+          if [ "$MODO" = "vincular-terceiros-simulacao" ] || [ "$MODO" = "vincular-terceiros" ]; then
+            ARGS=("--vinculos=$VINCULOS")
+            if [ -n "$EMPRESA" ]; then ARGS+=("--empresa=$EMPRESA"); fi
+            if [ "$MODO" = "vincular-terceiros" ]; then ARGS+=("--confirmar"); fi
+            node vincular-saidas-terceiros.mjs "${ARGS[@]}"
+            exit $?
+          fi
           if [ "$MODO" = "ajustar-saldo-simulacao" ] || [ "$MODO" = "ajustar-saldo" ]; then
             ARGS=("--alvo=$ALVO")
             if [ -n "$LOTE" ]; then ARGS+=("--lote=$LOTE"); fi
