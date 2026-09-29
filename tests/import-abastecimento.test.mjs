@@ -99,6 +99,16 @@ test("idempotência: linha repetida na planilha e linha já importada são pulad
   assert.notEqual(hash, rowHash({ stamp: "2025-06-03 07:00:00", fuel: "Diesel S10", movement: "SAIDA", quantity: 50, vehicle: "CM-30", responsible: "Maria" }));
 });
 
+test("linhas de ARLA 32 são ignoradas (combustível não usado), sem virar erro", () => {
+  const result = plan([
+    row(2, { date: "01/06/2025", fuel: "ARLA 32", movement: "Entrada", quantity: 100 }),
+    row(3, { date: "01/06/2025", fuel: "Arla32", movement: "Saída", quantity: 10, vehicle: "CM-30" }),
+    row(4, { date: "01/06/2025", fuel: "Diesel S10", movement: "Saída", quantity: 10, vehicle: "CM-30" }),
+  ]);
+  assert.deepEqual(result.items.map((item) => item.status), ["IGNORADO", "IGNORADO", "IMPORTAR"]);
+  assert.equal(result.totals.ERRO, undefined);
+});
+
 test("linhas inválidas vão para ERRO com o motivo", () => {
   const result = plan([row(2, { date: "sem data", fuel: "Querosene", movement: "Empréstimo", quantity: 0 })]);
   assert.equal(result.items[0].status, "ERRO");

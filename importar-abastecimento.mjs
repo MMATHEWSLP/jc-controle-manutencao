@@ -17,7 +17,8 @@ import { buildImportPlan, mapHeaders, normalizeText, SHEET_NAME, summarize } fro
 //   - frente fixa (--frente, padrão Arapiuns) e estoque de origem = Frente;
 //   - origin_confirmed = false (corrigir para Porto depois, no Histórico, filtro "Origem a confirmar");
 //   - vehicle_pending = true para "A IDENTIFICAR" e veículos que não existem no cadastro;
-//   - import_source = lote (--lote) e import_hash = hash da linha (rodar de novo não duplica).
+//   - import_source = lote (--lote) e import_hash = hash da linha (rodar de novo não duplica);
+//   - linhas de ARLA 32 (não usado no sistema) são ignoradas e contadas no relatório.
 // O saldo do módulo nunca é gravado: é sempre recalculado a partir dos lançamentos, então os saldos
 // do relatório final já são os que a tela vai mostrar.
 //
@@ -173,6 +174,8 @@ async function importar(pool) {
   console.log(`  A importar:                     ${plan.totals.IMPORTAR ?? 0}`);
   console.log(`  Já importadas antes (hash):     ${plan.totals.JA_EXISTE ?? 0}`);
   console.log(`  Repetidas na própria planilha:  ${plan.totals.DUPLICADO_NA_PLANILHA ?? 0}`);
+  const ignored = plan.items.filter((item) => item.status === "IGNORADO");
+  console.log(`  Ignoradas (combustível não usado, ex.: ARLA): ${ignored.length}${ignored.length ? ` — ${[...new Set(ignored.map((item) => item.fuel))].join(", ")}` : ""}`);
   console.log(`  Com erro (não importadas):      ${plan.totals.ERRO ?? 0}`);
   if (records.length) { linha(); console.log(`RESUMO DO QUE ${CONFIRMAR ? "SERÁ GRAVADO" : "SERIA GRAVADO"}`); printSummary(records); }
   const notFound = new Map();
