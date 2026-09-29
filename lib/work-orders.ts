@@ -206,7 +206,7 @@ export async function addWorkOrderItem(db: Db, user: SessionUser, id: number, in
   if (input.launchDate < order.openedAt) throw new StockError("A data da peça não pode ser antes da abertura da O.S.");
   const product = (await db.select({ id: products.id, tag: products.tag, name: products.name, price: products.price, active: products.active }).from(products).where(eq(products.id, input.productId)).limit(1))[0];
   if (!product?.active) throw new StockError("Produto não encontrado ou desativado.", 404);
-  await assertStockAvailable(db, order.serviceFrontId, [{ productId: product.id, quantity: input.quantity, label: `${product.tag} ${product.name}` }], input.allowNegative);
+  await assertStockAvailable(db, order.serviceFrontId, [{ productId: product.id, quantity: input.quantity, label: `${product.tag} ${product.name}` }], input.allowNegative, user);
   const number = workOrderNumber(id);
   return db.transaction(async (tx) => {
     const [row] = await tx.insert(workOrderItems).values({

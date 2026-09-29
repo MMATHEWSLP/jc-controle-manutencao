@@ -2,7 +2,7 @@ import { getD1 } from "../../../db";
 import { authorize } from "../../../lib/auth";
 import { loadHistoryEntries } from "../../../lib/history-data";
 import { createCategorizedMaintenanceReportPdf,formatPdfDate,type CategorizedReportItem,type ReportStatus } from "../../../lib/pdf";
-import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
+import { recalculateMaintenanceIfStale } from "../../../lib/maintenance-recalculation";
 import { allowedEquipmentIds,isAdministrator } from "../../../lib/front-scope";
 import { frentesEmExibicao } from "../../../lib/active-front";
 
@@ -21,7 +21,7 @@ export async function GET(request:Request){
     const url=new URL(request.url);const categories=list(url.searchParams,"category");const fronts=list(url.searchParams,"front");const equipmentIds=list(url.searchParams,"equipment").map(Number).filter((id)=>Number.isInteger(id)&&id>0);
     const statuses=list(url.searchParams,"status").filter((value):value is ReportStatus=>validStatuses.has(value as ReportStatus));const kinds=list(url.searchParams,"kind").filter((value)=>validKinds.has(value));
     const from=url.searchParams.get("from")?.trim()??"";const to=url.searchParams.get("to")?.trim()??"";const query=(url.searchParams.get("q")??"").trim().toLocaleLowerCase("pt-BR");
-    const d1=await getD1();await recalculateMaintenanceCycles(d1,{notify:false});
+    const d1=await getD1();await recalculateMaintenanceIfStale(d1);
     const [rawHistory,statusResult,allowed]=await Promise.all([
       loadHistoryEntries(d1),
       d1.prepare(`SELECT p.equipment_id,p.maintenance_type_id,a.level FROM alerts a INNER JOIN maintenance_plans p ON p.id=a.plan_id WHERE a.status='OPEN' AND p.active=1`).all<Row>(),

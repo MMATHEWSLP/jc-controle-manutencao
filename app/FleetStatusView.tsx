@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { formatBrDate } from "../lib/date-format";
 
 type FleetStatus = "OPERATING" | "STOPPED" | "MAINTENANCE" | "WAITING_PART" | "WAITING_ORDER" | "WAITING_MECHANIC" | "WAITING_EXTERNAL_SERVICE" | "READY" | "INACTIVE";
 type OrderStatus = "REQUESTED" | "QUOTING" | "ORDERED" | "WAITING_DELIVERY" | "RECEIVED" | "CANCELLED" | "CLOSED";
@@ -35,7 +36,7 @@ const emptyResponse:FleetResponse = { generatedAt:"", selectedDate:"", metrics:e
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})); if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 function localDay(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Fortaleza",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
 function localDateTime(){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Fortaleza",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date());const value=Object.fromEntries(parts.map((part)=>[part.type,part.value]));return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;}
-function formatDate(value:string|null,withTime=true){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{timeZone:"America/Fortaleza",dateStyle:"short",...(withTime?{timeStyle:"short" as const}:{})}).format(date);}
+function formatDate(value:string|null,withTime=true){return formatBrDate(value,withTime);}
 function normalize(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,"");}
 function hoursSince(value:string|null,now:number){if(!value)return 0;return Math.max(0,(now-new Date(value).getTime())/3_600_000);}
 function duration(value:string|null,now:number){const hours=hoursSince(value,now);const days=Math.floor(hours/24);const fullHours=Math.floor(hours%24);const minutes=Math.floor(hours*60%60);return `${days?`${days}d `:""}${fullHours}h ${minutes}min`;}

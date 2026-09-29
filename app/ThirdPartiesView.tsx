@@ -158,8 +158,9 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
           <label>Tipo *<select name="vehicleType" defaultValue={item?.vehicleType ?? "CAMINHAO"}>{(Object.keys(VEHICLE_LABELS) as VehicleType[]).map((type) => <option key={type} value={type}>{VEHICLE_LABELS[type]}</option>)}</select></label>
           <label>Medição *<select name="meterType" value={meterType} onChange={(event) => setMeterType(event.target.value as MeterType)}><option value="KM">KM (hodômetro)</option><option value="HORIMETRO">Horímetro (horas)</option></select></label>
           <label>Combustível<select name="fuelTypeId" defaultValue={item?.fuelTypeId ?? ""}><option value="">Não informado</option>{fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
-          <label>Capacidade do tanque (L)<input name="tankCapacityLiters" inputMode="decimal" defaultValue={item?.tankCapacityLiters ?? ""} placeholder="Opcional" /></label>
-          <label>Consumo esperado ({meterType === "KM" ? "km/L" : "L/h"})<input name="expectedConsumption" inputMode="decimal" defaultValue={item?.expectedConsumption ?? ""} placeholder="Opcional" /></label>
+          <label>Capacidade do tanque (L)<input name="tankCapacityLiters" inputMode="decimal" defaultValue={item?.tankCapacityLiters ?? ""} placeholder="Recomendado" /></label>
+          <label>Consumo esperado ({meterType === "KM" ? "km/L" : "L/h"})<input name="expectedConsumption" inputMode="decimal" defaultValue={item?.expectedConsumption ?? ""} placeholder="Recomendado" /></label>
+          <p className="full table-sub">Sem capacidade do tanque o sistema não avisa quando um abastecimento passa do tanque; sem consumo esperado, não compara o consumo com a média.</p>
           <label>{item?.hasMovements ? "Última leitura (vem dos abastecimentos)" : "Leitura atual"}<input name="lastReading" inputMode="decimal" disabled={item?.hasMovements} defaultValue={item?.lastReading ?? ""} placeholder="Opcional" /></label>
           {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
           <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy ? "Salvando..." : "Salvar veículo"}</button></div>
@@ -254,7 +255,7 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
                   <td>{number(vehicle.lastReading)}</td>
                   <td>{vehicle.averageConsumption === null ? <small className="table-sub">{vehicle.fuelings ? "sem consumo calculado" : "sem abastecimentos"}</small> : <strong>{number(vehicle.averageConsumption)} {vehicle.consumptionUnit}</strong>}
                     {vehicle.expectedConsumption !== null && <small className="table-sub">esperado {number(vehicle.expectedConsumption)} {vehicle.consumptionUnit}</small>}</td>
-                  <td>{vehicle.tankCapacityLiters === null ? "—" : `${number(vehicle.tankCapacityLiters)} L`}</td>
+                  <td>{vehicle.tankCapacityLiters === null ? <span className="status-pill orange" title="Cadastre a capacidade para o sistema avisar abastecimento acima do tanque">Sem capacidade</span> : `${number(vehicle.tankCapacityLiters)} L`}</td>
                   <td><span className={`status-pill ${vehicle.active ? "green" : "gray"}`}>{vehicle.active ? "Ativo" : "Inativo"}</span></td>
                   {canManage && <td><div className="equipment-row-actions">
                     <button onClick={() => setEditingVehicle({ party: opened, item: vehicle })}>Editar</button>

@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { formatBrDate } from "../lib/date-format";
 
 type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 type TaskStatus = "TODO" | "IN_PROGRESS" | "AWAITING_COMPLETION_APPROVAL" | "AWAITING_NOT_DONE_AUTHORIZATION" | "DONE" | "NOT_DONE" | "CANCELLED";
@@ -35,7 +36,7 @@ type MainTab = "tasks" | "approvals" | "history";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 function formatDate(value:string) { if(!value)return "—"; const date=new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short"}).format(date); }
-function formatDateTime(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
+function formatDateTime(value:string|null) { return formatBrDate(value); }
 const urgencyTone:Record<Urgency,string> = { LOW:"green", MEDIUM:"yellow", HIGH:"orange", URGENT:"red" };
 const statusTone:Record<TaskStatus,string> = {
   TODO:"gray", IN_PROGRESS:"blue", AWAITING_COMPLETION_APPROVAL:"orange", AWAITING_NOT_DONE_AUTHORIZATION:"orange",
@@ -368,7 +369,7 @@ function TaskCard({ node, depth, collapsed, toggleCollapse, openEdit, openCreate
     <div className="task-card-body">
       {node.description && <div className="task-card-description-wrap">
         <p className="task-card-description">{node.description}</p>
-        {node.description.length>160 && <button type="button" className="task-card-description-more" onClick={()=>openDetails(node)}>Ver mais</button>}
+        {(node.description.length>160||node.description.split("\n").length>3) && <button type="button" className="task-card-description-more" onClick={()=>openDetails(node)}>Ver mais</button>}
       </div>}
       <dl>
         <div><dt>Responsável</dt><dd>{node.assigneeName??"—"}</dd></div>

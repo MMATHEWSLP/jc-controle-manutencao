@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
 import { ProductPicker as SharedProductPicker } from "./stock-client";
+import { formatBrDate } from "../lib/date-format";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
@@ -27,7 +28,7 @@ type Tab = "received" | "sent" | "history";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw Object.assign(new Error(String(data.error??"A operação não pôde ser concluída.")),{ data }); return data as T; }
 function ItemKind({ row }:{ row:Pick<RequestItem,"linked"|"productTag"> }) { return row.linked ? <span className="material-item-kind linked" title="Item vinculado a produto cadastrado: movimenta o estoque no envio">Produto {row.productTag ?? ""}</span> : <span className="material-item-kind manual" title="Item digitado à mão: não movimenta estoque">Manual</span>; }
-function formatDate(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
+function formatDate(value:string|null) { return formatBrDate(value); }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
 const statusTone:Record<RequestStatus,string> = { PENDING:"gray", IN_SEPARATION:"yellow", SENT:"green", PARTIALLY_SENT:"orange", NOT_FULFILLED:"red", CANCELLED:"gray" };
 const STATUS_OPTIONS:Array<{value:RequestStatus|"";label:string}> = [

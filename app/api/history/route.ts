@@ -2,7 +2,7 @@ import { getD1, type D1DatabaseLike } from "../../../db";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { loadHistoryEntries } from "../../../lib/history-data";
 import { canonicalEquipmentPrefix } from "../../../lib/maintenance-history";
-import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
+import { recalculateMaintenanceCycles, recalculateMaintenanceIfStale } from "../../../lib/maintenance-recalculation";
 import { allowedEquipmentIds,equipmentAccessResponse,isAdministrator,requireEquipmentAccess } from "../../../lib/front-scope";
 
 type Row=Record<string,unknown>;
@@ -32,7 +32,7 @@ async function equipmentByPrefix(d1:D1DatabaseLike,prefix:string){
 export async function GET(request:Request) {
   const auth=await authorize(request,"maintenance.history");if(auth.response)return auth.response;
   try {
-    const d1=await getD1();await recalculateMaintenanceCycles(d1,{notify:false});const allowed=await allowedEquipmentIds(d1,auth.user!,"OIL");
+    const d1=await getD1();await recalculateMaintenanceIfStale(d1);const allowed=await allowedEquipmentIds(d1,auth.user!,"OIL");
     const history=(await loadHistoryEntries(d1)).filter((item)=>item.equipmentId!==null?allowed.has(item.equipmentId):isAdministrator(auth.user!));
     return Response.json({ history });
   } catch (error) {

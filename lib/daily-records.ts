@@ -255,7 +255,10 @@ export async function listDailyRecords(user: SessionUser, filters: { from?: stri
 
 export async function loadPhotoKey(user: SessionUser, recordId: number, kind: "problem" | "production") {
   const db = await getDb();
-  const row = (await db.select({ userId: dailyRecords.userId, serviceFrontId: equipment.serviceFrontId, problem: dailyRecords.problemPhotoKey, production: dailyRecords.productionPhotoKey })
+  // A foto pertence à frente do REGISTRO (oficial, ou a informada no lançamento); a frente atual do
+  // equipamento só vale para registros antigos sem frente. Assim, transferir o equipamento não muda
+  // quem pode ver as fotos antigas.
+  const row = (await db.select({ userId: dailyRecords.userId, serviceFrontId: sql<number | null>`coalesce(${dailyRecords.officialServiceFrontId}, ${dailyRecords.serviceFrontId}, ${equipment.serviceFrontId})`, problem: dailyRecords.problemPhotoKey, production: dailyRecords.productionPhotoKey })
     .from(dailyRecords).innerJoin(equipment, eq(equipment.id, dailyRecords.equipmentId)).where(eq(dailyRecords.id, recordId)).limit(1))[0];
   if (!row) throw new DailyRecordError("Registro não encontrado.", 404);
   if (row.userId !== user.id) {

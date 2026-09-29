@@ -45,7 +45,7 @@ export type StockMovementInput = {
 };
 
 export class StockError extends Error {
-  constructor(message: string, public status: 400 | 404 | 409 = 400, public shortages?: StockShortage[]) { super(message); }
+  constructor(message: string, public status: 400 | 403 | 404 | 409 = 400, public shortages?: StockShortage[]) { super(message); }
 }
 export function stockErrorResponse(error: unknown) {
   return error instanceof StockError ? Response.json({ error: error.message, shortages: error.shortages }, { status: error.status }) : null;
@@ -73,11 +73,20 @@ export async function stockShortages(db: StockDb, frontId: number, lines: Array<
 }
 
 // Saída sem saldo só passa com a confirmação explícita de quem lança (allowNegative) — a mesma
-// regra do envio da Solicitação de Materiais.
-export async function assertStockAvailable(db: StockDb, frontId: number, lines: Array<{ productId: number; quantity: number; label: string }>, allowNegative: boolean) {
-  if (allowNegative || lines.length === 0) return;
+// regra do envio da Solicitação de Materiais — e essa confirmação só vale de ADMIN ou GESTOR
+// (estoque negativo é sempre um problema a conferir; quem lança no dia a dia não decide sozinho).
+export function canAuthorizeNegativeStock(user: { profile: string }) {
+  return user.profile === "ADMIN" || user.profile === "GESTOR";
+}
+
+export const NEGATIVE_STOCK_NEEDS_MANAGER = "Saída sem saldo só pode ser confirmada por um gestor ou administrador. Confira o estoque ou peça a um gestor para lançar.";
+
+export async function assertStockAvailable(db: StockDb, frontId: number, lines: Array<{ productId: number; quantity: number; label: string }>, allowNegative: boolean, user?: { profile: string }) {
+  if (lines.length === 0) return;
   const shortages = await stockShortages(db, frontId, lines);
-  if (shortages.length) throw new StockError("Saldo insuficiente no estoque da frente para alguns produtos.", 409, shortages);
+  if (!shortages.length) return;
+  if (!allowNegative) throw new StockError("Saldo insuficiente no estoque da frente para alguns produtos.", 409, shortages);
+  if (user && !canAuthorizeNegativeStock(user)) throw new StockError(NEGATIVE_STOCK_NEEDS_MANAGER, 403, shortages);
 }
 
 async function applyBalance(db: StockDb, productId: number, serviceFrontId: number, delta: number, userId: number) {
