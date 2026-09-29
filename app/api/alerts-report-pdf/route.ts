@@ -30,7 +30,7 @@ export async function GET(request:Request){
       INNER JOIN maintenance_plans p ON p.id=a.plan_id
       INNER JOIN maintenance_types t ON t.id=p.maintenance_type_id
       INNER JOIN equipment_maintenance_types emt ON emt.equipment_id=p.equipment_id AND emt.maintenance_type_id=p.maintenance_type_id
-      WHERE a.status='OPEN' AND p.active=1 AND emt.applicable=1 AND e.oil_change_enabled=1
+      WHERE a.status='OPEN' AND p.active=1 AND emt.applicable=1 AND e.oil_change_enabled=1 AND e.sold_at IS NULL
       ORDER BY e.type,e.sort_key,t.name`).all<Row>(),allowedEquipmentIds(d1,auth.user!,"OIL",frentesEmExibicao(auth.user!,request))]);
     const categorySet=new Set(categories);const frontSet=new Set(fronts);const equipmentSet=new Set(equipmentIds);const statusSet=new Set(statuses);const unitSet=new Set(units);
     const scoped=result.results.filter((row)=>allowed.has(Number(row.equipment_id)));const filtered=scoped.filter((row)=>{

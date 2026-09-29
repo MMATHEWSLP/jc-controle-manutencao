@@ -179,6 +179,16 @@ export const equipment = pgTable("equipment", {
   // "EQ-2" ordena antes de "EQ-10". Calculada em toda gravação de equipamento; nunca editada
   // manualmente. Índice permite `ORDER BY sort_key` direto no banco, inclusive paginado.
   sortKey: text("sort_key").notNull().default(""),
+  // Empresa em cujo nome o veículo está registrado (mesmo cadastro de Empresas dos Funcionários).
+  companyId: integer("company_id").references((): AnyPgColumn => companies.id),
+  // Validade do IPVA (AAAA-MM-DD).
+  ipvaExpiresAt: text("ipva_expires_at"),
+  // Veículo vendido (AAAA-MM-DD da venda). NULL = faz parte da frota ativa. Vendido sai das listas
+  // operacionais (troca de óleo, status da frota, lançamentos), mas todo o histórico é preservado
+  // e a marcação pode ser desfeita.
+  soldAt: text("sold_at"),
+  soldBy: integer("sold_by").references(() => users.id),
+  soldNotes: text("sold_notes"),
   ...timestamps,
 }, (table) => [
   uniqueIndex("equipment_code_unique").on(table.code),
@@ -189,6 +199,7 @@ export const equipment = pgTable("equipment", {
   index("equipment_oil_front_idx").on(table.oilChangeEnabled, table.serviceFrontId),
   index("equipment_sort_key_idx").on(table.sortKey),
   index("equipment_model_idx").on(table.equipmentModelId),
+  index("equipment_sold_idx").on(table.soldAt),
 ]);
 
 export const equipmentTransfers = pgTable("equipment_transfers", {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb } from "../db";
 import { auditLogs, dailyRecordFuelings, dailyRecordTrips, dailyRecords, equipment, equipmentCurrentAssignments, serviceFrontChangeRequests, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
@@ -76,7 +76,7 @@ export async function loadEquipmentOptions(user: SessionUser) {
     id: equipment.id, prefix: equipment.prefix, code: equipment.code, plate: equipment.plate, type: equipment.type, brand: equipment.brand, model: equipment.model,
     controlType: equipment.controlType, status: equipment.status, serviceFrontId: equipment.serviceFrontId, front: serviceFronts.name,
   }).from(equipment).leftJoin(serviceFronts, eq(serviceFronts.id, equipment.serviceFrontId))
-    .where(equipmentScope(user)).orderBy(equipment.sortKey, equipment.prefix);
+    .where(and(isNull(equipment.soldAt), equipmentScope(user))).orderBy(equipment.sortKey, equipment.prefix);
   return rows.filter((row) => row.status !== "INACTIVE").map((row) => ({
     id: row.id, prefix: row.prefix, code: row.code, plate: row.plate, type: row.type, brand: row.brand, model: row.model,
     serviceFrontId: row.serviceFrontId, front: row.front ?? "Sem frente", readingUnit: readingUnitFor(row.controlType, row.prefix),

@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getD1, getDb } from "../../../db";
-import { alerts, equipment, equipmentMaintenanceTypes, maintenancePlans, maintenanceTypes, serviceFronts } from "../../../db/schema";
+import { alerts, companies, equipment, equipmentMaintenanceTypes, maintenancePlans, maintenanceTypes, meterReadings, serviceFronts, users } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { naturalSortKey } from "../../../lib/equipment-sort";
 import { activeServiceFronts, allowedEquipmentIds, canBrowseAllEquipment, equipmentAccessResponse, requireEquipmentAccess } from "../../../lib/front-scope";
@@ -24,6 +24,7 @@ type EquipmentRow = {
   id:number; code:string; prefix:string; type:string; brand:string; model:string; year:number | null;
   serialNumber:string | null; chassis:string | null; identificationType:IdentificationType; plate:string | null;
   serviceFrontId:number | null; front:string | null; currentHours:number; currentKm:number; controlType:ControlType; status:EquipmentStatus; qrToken:string | null; oilChangeEnabled:boolean; notes:string | null;
+  companyId:number | null; company:string | null; ipvaExpiresAt:string | null; soldAt:string | null; soldNotes:string | null; soldByName:string | null; lastReadingAt:string | null;
 };
 
 function normalize(row:EquipmentRow, applicableMaintenanceTypes:string[] = []) {
@@ -41,22 +42,31 @@ function normalize(row:EquipmentRow, applicableMaintenanceTypes:string[] = []) {
     serviceFrontId:row.serviceFrontId,oilChangeEnabled:row.oilChangeEnabled,notes:row.notes,
     control:controlToClient[row.controlType], applicableMaintenanceTypes, plans:applicableMaintenanceTypes.length,
     status:statusToClient[row.status], health:100, persisted:true, qrToken:row.qrToken,
+    companyId:row.companyId, company:row.company, ipvaExpiresAt:row.ipvaExpiresAt,
+    sold:row.soldAt !== null, soldAt:row.soldAt, soldNotes:row.soldNotes, soldBy:row.soldByName,
+    lastReadingAt:row.lastReadingAt,
   };
 }
 
 function clean(value:unknown) { return typeof value === "string" ? value.trim() : ""; }
+const isIsoDay=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
 function readApplicableTypes(value:unknown) {
   return Array.isArray(value) ? [...new Set(value.map(clean).filter(Boolean))] : [];
 }
 
-async function getEquipmentRows() {
+async function getEquipmentRows(equipmentId?:number) {
   const db = await getDb();
   return db.select({
     id:equipment.id, code:equipment.code, prefix:equipment.prefix, type:equipment.type, brand:equipment.brand,
     model:equipment.model, year:equipment.year, serialNumber:equipment.serialNumber, chassis:equipment.chassis,
     identificationType:equipment.identificationType, plate:equipment.plate, serviceFrontId:equipment.serviceFrontId, front:serviceFronts.name,
     currentHours:equipment.currentHours, currentKm:equipment.currentKm, controlType:equipment.controlType, status:equipment.status, qrToken:equipment.qrToken,oilChangeEnabled:equipment.oilChangeEnabled,notes:equipment.notes,
-  }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id)).orderBy(asc(equipment.sortKey));
+    companyId:equipment.companyId, company:companies.name, ipvaExpiresAt:equipment.ipvaExpiresAt, soldAt:equipment.soldAt, soldNotes:equipment.soldNotes, soldByName:users.name,
+    // Data da última atualização de horímetro/KM (toda leitura passa por meter_readings).
+    lastReadingAt:sql<string | null>`(select max(${meterReadings.readingDate}) from ${meterReadings} where ${meterReadings.equipmentId} = ${equipment.id})`,
+  }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id))
+    .leftJoin(companies, eq(equipment.companyId, companies.id)).leftJoin(users, eq(equipment.soldBy, users.id))
+    .where(equipmentId===undefined?undefined:eq(equipment.id,equipmentId)).orderBy(asc(equipment.sortKey));
 }
 
 async function getApplicableMap() {
@@ -72,19 +82,25 @@ export async function GET(request:Request) {
   const auth=await authorize(request,"equipment.view");if(auth.response)return auth.response;
   try {
     const db = await getDb();const d1=await getD1();const mode=new URL(request.url).searchParams.get("scope")==="oil"?"OIL":"REGISTRY";
-    const [rows, applicableMap, typeRows,fronts,allowed] = await Promise.all([
+    const [rows, applicableMap, typeRows,fronts,allowed,companyRows] = await Promise.all([
       getEquipmentRows(), getApplicableMap(),
       db.select({ name:maintenanceTypes.name, category:maintenanceTypes.category }).from(maintenanceTypes).where(and(eq(maintenanceTypes.active, true),eq(maintenanceTypes.category,"OIL"))).orderBy(maintenanceTypes.name),
       activeServiceFronts(d1),allowedEquipmentIds(d1,auth.user!,mode,mode==="REGISTRY"?frentesEmExibicaoCadastro(auth.user!,request):frentesEmExibicao(auth.user!,request)),
+      db.select({ id:companies.id, name:companies.name }).from(companies).where(eq(companies.active,true)).orderBy(asc(companies.name)),
     ]);
+    const visible=frentesVisiveis(auth.user!);
     return Response.json({
-      equipment:rows.filter((row)=>allowed.has(row.id)).map((row)=>normalize(row,applicableMap[row.id] ?? [])),
+      // Na troca de óleo só a frota ativa; no cadastro os vendidos vêm marcados (aba "Veículos Vendidos").
+      equipment:rows.filter((row)=>allowed.has(row.id)&&(mode==="REGISTRY"||row.soldAt===null)).map((row)=>normalize(row,applicableMap[row.id] ?? [])),
       maintenanceTypes:typeRows.map((row)=>row.name),
       fronts,
       // Botões de frente dentro do módulo (só para quem tem a permissão e não tem o seletor global).
       frontButtons:mode==="REGISTRY"&&showsRegistryFrontButtons(auth.user!),
       // Frentes cujo cadastro a pessoa pode alterar (as demais aparecem só para consulta/transferência).
-      editableFrontIds:canBrowseAllEquipment(auth.user!,"MANAGEMENT")?"ALL":frentesVisiveis(auth.user!),
+      editableFrontIds:canBrowseAllEquipment(auth.user!,"MANAGEMENT")?"ALL":visible,
+      // Frentes onde a pessoa pode cadastrar equipamento novo: as do login (todas = qualquer uma).
+      creatableFrontIds:visible==="ALL"?fronts.map((front)=>front.id):fronts.filter((front)=>visible.includes(front.id)).map((front)=>front.id),
+      companies:companyRows,
     });
   } catch (error) {
     const detail = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
@@ -113,6 +129,11 @@ async function saveEquipment(request:Request, editing:boolean) {
     const identificationValue = clean(body.identificationValue);
     if (!identificationValue) return Response.json({ error:`Informe ${identificationType === "CHASSIS" ? "o chassi" : "o número de série"}.` }, { status:400 });
 
+    const ipvaExpiresAt = clean(body.ipvaExpiresAt) || null;
+    if (ipvaExpiresAt && !isIsoDay(ipvaExpiresAt)) return Response.json({ error:"Informe uma data válida para a validade do IPVA." }, { status:400 });
+    const requestedCompanyId = body.companyId === undefined || body.companyId === null || body.companyId === "" ? null : Number(body.companyId);
+    if (requestedCompanyId !== null && (!Number.isInteger(requestedCompanyId) || requestedCompanyId <= 0)) return Response.json({ error:"Selecione uma empresa válida." }, { status:400 });
+
     const currentHours = Number(body.currentHours || 0); const currentKm = Number(body.currentKm || 0);
     if (!Number.isFinite(currentHours) || currentHours < 0 || !Number.isFinite(currentKm) || currentKm < 0) return Response.json({ error:"Horímetro e quilometragem devem ser valores positivos." }, { status:400 });
 
@@ -140,12 +161,19 @@ async function saveEquipment(request:Request, editing:boolean) {
     const unknown = applicableNames.find((name)=>!availableByName.has(name));
     if (unknown) return Response.json({ error:`O tipo de troca “${unknown}” não está disponível.` }, { status:400 });
 
+    // Empresa precisa estar ativa na lista; na edição a empresa atual continua aceita mesmo desativada.
+    if(requestedCompanyId!==null&&requestedCompanyId!==existing?.companyId){
+      const companyRow=await db.select({id:companies.id}).from(companies).where(and(eq(companies.id,requestedCompanyId),eq(companies.active,true))).limit(1);
+      if(!companyRow[0])return Response.json({error:"A empresa selecionada não está disponível."},{status:400});
+    }
+
     const requestedFrontId=Number(body.serviceFrontId);let frontId=existing?.serviceFrontId??null;
     if(!existing){
       if(!Number.isInteger(requestedFrontId)||requestedFrontId<=0)return Response.json({error:"Selecione a frente de serviço."},{status:400});
       const frontRow=await db.select({id:serviceFronts.id}).from(serviceFronts).where(and(eq(serviceFronts.id,requestedFrontId),eq(serviceFronts.active,true))).limit(1);
       if(!frontRow[0])return Response.json({error:"A frente de serviço selecionada não existe."},{status:400});
-      if(auth.user!.profile!=="ADMIN"&&auth.user!.serviceFrontId!==frontRow[0].id)return Response.json({error:"Você só pode cadastrar equipamentos na sua própria frente."},{status:403});
+      const visible=frentesVisiveis(auth.user!);
+      if(visible!=="ALL"&&!visible.includes(frontRow[0].id))return Response.json({error:"Você só pode cadastrar equipamentos nas frentes vinculadas ao seu login."},{status:403});
       frontId=frontRow[0].id;
     }
     const oilChangeEnabled=body.oilChangeEnabled===undefined?(existing?.oilChangeEnabled??true):(body.oilChangeEnabled===true||body.oilChangeEnabled==="true"||body.oilChangeEnabled==="1"||body.oilChangeEnabled==="on");
@@ -160,7 +188,9 @@ async function saveEquipment(request:Request, editing:boolean) {
       qrToken:existing?.qrToken ?? crypto.randomUUID(),
       currentHours:measurement.currentHours,
       currentKm:measurement.currentKm,
-      controlType:measurement.controlType, status, oilChangeEnabled,notes:body.notes===undefined?(existing?.notes??null):(clean(body.notes)||null), updatedAt:now,
+      controlType:measurement.controlType, status, oilChangeEnabled,notes:body.notes===undefined?(existing?.notes??null):(clean(body.notes)||null),
+      companyId:body.companyId===undefined?(existing?.companyId??null):requestedCompanyId,
+      ipvaExpiresAt:body.ipvaExpiresAt===undefined?(existing?.ipvaExpiresAt??null):ipvaExpiresAt, updatedAt:now,
     };
     const saved = existing
       ? (await db.update(equipment).set(values).where(eq(equipment.id,existing.id)).returning())[0]
@@ -186,8 +216,8 @@ async function saveEquipment(request:Request, editing:boolean) {
     if(oilChangeEnabled)await recalculateMaintenanceCycles(d1,{equipmentId:saved.id,force:true});
     else if(allPlans.length)await db.update(alerts).set({status:"CLOSED",closedAt:now,updatedAt:now}).where(inArray(alerts.planId,allPlans.map((plan)=>plan.id)));
 
-    const front=frontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,frontId)).limit(1))[0]?.name??null:null;
-    return Response.json({ equipment:normalize({ ...saved, serviceFrontId:frontId,front,oilChangeEnabled }, applicableNames) }, { status:existing ? 200 : 201 });
+    const refreshed=(await getEquipmentRows(saved.id))[0];
+    return Response.json({ equipment:normalize({ ...refreshed, oilChangeEnabled }, applicableNames) }, { status:existing ? 200 : 201 });
   } catch (error) {
     const access=equipmentAccessResponse(error);if(access)return access;
     const detail = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
