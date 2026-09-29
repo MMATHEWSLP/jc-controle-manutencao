@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
+import { consumptionByMovement } from "./third-parties";
 import { computeFuelBalances, computeFuelCosts, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -113,6 +114,8 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       destinationFrontId: fuelMovements.destinationFrontId, destinationFrontName: destinationFront.name,
       responsible: fuelMovements.responsible, notes: fuelMovements.notes, createdByName: creator.name, createdAt: fuelMovements.createdAt,
       importSource: fuelMovements.importSource, originConfirmed: fuelMovements.originConfirmed, vehiclePending: fuelMovements.vehiclePending, importedVehicle: fuelMovements.importedVehicle,
+      thirdPartyId: fuelMovements.thirdPartyId, thirdPartyVehicleId: fuelMovements.thirdPartyVehicleId, fullTank: fuelMovements.fullTank,
+      consumptionOutlier: fuelMovements.consumptionOutlier, readingException: fuelMovements.readingException,
     }).from(fuelMovements)
       .innerJoin(serviceFronts, eq(fuelMovements.serviceFrontId, serviceFronts.id))
       .innerJoin(fuelTypes, eq(fuelMovements.fuelTypeId, fuelTypes.id))
@@ -122,10 +125,12 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       .where(where).orderBy(desc(fuelMovements.movementDate), desc(fuelMovements.id)).limit(limit).offset(offset),
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
-  const costs = await fuelCosts(db);
+  // Consumo dos abastecimentos de veículos de terceiros (calculado com todo o histórico do veículo).
+  const [costs, consumption] = await Promise.all([fuelCosts(db), consumptionByMovement(db, rows.flatMap((row) => (row.thirdPartyVehicleId ? [row.thirdPartyVehicleId] : [])))]);
   return {
     rows: rows.map((row) => ({
       ...row,
+      consumption: consumption.get(row.id) ?? null,
       unitCost: costs.get(row.id)?.unitCost ?? null,
       cost: costs.get(row.id)?.cost ?? null,
       movementLabel: fuelMovementLabel(row),
@@ -156,6 +161,16 @@ export async function resolveResponsible(db: Db, employeeId: number | null, type
   return { responsibleEmployeeId: row.id, responsible: row.name };
 }
 
+// Campos da saída para terceiro do cadastro (empresa, veículo, leitura, tanque cheio e confirmações).
+export function readThirdPartyFuelFields(body: Record<string, unknown>) {
+  const reading = numberOrNull(body.meterReading);
+  return {
+    thirdPartyId: Number(body.thirdPartyId) || null, vehicleId: Number(body.thirdPartyVehicleId) || null,
+    reading: reading === null || Number.isNaN(reading) ? null : reading, fullTank: body.fullTank !== false,
+    readingException: body.readingException === true, confirmTank: body.confirmTank === true, confirmOutlier: body.confirmOutlier === true,
+  };
+}
+
 export type FuelHistoryRow = Awaited<ReturnType<typeof fuelHistory>>["rows"][number];
 
 export async function fuelEquipmentContext(db: Db, equipmentId: number) {
@@ -176,7 +191,7 @@ export function resolveFuelFront(visibleIds: number[], requested: unknown, displ
   return null;
 }
 
-function numberOrNull(value: unknown) {
+export function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return value;
   const text = String(value).trim().replace(/\s/g, "");

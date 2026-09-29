@@ -268,3 +268,14 @@ html[data-theme="dark"] .products-table td.product-name-cell>strong{color:#f4f3f
 html[data-theme="dark"] .fuel-pending-badge{background:#3a2c14;border-color:#6b5222;color:#f5c26b}
 html[data-theme="dark"] .fuel-pending-badge.origin{background:#1b2a44;border-color:#34507f;color:#9dbcf2}
 html[data-theme="dark"] .fuel-import-note{background:#2a2419;border-color:#5a4a2a}
+/* Terceiros: cadastro, seleção no Combustível/Movimentação e relatório de consumo */
+.third-party-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.third-party-filters>.primary{margin-left:auto}
+.third-party-table tr.selected td{background:#eef6fb}
+.third-party-vehicles-panel{margin-top:14px}
+.third-party-vehicles-panel .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.fuel-third-party-field{display:grid;gap:6px;align-content:start}
+.fuel-field-label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:650;color:var(--ink,#1c2d39)}
+.fuel-field-label .link-button{font-size:12px}
+.stock-destination-kind{grid-column:1/-1}
+html[data-theme="dark"] .third-party-table tr.selected td{background:#1f2b33}

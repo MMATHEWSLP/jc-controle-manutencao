@@ -3,8 +3,9 @@ import { getDb } from "../../../../db";
 import { fuelMovements, fuelTypes, serviceFronts } from "../../../../db/schema";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, resolveFuelFront } from "../../../../lib/fuel";
+import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, readThirdPartyFuelFields, resolveFuelFront } from "../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../lib/fuel-rules";
+import { prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../lib/third-parties";
 
 const PAGE_SIZE = 50;
 
@@ -51,6 +52,18 @@ export async function POST(request: Request) {
     const fuelType = (await db.select({ id: fuelTypes.id }).from(fuelTypes).where(and(eq(fuelTypes.id, input.fuelTypeId), eq(fuelTypes.active, true))).limit(1))[0];
     if (!fuelType) return Response.json({ error: "Escolha um tipo de combustível válido." }, { status: 400 });
     const equipment = input.equipmentId ? await fuelEquipmentContext(db, input.equipmentId) : null;
+    // Saída para terceiro: empresa e veículo vêm do cadastro de Terceiros (com leitura, tanque cheio,
+    // capacidade do tanque e consumo conferidos); os textos livres antigos são preenchidos a partir dele.
+    let thirdPartyFields: Awaited<ReturnType<typeof prepareThirdPartyFuel>> | null = null;
+    if (input.thirdParty) {
+      const fields = readThirdPartyFuelFields(body);
+      if (!fields.thirdPartyId) return Response.json({ error: "Escolha a empresa/pessoa no cadastro de terceiros." }, { status: 400 });
+      thirdPartyFields = await prepareThirdPartyFuel(db, user, {
+        ...fields, thirdPartyId: fields.thirdPartyId, mode: input.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "GERAL", quantity: input.quantity,
+        movementDate: input.movementDate, notes: input.notes, editingId: null, current: null,
+      });
+      input = { ...input, providerCompany: thirdPartyFields.providerCompany, providerEquipment: thirdPartyFields.providerEquipment, thirdPartyDescription: thirdPartyFields.thirdPartyDescription };
+    }
     const problem = validateFuelMovement({ ...input, serviceFrontId }, equipment, fuelLocalDay());
     if (problem) return Response.json({ error: problem }, { status: 400 });
     const [created] = await db.insert(fuelMovements).values({
@@ -58,10 +71,13 @@ export async function POST(request: Request) {
       // Frente ↔ Porto da mesma frente: o destino é a própria frente.
       destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
       meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,
+      ...(thirdPartyFields ?? {}),
       createdBy: user.id,
     }).returning({ id: fuelMovements.id });
-    return Response.json({ id: created.id, message: "Lançamento de combustível registrado." }, { status: 201 });
+    await refreshVehicleLastReading(db, thirdPartyFields?.thirdPartyVehicleId);
+    return Response.json({ id: created.id, message: thirdPartyFields?.consumptionOutlier ? "Lançamento registrado (marcado como fora da média de consumo)." : "Lançamento de combustível registrado." }, { status: 201 });
   } catch (error) {
+    const known = thirdPartyErrorResponse(error); if (known) return known;
     console.error("[fuel.movements.post]", error);
     return Response.json({ error: "Não foi possível registrar o lançamento agora." }, { status: 500 });
   }

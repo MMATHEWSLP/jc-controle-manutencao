@@ -112,6 +112,9 @@ export const PERMISSION_GROUPS = [
     ["fuel.register","Registrar lançamento de combustível"],
     ["fuel.manage","Editar e excluir lançamentos de combustível"],
   ]},
+  { label:"Terceiros", items:[
+    ["third_parties.manage","Cadastrar, editar e inativar terceiros (prestadores, terceirizadas, pessoas físicas) e os veículos deles; aceitar leitura menor que a última com justificativa"],
+  ]},
   { label:"Funcionários", items:[
     ["employees.view","Visualizar funcionários, transferências e afastamentos"],
     ["employees.manage","Cadastrar, editar, transferir, demitir e controlar o ciclo de folga dos funcionários"],
@@ -143,7 +146,9 @@ export type Profile = "ADMIN" | "GESTOR" | "OFICINA" | "OPERADOR" | "ALMOXARIFAD
 // removido por pedido explícito — quem precisar, o administrador libera individualmente.
 export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
-  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","products.view","products.create","products.edit","suppliers.view","suppliers.create","suppliers.edit","daily.field_operators","daily.front_requests"],
+  GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","products.view","products.create","products.edit","suppliers.view","suppliers.create","suppliers.edit","daily.field_operators","daily.front_requests",
+    // Terceiros: o administrador pediu explicitamente que GESTOR cadastre/edite/inative terceiros.
+    "third_parties.manage"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
   // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados).

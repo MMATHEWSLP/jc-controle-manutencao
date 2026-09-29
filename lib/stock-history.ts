@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { departments, employees, equipment, productStockMovements, products, serviceFronts, users, workOrderItems, workOrders } from "../db/schema";
+import { departments, employees, equipment, productStockMovements, products, serviceFronts, stockExits, thirdParties, thirdPartyVehicles, users, workOrderItems, workOrders } from "../db/schema";
 import { materialRequestNumber, purchaseOrderNumber, stockExitNumber, workOrderNumber } from "./document-numbers";
 import { STOCK_SOURCE_LABELS, type StockSource } from "./stock";
 
@@ -13,6 +13,9 @@ export type StockHistoryFilters = {
   equipmentId?: number | null;
   employeeId?: number | null;
   departmentId?: number | null;
+  // Saída para Terceiro / Prestador (Movimentação).
+  thirdPartyId?: number | null;
+  thirdPartyVehicleId?: number | null;
   sources?: StockSource[];
   // Só saídas (delta < 0).
   exitsOnly?: boolean;
@@ -43,6 +46,8 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
   if (filters.equipmentId) conditions.push(eq(productStockMovements.equipmentId, filters.equipmentId));
   if (filters.employeeId) conditions.push(eq(productStockMovements.employeeId, filters.employeeId));
   if (filters.departmentId) conditions.push(eq(productStockMovements.departmentId, filters.departmentId));
+  if (filters.thirdPartyId) conditions.push(eq(stockExits.thirdPartyId, filters.thirdPartyId));
+  if (filters.thirdPartyVehicleId) conditions.push(eq(stockExits.thirdPartyVehicleId, filters.thirdPartyVehicleId));
   if (filters.sources?.length) conditions.push(inArray(productStockMovements.source, filters.sources));
   if (filters.exitsOnly) conditions.push(sql`${productStockMovements.delta} < 0`, isNull(productStockMovements.reversedAt));
   if (filters.closedWorkOrdersOnly) conditions.push(or(sql`${productStockMovements.source} <> 'WORK_ORDER'`, eq(workOrders.status, "CLOSED"))!);
@@ -60,6 +65,7 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
     stockExitId: productStockMovements.stockExitId, workOrderId: productStockMovements.workOrderId, workOrderStatus: workOrders.status,
     application: workOrderItems.application, withdrawnBy: workOrderItems.withdrawnBy,
     createdByName: creator.name,
+    thirdPartyId: stockExits.thirdPartyId, thirdPartyName: thirdParties.name, thirdPartyPlate: thirdPartyVehicles.plate, receivedBy: stockExits.receivedBy,
   }).from(productStockMovements)
     .innerJoin(products, eq(productStockMovements.productId, products.id))
     .innerJoin(serviceFronts, eq(productStockMovements.serviceFrontId, serviceFronts.id))
@@ -69,6 +75,9 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
     .leftJoin(workOrders, eq(productStockMovements.workOrderId, workOrders.id))
     .leftJoin(workOrderItems, eq(productStockMovements.workOrderItemId, workOrderItems.id))
     .leftJoin(creator, eq(productStockMovements.createdBy, creator.id))
+    .leftJoin(stockExits, eq(productStockMovements.stockExitId, stockExits.id))
+    .leftJoin(thirdParties, eq(stockExits.thirdPartyId, thirdParties.id))
+    .leftJoin(thirdPartyVehicles, eq(stockExits.thirdPartyVehicleId, thirdPartyVehicles.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(day), desc(productStockMovements.id))
     .limit(Math.min(filters.limit ?? 500, 2000));
@@ -86,7 +95,8 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
       employee: row.employeeId ? { id: row.employeeId, name: row.employeeName } : null,
       department: row.departmentId ? { id: row.departmentId, name: row.departmentName } : null,
       // Aplicação: onde a peça da O.S. foi aplicada; na falta, o destino da saída.
-      application: row.application || row.equipmentPrefix || row.employeeName || row.departmentName || null,
+      application: row.application || row.equipmentPrefix || row.employeeName || row.departmentName || (row.thirdPartyName ? [row.thirdPartyName, row.thirdPartyPlate].filter(Boolean).join(" · ") : null) || null,
+      thirdParty: row.thirdPartyId ? { id: row.thirdPartyId, name: row.thirdPartyName, plate: row.thirdPartyPlate, receivedBy: row.receivedBy } : null,
       withdrawnBy: row.withdrawnBy, unitPrice, total: unitPrice === null ? null : unitPrice * quantity,
       reason: row.reason, reversed: row.reversedAt !== null, createdBy: row.createdByName,
     };

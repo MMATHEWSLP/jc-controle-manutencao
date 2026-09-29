@@ -1,6 +1,8 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import ThirdPartiesView, { KIND_LABELS, METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
+import { ApiError, api as apiWithData } from "./stock-client";
 
 type MovementType = "ENTRADA" | "SAIDA" | "TRANSFERENCIA";
 type Location = "FRENTE" | "PORTO";
@@ -23,6 +25,9 @@ type Movement = {
   responsible: string | null; notes: string | null; createdByName: string | null; createdAt: string;
   // Carga retroativa de histórico: lote, origem ainda não conferida, veículo a identificar.
   importSource: string | null; originConfirmed: boolean; vehiclePending: boolean; importedVehicle: string | null;
+  // Saída para terceiro do cadastro de Terceiros e o consumo calculado (km/L ou L/h).
+  thirdPartyId: number | null; thirdPartyVehicleId: number | null; fullTank: boolean; consumptionOutlier: boolean; readingException: boolean;
+  consumption: { value: number; unit: string; distance: number; liters: number } | null;
 };
 type HistoryResponse = { movements: Movement[]; total: number; page: number; pageSize: number };
 type EquipmentOption = {
@@ -54,7 +59,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
-  const [tab, setTab] = useState<"new" | "history">(canRegister ? "new" : "history");
+  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption">(canRegister ? "new" : "history");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -123,8 +128,12 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
       <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do módulo Combustível">
         {canRegister && <button className={tab === "new" ? "active" : ""} onClick={() => { setTab("new"); setEditing(null); }}>{editing ? "Editar registro" : "Novo Registro"}</button>}
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button>
+        <button className={tab === "third-parties" ? "active" : ""} onClick={() => setTab("third-parties")}>Terceiros</button>
+        <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
       </div>
-      {tab === "new" && (canRegister || editing)
+      {tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
+        : tab === "consumption" ? <ThirdPartyConsumptionReport />
+        : tab === "new" && (canRegister || editing)
         ? <FuelForm key={editing ? `edit-${editing.id}` : "new"} summary={summary} authUser={authUser} editing={editing} onSaved={async (message) => { const wasEditing = Boolean(editing); await afterSave(message); setTab(wasEditing ? "history" : "new"); }} onCancel={editing ? () => { setEditing(null); setTab("history"); } : undefined} />
         : <FuelHistory key={historyVersion} summary={summary} canManage={canManage} flash={flash}
           onEdit={(movement) => { setEditing(movement); setTab("new"); }} onDeleted={afterSave} />}
@@ -150,6 +159,26 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const [destinationFrontId, setDestinationFrontId] = useState<string>(editing?.destinationFrontId && editing.destinationFrontId !== editing.serviceFrontId ? String(editing.destinationFrontId) : "");
   const [destinationLocation, setDestinationLocation] = useState<Location>(editing?.destinationLocation ?? (editing?.stockLocation === "PORTO" ? "FRENTE" : "PORTO"));
   const [thirdPartyDescription, setThirdPartyDescription] = useState(editing?.thirdPartyDescription ?? "");
+  // Terceiro do cadastro. Lançamento antigo (só texto livre) continua com os campos de texto ao editar.
+  const legacyThirdParty = Boolean(editing?.thirdParty && !editing.thirdPartyId);
+  const thirdPartyOptions = useThirdPartyOptions();
+  const [party, setParty] = useState<ThirdPartyOption | null>(null);
+  const [vehicle, setVehicle] = useState<VehicleOption | null>(null);
+  const [partyReading, setPartyReading] = useState(editing?.thirdPartyId && editing.meterReading != null ? String(editing.meterReading).replace(".", ",") : "");
+  const [fullTank, setFullTank] = useState(editing?.fullTank ?? true);
+  const [readingException, setReadingException] = useState(editing?.readingException ?? false);
+  const [exceptionAllowed, setExceptionAllowed] = useState(false);
+  const [quickCreate, setQuickCreate] = useState<"party" | "vehicle" | null>(null);
+  // Ao editar, recupera o terceiro/veículo do cadastro (ou um substituto, se foi inativado depois).
+  useEffect(() => {
+    if (!editing?.thirdPartyId || party) return;
+    const found = thirdPartyOptions.options.find((item) => item.id === editing.thirdPartyId);
+    const fallback: ThirdPartyOption = { id: editing.thirdPartyId, name: editing.providerCompany ?? editing.thirdPartyDescription ?? "Terceiro", kind: editing.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "PESSOA_FISICA", document: null, vehicles: [] };
+    const current = found ?? fallback;
+    setParty(current);
+    if (editing.thirdPartyVehicleId) setVehicle(current.vehicles.find((item) => item.id === editing.thirdPartyVehicleId)
+      ?? { id: editing.thirdPartyVehicleId, thirdPartyId: current.id, plate: editing.providerEquipment ?? "Veículo", description: null, meterType: editing.meterUnit === "HOURS" ? "HORIMETRO" : "KM", lastReading: null, tankCapacityLiters: null });
+  }, [editing, party, thirdPartyOptions.options]);
   const [providerCompany, setProviderCompany] = useState(editing?.providerCompany ?? "");
   const [providerEquipment, setProviderEquipment] = useState(editing?.providerEquipment ?? "");
   const [responsible, setResponsible] = useState<Responsible>(editing
@@ -174,6 +203,12 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const isExit = movementType === "SAIDA";
   const isProvider = isExit && exitKind === "PRESTADOR";
   const isThirdParty = isExit && exitKind !== "FROTA";
+  // Saída para terceiro pelo cadastro (novo formato): empresa + veículo + leitura + tanque cheio.
+  const registered = isThirdParty && !legacyThirdParty;
+  const partyKinds: ThirdPartyOption["kind"][] | undefined = isProvider ? ["PRESTADOR", "TERCEIRIZADA"] : undefined;
+  const needsVehicle = registered && party !== null && party.kind !== "PESSOA_FISICA";
+  const readingValue = Number(partyReading.replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+  const lowReading = registered && vehicle !== null && vehicle.lastReading !== null && partyReading.trim() !== "" && Number.isFinite(readingValue) && readingValue <= vehicle.lastReading;
   // Veículo/Máquina só na saída para a frota (entrada nunca é vinculada a equipamento).
   const showEquipment = isExit && exitKind === "FROTA";
   const frontName = summary.fronts.find((front) => front.id === frontId)?.name ?? null;
@@ -198,9 +233,12 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   if (!(quantityValue > 0)) missing.push(["quantity", "Quantidade"]);
   if (isEntry && !historical && !(unitPriceValue > 0)) missing.push(["unitPrice", "Valor por litro"]);
   if (showEquipment && !historical && !equipment) missing.push(["equipment", "Veículo/Máquina"]);
-  if (isExit && exitKind === "TERCEIROS" && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
-  if (isProvider && !providerCompany.trim()) missing.push(["company", "Empresa"]);
-  if (isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
+  if (legacyThirdParty && isExit && exitKind === "TERCEIROS" && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
+  if (legacyThirdParty && isProvider && !providerCompany.trim()) missing.push(["company", "Empresa"]);
+  if (legacyThirdParty && isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
+  if (registered && !party) missing.push(["party", isProvider ? "Empresa" : "Terceiro"]);
+  if (needsVehicle && !vehicle) missing.push(["vehicle", "Veículo/Máquina do terceiro"]);
+  if (registered && vehicle && !(partyReading.trim() && Number.isFinite(readingValue) && readingValue >= 0)) missing.push(["reading", "Leitura atual"]);
   if (!responsibleName && !historical) missing.push(["responsible", isEntry ? "Responsável (quem recebeu)" : "Responsável"]);
   const missingKeys = new Set(missing.map(([key]) => key));
   const fieldError = (key: string, message = "Campo obrigatório.") => (touched[key] && missingKeys.has(key) ? <small className="fuel-field-error">{message}</small> : null);
@@ -214,8 +252,8 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
     if (isTransfer && !destinationFrontId && destinationLocation === value) setDestinationLocation(value === "FRENTE" ? "PORTO" : "FRENTE");
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function submit(event: FormEvent | null, confirmations: { confirmTank?: boolean; confirmOutlier?: boolean } = {}) {
+    event?.preventDefault();
     if (missing.length) { setTouched(Object.fromEntries(missing.map(([key]) => [key, true]))); return; }
     if (wrongFront) { setError(`O equipamento ${equipment!.prefix} está em ${equipment!.frontName ?? "outra frente"}. Não é possível lançar combustível para ele em ${frontName ?? "esta frente"}.`); return; }
     setBusy(true);
@@ -226,20 +264,38 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         unitPrice: isEntry ? unitPrice : "",
         ...(historical ? { originConfirmed } : {}),
         thirdParty: isThirdParty, thirdPartyKind: isProvider ? "PRESTADOR" : isThirdParty ? "GERAL" : null,
-        thirdPartyDescription: isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
-        providerCompany: isProvider ? providerCompany : "", providerEquipment: isProvider ? providerEquipment : "",
+        thirdPartyDescription: legacyThirdParty && isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
+        providerCompany: legacyThirdParty && isProvider ? providerCompany : "", providerEquipment: legacyThirdParty && isProvider ? providerEquipment : "",
+        ...(registered ? {
+          thirdPartyId: party?.id ?? null, thirdPartyVehicleId: vehicle?.id ?? null, meterReading: vehicle ? partyReading : "", fullTank,
+          readingException: readingException && (lowReading || exceptionAllowed), ...confirmations,
+        } : {}),
         responsibleEmployeeId: isProvider || responsible.manual ? null : responsible.employeeId,
         responsible: responsibleName,
         equipmentId: showEquipment ? equipment?.id ?? null : null, meterReading: showEquipment ? meterReading : "",
         destinationFrontId: isTransfer && destinationFrontId ? Number(destinationFrontId) : null,
         destinationLocation: isTransfer ? destinationLocation : null,
       };
-      const result = await api<{ message: string }>(editing ? `/api/fuel/movements/${editing.id}` : "/api/fuel/movements", {
-        method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      });
+      let result: { message: string };
+      try {
+        result = await apiWithData<{ message: string }>(editing ? `/api/fuel/movements/${editing.id}` : "/api/fuel/movements", {
+          method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+      } catch (problem) {
+        // Litros acima do tanque ou consumo fora da média: pede confirmação e reenvia.
+        if (problem instanceof ApiError && (problem.data.confirm === "TANK" || problem.data.confirm === "OUTLIER")) {
+          if (!window.confirm(`${problem.message}\n\nLançar mesmo assim?`)) { setBusy(false); return; }
+          setBusy(false);
+          return await submit(null, { ...confirmations, ...(problem.data.confirm === "TANK" ? { confirmTank: true } : { confirmOutlier: true }) });
+        }
+        if (problem instanceof ApiError && problem.data.exception === true) setExceptionAllowed(true);
+        throw problem;
+      }
       if (!editing) {
         setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription("");
         setProviderCompany(""); setProviderEquipment(""); setProviderDriver(""); setUnitPrice(""); setTouched({});
+        setParty(null); setVehicle(null); setPartyReading(""); setFullTank(true); setReadingException(false); setExceptionAllowed(false);
+        thirdPartyOptions.reload().catch(() => undefined);
       }
       await onSaved(result.message);
     } catch (problem) {
@@ -341,7 +397,44 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
             <input inputMode="decimal" placeholder={equipment ? (equipment.controlType === "KM" ? `Atual: ${equipment.currentKm.toLocaleString("pt-BR")} km` : `Atual: ${equipment.currentHours.toLocaleString("pt-BR")} h`) : "Opcional"} value={meterReading} onChange={(event) => setMeterReading(event.target.value)} />
           </label>
         )}
-        {isExit && exitKind === "TERCEIROS" && (
+        {registered && (
+          <>
+            <div className={`fuel-span-2 fuel-third-party-field ${invalid("party")}`} onBlur={touch("party")}>
+              <span className="fuel-field-label">{isProvider ? "Empresa (prestador / terceirizada) *" : "Terceiro (empresa ou pessoa) *"}
+                {thirdPartyOptions.canManage && <button type="button" className="link-button" onClick={() => setQuickCreate("party")}>＋ Novo</button>}</span>
+              <ThirdPartyPicker options={thirdPartyOptions.options} kinds={partyKinds} value={party} onPick={(item) => { setParty(item); setVehicle(null); setPartyReading(""); setReadingException(false); setExceptionAllowed(false); }} />
+              {fieldError("party", "Escolha no cadastro de terceiros.")}
+            </div>
+            <div className={`fuel-third-party-field ${invalid("vehicle")}`} onBlur={touch("vehicle")}>
+              <span className="fuel-field-label">Veículo / máquina{needsVehicle ? " *" : " (opcional)"}
+                {thirdPartyOptions.canManage && party && <button type="button" className="link-button" onClick={() => setQuickCreate("vehicle")}>＋ Novo</button>}</span>
+              <ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} disabled={!party} onPick={(item) => { setVehicle(item); setPartyReading(""); setReadingException(false); setExceptionAllowed(false); }} />
+              {fieldError("vehicle", "Escolha o veículo do terceiro.")}
+            </div>
+            {vehicle && (
+              <label className={invalid("reading")}>
+                Leitura atual — {METER_LABEL[vehicle.meterType]} *
+                <input inputMode="decimal" value={partyReading} onBlur={touch("reading")} onChange={(event) => setPartyReading(event.target.value)} placeholder={vehicle.lastReading !== null ? `Última: ${vehicle.lastReading.toLocaleString("pt-BR")}` : "Leitura do painel"} />
+                <small className={`fuel-hint ${lowReading ? "warning" : ""}`}>{vehicle.lastReading !== null ? `Última leitura registrada: ${vehicle.lastReading.toLocaleString("pt-BR")} ${vehicle.meterType === "KM" ? "km" : "h"}` : "Primeiro abastecimento: esta leitura vira a base do consumo."}{lowReading ? " — a nova leitura precisa ser maior." : ""}</small>
+                {fieldError("reading", "Informe a leitura atual.")}
+              </label>
+            )}
+            {vehicle && (
+              <label className="fuel-origin-check">
+                <input type="checkbox" checked={fullTank} onChange={(event) => setFullTank(event.target.checked)} /> Tanque cheio
+                <small className="fuel-hint">{fullTank ? "O consumo é calculado desde o último tanque cheio." : "Parcial: os litros somam no próximo tanque cheio."}</small>
+              </label>
+            )}
+            {vehicle?.tankCapacityLiters && quantityValue > vehicle.tankCapacityLiters ? <p className="full fuel-hint warning">{liters(quantityValue)} passa da capacidade do tanque ({liters(vehicle.tankCapacityLiters)}): o lançamento vai pedir confirmação.</p> : null}
+            {(lowReading || exceptionAllowed) && thirdPartyOptions.canManage && (
+              <label className="full fuel-origin-check">
+                <input type="checkbox" checked={readingException} onChange={(event) => setReadingException(event.target.checked)} /> Aceitar leitura menor/igual à última (exceção de ADMIN/GESTOR — justifique em Observações)
+              </label>
+            )}
+            {party && <p className="full fuel-hint">{KIND_LABELS[party.kind]}{party.kind === "PESSOA_FISICA" && !vehicle ? " sem veículo: veículo e leitura são opcionais." : ""}</p>}
+          </>
+        )}
+        {legacyThirdParty && isExit && exitKind === "TERCEIROS" && (
           <label className={`fuel-span-2 ${invalid("description")}`}>
             Destino/Descrição *
             <input value={thirdPartyDescription} onBlur={touch("description")} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: comunidade, pessoa atendida, placa do veículo de terceiro" />
@@ -350,16 +443,16 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         )}
         {isProvider && (
           <>
-            <label className={invalid("company")}>
+            {legacyThirdParty && <label className={invalid("company")}>
               Empresa *
               <input value={providerCompany} onBlur={touch("company")} onChange={(event) => setProviderCompany(event.target.value)} placeholder="Nome do prestador / empresa terceirizada" />
               {fieldError("company", "Informe a empresa do prestador.")}
-            </label>
-            <label className={invalid("providerEquipment")}>
+            </label>}
+            {legacyThirdParty && <label className={invalid("providerEquipment")}>
               Descrição do Equipamento *
               <input value={providerEquipment} onBlur={touch("providerEquipment")} onChange={(event) => setProviderEquipment(event.target.value)} placeholder="Modelo, placa ou identificação" />
               {fieldError("providerEquipment", "Descreva o equipamento do prestador.")}
-            </label>
+            </label>}
             <label className={invalid("responsible")}>
               Responsável *
               <input value={providerDriver} onBlur={touch("responsible")} onChange={(event) => setProviderDriver(event.target.value)} placeholder="Motorista/operador do prestador que recebeu" />
@@ -397,6 +490,14 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
           <button className="primary" disabled={busy || wrongFront || sameStock || missing.length > 0}>{busy ? "Salvando..." : editing ? "Salvar alterações" : "Registrar lançamento"}</button>
         </div>
       </form>
+      {quickCreate === "party" && (
+        <ThirdPartyFormModal item={null} fronts={summary.fronts} defaultKind={isProvider ? "PRESTADOR" : "PESSOA_FISICA"} close={() => setQuickCreate(null)}
+          saved={async (id) => { setQuickCreate(null); const list = await thirdPartyOptions.reload(); setParty(list.find((item) => item.id === id) ?? null); setVehicle(null); }} />
+      )}
+      {quickCreate === "vehicle" && party && (
+        <VehicleFormModal thirdParty={party} item={null} fuelTypes={summary.fuelTypes} close={() => setQuickCreate(null)}
+          saved={async (id) => { setQuickCreate(null); const list = await thirdPartyOptions.reload(); const updated = list.find((item) => item.id === party.id) ?? party; setParty(updated); setVehicle(updated.vehicles.find((item) => item.id === id) ?? null); }} />
+      )}
     </article>
   );
 }
@@ -594,7 +695,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         <>
           <div className="table-scroll">
             <table className="products-table fuel-history-table">
-              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Custo</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Terceiro · Prestador</th><th>Hod./Horím.</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
+              <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Custo</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Terceiro · Prestador</th><th>Hod./Horím.</th><th title="Consumo do abastecimento (veículos de terceiros): km/L ou L/h">Consumo</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
               <tbody>
                 {data?.movements.map((movement) => (
                   <tr key={movement.id}>
@@ -610,6 +711,10 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
                     <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}{!movement.originConfirmed && <span className="fuel-pending-badge origin" title="Origem assumida na importação do histórico">a confirmar</span>}</td>
                     <td>{movement.vehiclePending && !movement.equipmentPrefix ? <span className="fuel-pending-badge" title="Abastecimento importado sem veículo identificado">A identificar{movement.importedVehicle ? ` · ${movement.importedVehicle}` : ""}</span> : movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
                     <td>{movement.meterReading === null ? "—" : `${movement.meterReading.toLocaleString("pt-BR")} ${movement.meterUnit === "KM" ? "km" : "h"}`}</td>
+                    <td className="price-cell">
+                      {movement.consumption ? <strong>{movement.consumption.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} {movement.consumption.unit}</strong> : movement.thirdPartyVehicleId ? <small className="fuel-transfer">{movement.readingException ? "nova base" : movement.fullTank ? "base" : "parcial"}</small> : "—"}
+                      {movement.consumptionOutlier && <span className="fuel-pending-badge" title="Consumo mais de 25% diferente da média do veículo (confirmado no lançamento)">fora da média</span>}
+                    </td>
                     <td title={movement.notes ?? undefined}>{movement.responsible ?? "—"}{movement.createdByName && movement.createdByName !== movement.responsible && <small className="fuel-created-by"> · lançado por {movement.createdByName}</small>}</td>
                     {canManage && <td><div className="equipment-row-actions"><button onClick={() => onEdit(movement)}>Editar</button><button onClick={() => remove(movement)}>Excluir</button></div></td>}
                   </tr>

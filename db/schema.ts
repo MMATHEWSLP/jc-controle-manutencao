@@ -968,6 +968,53 @@ export const fuelTypes = pgTable("fuel_types", {
   ...timestamps,
 }, (table) => [uniqueIndex("fuel_types_code_unique").on(table.code)]);
 
+// ---------------------------------------------------------------------------
+// Terceiros: empresas prestadoras, terceirizadas e pessoas que não são da JC, com os veículos e
+// máquinas delas. Usado na saída de combustível (Prestadores de Serviço / Saída para terceiros) e na
+// saída de produtos (destino "Terceiro / Prestador"). Cadastro único para todas as frentes; nunca é
+// apagado depois de ter movimentação — só inativado.
+// ---------------------------------------------------------------------------
+export const thirdParties = pgTable("third_parties", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: text("kind", { enum:["PRESTADOR","TERCEIRIZADA","PESSOA_FISICA"] }).notNull(),
+  // CNPJ/CPF só com os dígitos (único quando preenchido).
+  document: text("document"),
+  contactName: text("contact_name"),
+  phone: text("phone"),
+  // Frente principal (opcional; o cadastro vale para todas as frentes).
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("third_parties_document_unique").on(table.document),
+  index("third_parties_name_idx").on(table.name),
+]);
+
+export const thirdPartyVehicles = pgTable("third_party_vehicles", {
+  id: serial("id").primaryKey(),
+  thirdPartyId: integer("third_party_id").notNull().references(() => thirdParties.id),
+  // Placa ou identificação como digitada; plateKey = só letras/números em maiúsculas (única por empresa).
+  plate: text("plate").notNull(),
+  plateKey: text("plate_key").notNull(),
+  description: text("description"),
+  vehicleType: text("vehicle_type", { enum:["CAMINHAO","MAQUINA","VEICULO_LEVE","OUTRO"] }).notNull().default("CAMINHAO"),
+  meterType: text("meter_type", { enum:["KM","HORIMETRO"] }).notNull().default("KM"),
+  fuelTypeId: integer("fuel_type_id").references(() => fuelTypes.id),
+  tankCapacityLiters: doublePrecision("tank_capacity_liters"),
+  // Consumo esperado: km/L (KM) ou L/h (HORIMETRO). Referência enquanto o veículo não tem média.
+  expectedConsumption: doublePrecision("expected_consumption"),
+  // Última leitura registrada (atualizada a cada abastecimento).
+  lastReading: doublePrecision("last_reading"),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("third_party_vehicles_plate_unique").on(table.thirdPartyId, table.plateKey),
+]);
+
 export const fuelMovements = pgTable("fuel_movements", {
   id: serial("id").primaryKey(),
   // Frente dona do lançamento (a que tem o saldo alterado). Na TRANSFERÊNCIA é a frente de origem.
@@ -1022,6 +1069,17 @@ export const fuelMovements = pgTable("fuel_movements", {
   // Ajuste de saldo (ajustar-saldo-combustivel.mjs): conta no saldo, mas não é movimentação — fica
   // fora do Histórico, da exportação e dos totais de entradas/saídas.
   balanceAdjustment: boolean("balance_adjustment").notNull().default(false),
+  // Terceiro do cadastro (saída para Prestadores de Serviço / terceiros). Os textos livres acima
+  // (provider_company, provider_equipment, third_party_description) continuam sendo preenchidos,
+  // a partir do cadastro, para o histórico antigo e as exportações.
+  thirdPartyId: integer("third_party_id").references(() => thirdParties.id),
+  thirdPartyVehicleId: integer("third_party_vehicle_id").references(() => thirdPartyVehicles.id),
+  // Abastecimento com tanque cheio: só entre tanques cheios o consumo é calculado (parciais acumulam).
+  fullTank: boolean("full_tank").notNull().default(true),
+  // Consumo do abastecimento desviou mais de 25% da média do veículo (confirmado no lançamento).
+  consumptionOutlier: boolean("consumption_outlier").notNull().default(false),
+  // Leitura menor/igual à última aceita por ADMIN/GESTOR com justificativa: vira nova base do consumo.
+  readingException: boolean("reading_exception").notNull().default(false),
   ...timestamps,
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
@@ -1029,6 +1087,8 @@ export const fuelMovements = pgTable("fuel_movements", {
   index("fuel_movements_import_source_idx").on(table.importSource),
   index("fuel_movements_destination_idx").on(table.destinationFrontId),
   index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),
+  index("fuel_movements_third_party_vehicle_idx").on(table.thirdPartyVehicleId, table.movementDate),
+  index("fuel_movements_third_party_idx").on(table.thirdPartyId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1390,10 +1450,14 @@ export const stockExits = pgTable("stock_exits", {
   serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
   exitDate: text("exit_date").notNull(),
   // Destino principal (para exibição): veículo > funcionário > departamento. A saída pode ter os três.
-  destinationType: text("destination_type", { enum:["EMPLOYEE","EQUIPMENT","DEPARTMENT"] }).notNull(),
+  // THIRD_PARTY = Terceiro / Prestador (cadastro de terceiros), com quem recebeu (received_by).
+  destinationType: text("destination_type", { enum:["EMPLOYEE","EQUIPMENT","DEPARTMENT","THIRD_PARTY"] }).notNull(),
   employeeId: integer("employee_id").references(() => employees.id),
   equipmentId: integer("equipment_id").references(() => equipment.id),
   departmentId: integer("department_id").references(() => departments.id),
+  thirdPartyId: integer("third_party_id").references(() => thirdParties.id),
+  thirdPartyVehicleId: integer("third_party_vehicle_id").references(() => thirdPartyVehicles.id),
+  receivedBy: text("received_by"),
   notes: text("notes"),
   createdBy: integer("created_by").references(() => users.id),
   cancelledAt: text("cancelled_at"),
@@ -1404,6 +1468,7 @@ export const stockExits = pgTable("stock_exits", {
   index("stock_exits_date_idx").on(table.exitDate),
   index("stock_exits_equipment_idx").on(table.equipmentId),
   index("stock_exits_employee_idx").on(table.employeeId),
+  index("stock_exits_third_party_idx").on(table.thirdPartyId, table.thirdPartyVehicleId),
 ]);
 
 export const stockExitItems = pgTable("stock_exit_items", {
