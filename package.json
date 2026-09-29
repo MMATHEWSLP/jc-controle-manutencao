@@ -25,7 +25,7 @@
     "test:equipment-sort": "esbuild tests/equipment-sort.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-equipment-sort.mjs && node --test /tmp/manutencao-preventiva-equipment-sort.mjs",
     "test:import-trocas-oleo": "node --test tests/import-trocas-oleo.test.mjs",
     "test:daily-record-rules": "esbuild tests/daily-record-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-daily-record-rules.mjs && node --test /tmp/manutencao-preventiva-daily-record-rules.mjs",
-    "test": "npm run test:history-rules && npm run test:reconciliation && npm run test:generic-date-correction && npm run test:equipment-health-summary && npm run test:front-scope && npm run test:import-equipamentos && npm run test:db-sql && npm run test:pg-parameter-safety && npm run test:task-authorization && npm run test:products-import && npm run test:equipment-sort && npm run test:import-trocas-oleo && npm run test:daily-record-rules && npm run test:daily-history-rules && npm run test:product-rules && npm run test:fuel-rules && npm run test:employee-rules && npm run test:leave-cycle && npm run test:registry-fronts && npm run test:purchase-rules && npm run test:import-abastecimento && npm run test:third-party-rules",
+    "test": "node scripts/run-tests.mjs",
     "import:equipamentos": "node importar-equipamentos.mjs",
     "import:equipamentos:confirmar": "node importar-equipamentos.mjs --confirmar",
     "import:equipamentos:recalcular": "node importar-equipamentos.mjs --recalcular",
@@ -45,30 +45,35 @@
     "test:third-party-rules": "esbuild tests/third-party-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-third-party-rules.mjs && node --test /tmp/manutencao-preventiva-third-party-rules.mjs"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
-    "fflate": "0.7.4",
-    "next": "16.2.6",
+    "fflate": "^0.8.3",
+    "next": "^16.3.7",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.2.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "22.19.19",
     "@types/pg": "^8.11.10",
     "@types/qrcode": "^1.5.5",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "dotenv": "^16.4.7",
-    "drizzle-kit": "0.31.10",
-    "esbuild": "^0.24.0",
+    "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "tailwindcss": "4.2.1",
+    "eslint-config-next": "^16.3.7",
+    "tailwindcss": "^4.3.3",
     "typescript": "5.9.3"
   },
   "type": "module",
-  "displayName": "Controle de Manutenção Preventiva"
+  "displayName": "Controle de Manutenção Preventiva",
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
 }

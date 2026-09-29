@@ -41,12 +41,19 @@ function migratedDatabase(){
   database.exec("PRAGMA foreign_keys=OFF");
   for(const file of readdirSync(join(projectRoot,"drizzle")).filter((name)=>name.endsWith(".sql")).sort()){
     const sql=readFileSync(join(projectRoot,"drizzle",file),"utf8")
-      .replaceAll("--> statement-breakpoint","")
       .replaceAll(PG_ISO_NOW_DEFAULT,SQLITE_ISO_NOW_DEFAULT)
       .replaceAll(/ USING \w+ /g," ")
       .replaceAll('"id" serial PRIMARY KEY NOT NULL','"id" integer PRIMARY KEY')
+      .replaceAll(/ADD COLUMN IF NOT EXISTS/gi,"ADD COLUMN")
       .split("\n").filter((line)=>!/ALTER TABLE .* ADD CONSTRAINT /.test(line)).join("\n");
-    database.exec(sql);
+    for(const statement of sql.split("--> statement-breakpoint")){
+      const code=statement.split("\n").filter((line)=>!line.trim().startsWith("--")).join("\n").trim();
+      if(!code)continue;
+      // Migrações de dados (UPDATE/INSERT/DELETE com sintaxe só do Postgres) e ALTER COLUMN não
+      // têm efeito num banco vazio de teste; o resto (estrutura) precisa aplicar sem erro.
+      if(/^(UPDATE|INSERT|DELETE|DO)\b/i.test(code)||/ALTER COLUMN/i.test(code)){try{database.exec(code);}catch{/* só Postgres */}continue;}
+      database.exec(code);
+    }
   }
   return database;
 }
