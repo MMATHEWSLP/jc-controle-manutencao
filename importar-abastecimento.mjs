@@ -221,17 +221,23 @@ async function importar(pool) {
     try {
       await client.query("BEGIN");
       const now = new Date().toISOString();
-      for (const record of records) {
-        const result = await client.query(
-          `INSERT INTO fuel_movements (service_front_id,fuel_type_id,movement_type,movement_date,quantity,stock_location,third_party,unit_price,equipment_id,
-            destination_front_id,destination_location,responsible,responsible_employee_id,notes,import_source,import_hash,origin_confirmed,vehicle_pending,imported_vehicle,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,$16,$17,$18,$18)
-           ON CONFLICT (import_hash) DO NOTHING`,
-          [record.serviceFrontId, record.fuelTypeId, record.movementType, record.movementDate, record.quantity, record.stockLocation, record.unitPrice, record.equipmentId,
-            record.destinationFrontId, record.destinationLocation, record.responsible, record.responsibleEmployeeId, record.notes, record.importSource, record.importHash,
-            record.vehiclePending, record.importedVehicle, now],
-        );
+      // Em blocos de 500 linhas por INSERT (uma linha por vez leva ~200 ms de ida e volta ao Supabase).
+      const COLUMNS = ["service_front_id", "fuel_type_id", "movement_type", "movement_date", "quantity", "stock_location", "third_party", "unit_price", "equipment_id",
+        "destination_front_id", "destination_location", "responsible", "responsible_employee_id", "notes", "import_source", "import_hash", "origin_confirmed", "vehicle_pending",
+        "imported_vehicle", "created_at", "updated_at"];
+      for (let offset = 0; offset < records.length; offset += 500) {
+        const chunk = records.slice(offset, offset + 500);
+        const values = [];
+        const tuples = chunk.map((record) => {
+          const row = [record.serviceFrontId, record.fuelTypeId, record.movementType, record.movementDate, record.quantity, record.stockLocation, false, record.unitPrice, record.equipmentId,
+            record.destinationFrontId, record.destinationLocation, record.responsible, record.responsibleEmployeeId, record.notes, record.importSource, record.importHash, false,
+            record.vehiclePending, record.importedVehicle, now, now];
+          const placeholders = row.map((value) => { values.push(value); return `$${values.length}`; });
+          return `(${placeholders.join(",")})`;
+        });
+        const result = await client.query(`INSERT INTO fuel_movements (${COLUMNS.join(",")}) VALUES ${tuples.join(",")} ON CONFLICT (import_hash) DO NOTHING`, values);
         inserted += result.rowCount;
+        console.log(`  gravadas ${Math.min(offset + 500, records.length)}/${records.length}...`);
       }
       await client.query(`INSERT INTO audit_logs (entity_type,entity_id,action,new_value,occurred_at) VALUES ('FUEL_IMPORT',$1,'HISTÓRICO DE ABASTECIMENTO IMPORTADO',$2,$3)`,
         [LOTE, JSON.stringify({ arquivo: path.basename(ARQUIVO), frente: front.name, inseridos: inserted, destinoTransferencia: destination.label }), now]);
