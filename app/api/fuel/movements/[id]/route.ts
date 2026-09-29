@@ -2,8 +2,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { auditLogs, fuelMovements, fuelTypes, serviceFronts } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
-import { fuelEquipmentContext, resolveResponsible, fuelLocalDay, fuelVisibleFronts, readFuelMovementBody } from "../../../../../lib/fuel";
+import { fuelEquipmentContext, resolveResponsible, fuelLocalDay, fuelVisibleFronts, readFuelMovementBody, readThirdPartyFuelFields } from "../../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../../lib/fuel-rules";
+import { prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../../lib/third-parties";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,18 @@ export async function PUT(request: Request, { params }: Context) {
     const equipment = input.equipmentId ? await fuelEquipmentContext(db, input.equipmentId) : null;
     // Lançamento da carga de histórico: correção sem os campos obrigatórios dos lançamentos novos.
     const historical = current.importSource !== null;
+    // Saída para terceiro do cadastro. Lançamento antigo (só texto livre, sem terceiro do cadastro)
+    // continua editável como era, enquanto ninguém escolhe um terceiro para ele.
+    const fields = readThirdPartyFuelFields(body);
+    let thirdPartyFields: Awaited<ReturnType<typeof prepareThirdPartyFuel>> | null = null;
+    if (input.thirdParty && (fields.thirdPartyId || current.thirdPartyId)) {
+      if (!fields.thirdPartyId) return Response.json({ error: "Escolha a empresa/pessoa no cadastro de terceiros." }, { status: 400 });
+      thirdPartyFields = await prepareThirdPartyFuel(db, user, {
+        ...fields, thirdPartyId: fields.thirdPartyId, mode: input.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "GERAL", quantity: input.quantity,
+        movementDate: input.movementDate, notes: input.notes, editingId: current.id, current,
+      });
+      input = { ...input, providerCompany: thirdPartyFields.providerCompany, providerEquipment: thirdPartyFields.providerEquipment, thirdPartyDescription: thirdPartyFields.thirdPartyDescription };
+    }
     const problem = validateFuelMovement({ ...input, serviceFrontId: requestedFront }, equipment, fuelLocalDay(), { historical });
     if (problem) return Response.json({ error: problem }, { status: 400 });
     const now = new Date().toISOString();
@@ -47,11 +60,18 @@ export async function PUT(request: Request, { params }: Context) {
     const originConfirmed = historical && typeof body.originConfirmed === "boolean" ? body.originConfirmed || input.stockLocation !== current.stockLocation : current.originConfirmed;
     // Veículo pendente sai quando o veículo é informado (ou o lançamento deixa de ser saída da frota).
     const vehiclePending = current.vehiclePending && input.movementType === "SAIDA" && !input.thirdParty && !input.equipmentId;
-    const next = { ...input, serviceFrontId: requestedFront, destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? requestedFront : null, meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null, originConfirmed, vehiclePending, updatedAt: now };
+    const next = {
+      ...input, serviceFrontId: requestedFront, destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? requestedFront : null, meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null, originConfirmed, vehiclePending,
+      thirdPartyId: null, thirdPartyVehicleId: null, fullTank: true, consumptionOutlier: false, readingException: false,
+      ...(thirdPartyFields ?? {}), updatedAt: now,
+    };
     await db.update(fuelMovements).set(next).where(eq(fuelMovements.id, current.id));
+    await refreshVehicleLastReading(db, current.thirdPartyVehicleId);
+    if (next.thirdPartyVehicleId !== current.thirdPartyVehicleId) await refreshVehicleLastReading(db, next.thirdPartyVehicleId);
     await db.insert(auditLogs).values({ userId: user.id, entityType: "FUEL_MOVEMENT", entityId: String(current.id), action: "LANÇAMENTO DE COMBUSTÍVEL EDITADO", previousValue: JSON.stringify(current), newValue: JSON.stringify(next) });
     return Response.json({ message: "Lançamento atualizado." });
   } catch (error) {
+    const known = thirdPartyErrorResponse(error); if (known) return known;
     console.error("[fuel.movements.put]", error);
     return Response.json({ error: "Não foi possível atualizar o lançamento agora." }, { status: 500 });
   }
@@ -66,6 +86,7 @@ export async function DELETE(request: Request, { params }: Context) {
   try {
     const now = new Date().toISOString();
     await db.update(fuelMovements).set({ deletedAt: now, deletedBy: user.id, updatedAt: now }).where(eq(fuelMovements.id, current.id));
+    await refreshVehicleLastReading(db, current.thirdPartyVehicleId);
     await db.insert(auditLogs).values({ userId: user.id, entityType: "FUEL_MOVEMENT", entityId: String(current.id), action: "LANÇAMENTO DE COMBUSTÍVEL EXCLUÍDO", previousValue: JSON.stringify(current) });
     return Response.json({ message: "Lançamento excluído." });
   } catch (error) {

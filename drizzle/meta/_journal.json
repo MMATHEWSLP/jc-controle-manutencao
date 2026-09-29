@@ -183,6 +183,13 @@
       "when": 1790711457767,
       "tag": "0025_fuel_balance_adjustment",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790713268973,
+      "tag": "0026_third_parties",
+      "breakpoints": true
     }
   ]
 }

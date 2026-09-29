@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { DepartmentsModal, useDepartments, type Department } from "./DepartmentsManager";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
+import { ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import {
   api, ApiError, brDay, CatalogPicker, EmployeePicker, EquipmentPicker, jsonBody, localToday, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat, ShortageNotice,
   type CatalogOption, type EmployeeOption, type EquipmentOption, type ProductOption, type Shortage, type StockOptions,
@@ -31,7 +32,7 @@ export default function StockExitsView({ authUser, flash }: { authUser: User; fl
   return (
     <>
       <div className="page-heading module-heading">
-        <div><p className="eyebrow">ESTOQUE · SAÍDAS</p><h1>Movimentação</h1><span>Saída de produtos do estoque para um veículo, um funcionário e/ou um departamento. Cada lançamento recebe um número (SAI-000123) e aparece no histórico do produto.</span></div>
+        <div><p className="eyebrow">ESTOQUE · SAÍDAS</p><h1>Movimentação</h1><span>Saída de produtos do estoque para um veículo, um funcionário e/ou um departamento — ou para um terceiro / prestador. Cada lançamento recebe um número (SAI-000123) e aparece no histórico do produto.</span></div>
         {departments.canManage && <div className="heading-actions"><button className="secondary" onClick={() => setManaging(true)}>Departamentos</button></div>}
       </div>
       <div className="main-tabs secondary-module-nav" role="tablist">
@@ -57,6 +58,12 @@ function MovementForm({ options, departments, createDepartment, flash }: {
   const [equipmentItem, setEquipmentItem] = useState<EquipmentOption | null>(null);
   const [employee, setEmployee] = useState<EmployeeOption | null>(null);
   const [department, setDepartment] = useState<CatalogOption | null>(null);
+  // Destino: equipamento próprio / funcionário / departamento, ou Terceiro / Prestador (cadastro de terceiros).
+  const [destination, setDestination] = useState<"PROPRIO" | "TERCEIRO">("PROPRIO");
+  const thirdPartyOptions = useThirdPartyOptions();
+  const [party, setParty] = useState<ThirdPartyOption | null>(null);
+  const [partyVehicle, setPartyVehicle] = useState<VehicleOption | null>(null);
+  const [receivedBy, setReceivedBy] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [shortages, setShortages] = useState<Shortage[]>([]);
@@ -65,17 +72,23 @@ function MovementForm({ options, departments, createDepartment, flash }: {
   const [last, setLast] = useState("");
   const selectedFront = frontId || (options.defaultFrontId ? String(options.defaultFrontId) : "");
   const patch = (key: string, value: Partial<Line>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...value } : line)));
-  const reset = () => { setEquipmentItem(null); setEmployee(null); setDepartment(null); setNotes(""); setLines([newLine()]); setShortages([]); };
+  const reset = () => { setEquipmentItem(null); setEmployee(null); setDepartment(null); setParty(null); setPartyVehicle(null); setReceivedBy(""); setNotes(""); setLines([newLine()]); setShortages([]); };
+  const toThirdParty = destination === "TERCEIRO";
 
   async function submit(event: FormEvent | null, allowNegative = false) {
     event?.preventDefault();
     setError("");
-    if (!equipmentItem && !employee && !department) { setError("Informe o destino: veículo, funcionário e/ou departamento."); return; }
+    if (toThirdParty && !party) { setError("Escolha a empresa/pessoa (Terceiro / Prestador)."); return; }
+    if (toThirdParty && !receivedBy.trim()) { setError("Informe quem recebeu os produtos (Recebido por)."); return; }
+    if (!toThirdParty && !equipmentItem && !employee && !department) { setError("Informe o destino: veículo, funcionário e/ou departamento."); return; }
     if (lines.some((line) => !line.product)) { setError("Escolha o produto de todos os itens (ou remova a linha vazia)."); return; }
     setBusy(true);
     try {
       const result = await api<{ message: string; number: string }>("/api/stock-exits", jsonBody("POST", {
-        serviceFrontId: Number(selectedFront), exitDate, equipmentId: equipmentItem?.id ?? null, employeeId: employee?.id ?? null, departmentId: department?.id ?? null, notes, allowNegative,
+        serviceFrontId: Number(selectedFront), exitDate, notes, allowNegative,
+        ...(toThirdParty
+          ? { destinationType: "THIRD_PARTY", thirdPartyId: party!.id, thirdPartyVehicleId: partyVehicle?.id ?? null, receivedBy }
+          : { equipmentId: equipmentItem?.id ?? null, employeeId: employee?.id ?? null, departmentId: department?.id ?? null }),
         items: lines.map((line) => ({ productId: line.product!.id, quantity: parseQty(line.quantity) })),
       }));
       flash(result.message); setLast(result.message); reset();
@@ -90,13 +103,24 @@ function MovementForm({ options, departments, createDepartment, flash }: {
       <form className="stock-movement-form" onSubmit={(event) => submit(event)}>
         <div className="fleet-form-grid stock-movement-grid">
           {options.fronts.length > 1 && <label>Frente do estoque *<select required value={selectedFront} onChange={(event) => { setFrontId(event.target.value); setLines((current) => current.map((line) => ({ ...line, product: null }))); }}><option value="" disabled>Selecione</option>{options.fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
-          <label>Veículo / equipamento<EquipmentPicker options={options.equipment} value={equipmentItem} onPick={setEquipmentItem} placeholder="Buscar pelo prefixo..." /></label>
-          <label>Funcionário<EmployeePicker value={employee} frontId={null} onPick={setEmployee} placeholder="Buscar funcionário..." /></label>
-          <label>Departamento<CatalogPicker options={departments.map(asOption).filter((row): row is CatalogOption => row !== null)} value={department} onPick={setDepartment}
-            onCreate={createDepartment} placeholder="Buscar departamento..." createLabel="Cadastrar novo departamento" /></label>
+          <fieldset className="fuel-exit-kind stock-destination-kind">
+            <legend>Destino</legend>
+            <button type="button" className={destination === "PROPRIO" ? "active" : ""} aria-pressed={destination === "PROPRIO"} onClick={() => setDestination("PROPRIO")}>Equipamento próprio / funcionário / departamento</button>
+            <button type="button" className={destination === "TERCEIRO" ? "active" : ""} aria-pressed={destination === "TERCEIRO"} onClick={() => setDestination("TERCEIRO")}>Terceiro / Prestador</button>
+          </fieldset>
+          {toThirdParty ? <>
+            <label>Empresa / pessoa *<ThirdPartyPicker options={thirdPartyOptions.options} value={party} onPick={(item) => { setParty(item); setPartyVehicle(null); }} /></label>
+            <label>Veículo do terceiro<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={partyVehicle} onPick={setPartyVehicle} disabled={!party} /></label>
+            <label>Recebido por *<input required value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} placeholder="Nome de quem recebeu os produtos" /></label>
+          </> : <>
+            <label>Veículo / equipamento<EquipmentPicker options={options.equipment} value={equipmentItem} onPick={setEquipmentItem} placeholder="Buscar pelo prefixo..." /></label>
+            <label>Funcionário<EmployeePicker value={employee} frontId={null} onPick={setEmployee} placeholder="Buscar funcionário..." /></label>
+            <label>Departamento<CatalogPicker options={departments.map(asOption).filter((row): row is CatalogOption => row !== null)} value={department} onPick={setDepartment}
+              onCreate={createDepartment} placeholder="Buscar departamento..." createLabel="Cadastrar novo departamento" /></label>
+          </>}
           <label>Data *<input type="date" required max={localToday()} value={exitDate} onChange={(event) => setExitDate(event.target.value)} /></label>
         </div>
-        <small className="material-item-hint">Informe pelo menos um destino: veículo, funcionário e/ou departamento.</small>
+        <small className="material-item-hint">{toThirdParty ? "Saída para terceiro: empresa e quem recebeu são obrigatórios; o veículo é opcional. Terceiros ativos do cadastro (Combustível → Terceiros ou menu Produtos → Terceiros)." : "Informe pelo menos um destino: veículo, funcionário e/ou departamento."}</small>
         <section className="fleet-form-section">
           <div className="fleet-section-title"><h3>Produtos <small>({lines.length})</small></h3></div>
           {lines.map((line, index) => (
@@ -128,11 +152,15 @@ function HistoryPanel({ options, departments, flash }: { options: StockOptions; 
   const [employeeFilter, setEmployeeFilter] = useState<EmployeeOption | null>(null);
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [productFilter, setProductFilter] = useState<ProductOption | null>(null);
+  const thirdPartyOptions = useThirdPartyOptions();
+  const [partyFilter, setPartyFilter] = useState<ThirdPartyOption | null>(null);
+  const [partyVehicleFilter, setPartyVehicleFilter] = useState<VehicleOption | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const query = new URLSearchParams(Object.entries({
     equipamento: equipmentFilter ? String(equipmentFilter.id) : "", funcionario: employeeFilter ? String(employeeFilter.id) : "", departamento: departmentFilter,
     produto: productFilter ? String(productFilter.id) : "", de: from, ate: to,
+    terceiro: partyFilter ? String(partyFilter.id) : "", veiculoTerceiro: partyVehicleFilter ? String(partyVehicleFilter.id) : "",
   }).filter(([, value]) => value)).toString();
   const load = useCallback(async () => {
     setError("");
@@ -146,7 +174,7 @@ function HistoryPanel({ options, departments, flash }: { options: StockOptions; 
     try { flash((await api<{ message: string }>(`/api/stock-exits/${exit.id}`, jsonBody("PUT", { reason }))).message); await load(); }
     catch (problem) { window.alert(problemText(problem, "Não foi possível estornar.")); }
   }
-  const clear = () => { setEquipmentFilter(null); setEmployeeFilter(null); setDepartmentFilter(""); setProductFilter(null); setFrom(""); setTo(""); };
+  const clear = () => { setEquipmentFilter(null); setEmployeeFilter(null); setDepartmentFilter(""); setProductFilter(null); setPartyFilter(null); setPartyVehicleFilter(null); setFrom(""); setTo(""); };
   const hasFilters = Boolean(query);
   const total = (data?.movements ?? []).reduce((sum, row) => sum + (row.total ?? 0), 0);
 
@@ -157,9 +185,12 @@ function HistoryPanel({ options, departments, flash }: { options: StockOptions; 
         <label className="stock-filter-wide">Funcionário<EmployeePicker value={employeeFilter} frontId={null} onPick={setEmployeeFilter} /></label>
         <label>Departamento<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">Todos</option>{departments.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
         <label className="stock-filter-wide stock-filter-product">Peça / produto<ProductPicker value={productFilter} frontId={null} onPick={setProductFilter} /></label>
+        <label className="stock-filter-wide">Terceiro / prestador<ThirdPartyPicker options={thirdPartyOptions.options} value={partyFilter} onPick={(item) => { setPartyFilter(item); setPartyVehicleFilter(null); }} /></label>
+        {partyFilter && <label className="stock-filter-wide">Veículo do terceiro<ThirdPartyVehiclePicker vehicles={partyFilter.vehicles} value={partyVehicleFilter} onPick={setPartyVehicleFilter} /></label>}
         <label>De<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>Até<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
         {hasFilters && <button type="button" className="secondary" onClick={clear}>Limpar filtros</button>}
+        <a className="secondary" href={`/api/stock-exits/export${query ? `?${query}` : ""}`}>Exportar Excel</a>
       </div>
       <div className="main-tabs secondary-module-nav" role="tablist">
         <button type="button" className={view === "itens" ? "active" : ""} onClick={() => setView("itens")}>Produtos movimentados</button>
