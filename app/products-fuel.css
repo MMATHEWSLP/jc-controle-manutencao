@@ -258,3 +258,13 @@ html[data-theme="dark"] .employee-alert-chip.level-5,html[data-theme="dark"] .em
 /* Nome do produto é a informação principal da linha (badges de frente neutros logo abaixo). */
 .products-table td.product-name-cell>strong{display:block;color:#1c3446;font-size:1.05em;font-weight:800;line-height:1.3}
 html[data-theme="dark"] .products-table td.product-name-cell>strong{color:#f4f3f1}
+/* Combustível: pendências da carga de histórico (veículo a identificar / origem a confirmar) */
+.fuel-pending-badge{display:inline-block;margin-left:4px;padding:2px 7px;border:1px solid #f0c98f;border-radius:999px;background:#fff6e6;color:#a45f00;font-size:10px;font-weight:650;white-space:nowrap}
+.fuel-pending-badge.origin{border-color:#c9d7f2;background:#eef3fd;color:#2b56a3}
+.fuel-import-note{display:grid;gap:6px;padding:10px 12px;border:1px solid #f0c98f;border-radius:10px;background:#fffaf0;font-size:12px}
+.fuel-import-note p{margin:0}
+.fuel-origin-check{display:flex;align-items:center;gap:8px;font-weight:650}
+.fuel-origin-check input{width:auto;min-height:0}
+html[data-theme="dark"] .fuel-pending-badge{background:#3a2c14;border-color:#6b5222;color:#f5c26b}
+html[data-theme="dark"] .fuel-pending-badge.origin{background:#1b2a44;border-color:#34507f;color:#9dbcf2}
+html[data-theme="dark"] .fuel-import-note{background:#2a2419;border-color:#5a4a2a}

@@ -38,10 +38,16 @@ export async function PUT(request: Request, { params }: Context) {
     if (input.destinationFrontId && !(await db.select({ id: serviceFronts.id }).from(serviceFronts).where(eq(serviceFronts.id, input.destinationFrontId)).limit(1))[0])
       return Response.json({ error: "Filial destino inválida." }, { status: 400 });
     const equipment = input.equipmentId ? await fuelEquipmentContext(db, input.equipmentId) : null;
-    const problem = validateFuelMovement({ ...input, serviceFrontId: requestedFront }, equipment, fuelLocalDay());
+    // Lançamento da carga de histórico: correção sem os campos obrigatórios dos lançamentos novos.
+    const historical = current.importSource !== null;
+    const problem = validateFuelMovement({ ...input, serviceFrontId: requestedFront }, equipment, fuelLocalDay(), { historical });
     if (problem) return Response.json({ error: problem }, { status: 400 });
     const now = new Date().toISOString();
-    const next = { ...input, serviceFrontId: requestedFront, destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? requestedFront : null, meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null, updatedAt: now };
+    // Origem conferida: marcada no formulário, ou implícita quando a pessoa muda Frente/Porto.
+    const originConfirmed = historical && typeof body.originConfirmed === "boolean" ? body.originConfirmed || input.stockLocation !== current.stockLocation : current.originConfirmed;
+    // Veículo pendente sai quando o veículo é informado (ou o lançamento deixa de ser saída da frota).
+    const vehiclePending = current.vehiclePending && input.movementType === "SAIDA" && !input.thirdParty && !input.equipmentId;
+    const next = { ...input, serviceFrontId: requestedFront, destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? requestedFront : null, meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null, originConfirmed, vehiclePending, updatedAt: now };
     await db.update(fuelMovements).set(next).where(eq(fuelMovements.id, current.id));
     await db.insert(auditLogs).values({ userId: user.id, entityType: "FUEL_MOVEMENT", entityId: String(current.id), action: "LANÇAMENTO DE COMBUSTÍVEL EDITADO", previousValue: JSON.stringify(current), newValue: JSON.stringify(next) });
     return Response.json({ message: "Lançamento atualizado." });

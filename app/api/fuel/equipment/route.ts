@@ -19,7 +19,10 @@ export async function GET(request: Request) {
     const frontId = Number(url.searchParams.get("serviceFrontId")) || null;
     const db = await getDb();
     const compact = q.replace(/[^a-zA-Z0-9]/g, "");
-    const conditions = [ne(equipment.status, "INACTIVE"), isNull(equipment.soldAt)];
+    // historico=1: correção de lançamento importado — vale qualquer equipamento, inclusive inativo ou
+    // vendido depois do abastecimento.
+    const historical = url.searchParams.get("historico") === "1";
+    const conditions = historical ? [] : [ne(equipment.status, "INACTIVE"), isNull(equipment.soldAt)];
     if (q) conditions.push(or(ilike(equipment.prefix, `%${q}%`), ilike(equipment.code, `%${q}%`), ilike(equipment.model, `%${q}%`), ilike(equipment.plate, `%${q}%`), compact ? ilike(equipment.sortKey, `%${compact.toUpperCase()}%`) : undefined)!);
     else if (frontId) conditions.push(eq(equipment.serviceFrontId, frontId));
     const rows = await db.select({

@@ -129,3 +129,22 @@ test("custo das saídas pelo custo médio ponderado do estoque de origem", () =>
   assert.equal(costs.get(5).cost, 325);
   assert.deepEqual(costs.get(6), { unitCost: null, cost: null }); // estoque sem valor informado
 });
+
+test("lançamento importado do histórico: correção sem os campos obrigatórios dos lançamentos novos", () => {
+  const historical = { historical: true };
+  // Saída sem veículo e sem responsável (veículo a identificar).
+  const pending = { ...base, equipmentId: null, meterReading: null, responsible: null };
+  assert.match(validateFuelMovement(pending, null, today), /responsável/);
+  assert.equal(validateFuelMovement(pending, null, today, historical), null);
+  // Entrada sem valor por litro.
+  const entry = { ...base, movementType: "ENTRADA", equipmentId: null, meterReading: null, responsible: null };
+  assert.match(validateFuelMovement({ ...entry, responsible: "João" }, null, today), /valor por litro/);
+  assert.equal(validateFuelMovement(entry, null, today, historical), null);
+  // Equipamento que hoje está em outra frente (transferido/vendido depois do abastecimento).
+  const other = { id: 9, prefix: "CM-30", serviceFrontId: 2, frontName: "Mamuru" };
+  assert.match(validateFuelMovement(base, other, today), /Mamuru/);
+  assert.equal(validateFuelMovement(base, other, today, historical), null);
+  // Regras de estrutura continuam valendo.
+  assert.match(validateFuelMovement({ ...pending, quantity: 0 }, null, today, historical), /quantidade/);
+  assert.match(validateFuelMovement({ ...pending, movementType: "TRANSFERENCIA", destinationLocation: "FRENTE" }, null, today, historical), /diferente da origem/);
+});
