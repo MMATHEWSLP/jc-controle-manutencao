@@ -35,6 +35,11 @@ export function equipmentScopeSql(user:SessionUser,mode:EquipmentScopeMode,alias
   return {clause:clauses.length?clauses.join(" AND "):"1=1",values};
 }
 
+// Equipamento da frota ativa = não marcado como vendido (equipment.sold_at). O escopo por frente acima
+// continua incluindo os vendidos para o histórico não se perder; as listas da frota ativa (cards da
+// troca, Status da Frota, seletores de lançamento) filtram com esta condição.
+export function activeFleetSql(alias="e"){return `${alias}.sold_at IS NULL`;}
+
 export async function activeServiceFronts(d1:D1DatabaseLike){
   const result=await d1.prepare(`SELECT id,name,location,active FROM service_fronts WHERE active=1 ORDER BY name`).all<Row>();
   return result.results.map((row)=>({id:Number(row.id),name:String(row.name),location:row.location==null?null:String(row.location),active:Number(row.active)===1}));

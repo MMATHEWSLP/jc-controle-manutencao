@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const mechanics = new Set(valueList(url.searchParams, "mechanic"));
     const d1 = await getD1();
     const [fleetResult, occurrenceResult, eventResult, orderResult, snapshotResult,allowed] = await Promise.all([
-      d1.prepare(`SELECT e.id,e.status FROM equipment e`).all<Row>(),
+      d1.prepare(`SELECT e.id,e.status FROM equipment e WHERE e.sold_at IS NULL`).all<Row>(),
       d1.prepare(`SELECT o.*,e.prefix,e.brand,e.model,e.type AS category,COALESCE(historical.name,'Frente não registrada') AS front
         FROM fleet_occurrences o INNER JOIN equipment e ON e.id=o.equipment_id LEFT JOIN service_fronts sf ON sf.id=e.service_front_id
         LEFT JOIN service_fronts historical ON historical.id=o.service_front_id

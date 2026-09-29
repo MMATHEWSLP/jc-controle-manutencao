@@ -98,7 +98,7 @@ export async function listWhatsappRecipients(d1:D1DatabaseLike):Promise<Whatsapp
   return result.results.map((row)=>({id:Number(row.id),name:String(row.name),phone:String(row.phone),active:Number(row.active)===1,categories:parseList(row.categories,["ALL"]),alertTypes:parseList(row.alert_types,allowedLevels).filter((item):item is WhatsappLevel=>allowedLevels.includes(item as WhatsappLevel)),createdAt:String(row.created_at),updatedAt:String(row.updated_at)}));
 }
 export async function loadWhatsappAlerts(d1:D1DatabaseLike,options:{equipmentId?:number;planIds?:number[]}={}):Promise<WhatsappAlertSnapshot[]>{
-  const where=[`a.status='OPEN'`,`a.level IN ('WARNING','NEAR','OVERDUE')`,`p.active=1`,`emt.applicable=1`,`e.oil_change_enabled=1`];const bindings:unknown[]=[];
+  const where=[`a.status='OPEN'`,`a.level IN ('WARNING','NEAR','OVERDUE')`,`p.active=1`,`emt.applicable=1`,`e.oil_change_enabled=1`,`e.sold_at IS NULL`];const bindings:unknown[]=[];
   if(options.equipmentId){where.push("a.equipment_id=?");bindings.push(options.equipmentId);}if(options.planIds?.length){where.push(`a.plan_id IN (${options.planIds.map(()=>"?").join(",")})`);bindings.push(...options.planIds);}
   const result=await d1.prepare(`SELECT a.id AS alert_id,a.plan_id,a.equipment_id,a.level,a.control_type,a.current_value,a.planned_value,a.remaining_value,e.prefix,e.brand,e.model,e.qr_token,COALESCE(sf.name,'Sem frente') AS front,t.name AS maintenance_name,p.last_hours,p.last_km
     FROM alerts a INNER JOIN equipment e ON e.id=a.equipment_id LEFT JOIN service_fronts sf ON sf.id=e.service_front_id INNER JOIN maintenance_plans p ON p.id=a.plan_id INNER JOIN maintenance_types t ON t.id=p.maintenance_type_id

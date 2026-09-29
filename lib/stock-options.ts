@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db";
 import { equipment, productFrontStock, productReferences, products, serviceFronts } from "../db/schema";
 import { frentesVisiveis } from "./access";
@@ -42,7 +42,7 @@ export async function equipmentOptions(db: Db, user: SessionUser) {
     serviceFrontId: equipment.serviceFrontId, front: serviceFronts.name, controlType: equipment.controlType,
     chassis: equipment.chassis, year: equipment.year, currentHours: equipment.currentHours, currentKm: equipment.currentKm,
   }).from(equipment).leftJoin(serviceFronts, eq(equipment.serviceFrontId, serviceFronts.id))
-    .where(visible === "ALL" ? undefined : inArray(equipment.serviceFrontId, visible))
+    .where(and(isNull(equipment.soldAt), visible === "ALL" ? undefined : inArray(equipment.serviceFrontId, visible)))
     .orderBy(asc(equipment.sortKey));
   return rows.map((row) => ({
     ...row, description: [row.brand, row.model].filter(Boolean).join(" ") || row.type,

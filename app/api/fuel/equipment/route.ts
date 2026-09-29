@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, ne, or } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, ne, or } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { equipment, serviceFronts } from "../../../../db/schema";
 import { authorize } from "../../../../lib/auth";
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const frontId = Number(url.searchParams.get("serviceFrontId")) || null;
     const db = await getDb();
     const compact = q.replace(/[^a-zA-Z0-9]/g, "");
-    const conditions = [ne(equipment.status, "INACTIVE")];
+    const conditions = [ne(equipment.status, "INACTIVE"), isNull(equipment.soldAt)];
     if (q) conditions.push(or(ilike(equipment.prefix, `%${q}%`), ilike(equipment.code, `%${q}%`), ilike(equipment.model, `%${q}%`), ilike(equipment.plate, `%${q}%`), compact ? ilike(equipment.sortKey, `%${compact.toUpperCase()}%`) : undefined)!);
     else if (frontId) conditions.push(eq(equipment.serviceFrontId, frontId));
     const rows = await db.select({

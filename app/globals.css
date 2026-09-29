@@ -525,3 +525,12 @@ html[data-theme="dark"] .report-shortcut-row button{background:#252421;border-co
 .nav-group-toggle>i{min-width:19px;height:19px;display:grid;place-items:center;margin-left:2px;border-radius:50%;background:#e34d52;color:#fff;font-size:10px;font-style:normal}
 .primary-module-nav .nav-group-toggle.expanded{border-color:#1f8065;background:linear-gradient(135deg,#173f5e,#177056);color:#fff}
 .oil-sections-nav{border-top:1px dashed var(--line)}
+/* Equipamentos: data da última leitura, IPVA, veículos vendidos */
+.reading-updated-at{display:block;margin-top:3px;color:#8a96a0;font-size:10px;font-weight:500;white-space:normal}
+.equipment-meta .reading-updated-at{font-size:10px}
+.ipva-line.red{color:#b92331;font-weight:650}.ipva-line.orange{color:#c34f0a;font-weight:650}.ipva-line.green{color:#007c59}
+.equipment-row-actions .sold-action{border-color:#f1c4c8;background:#fff5f6;color:#b92331}
+.equipment-fleet-tabs{margin-bottom:12px;border-radius:10px}
+html[data-theme="dark"] .reading-updated-at{color:#a6a49f}
+html[data-theme="dark"] .ipva-line.red{color:#ff9093}html[data-theme="dark"] .ipva-line.orange{color:#f5a26a}html[data-theme="dark"] .ipva-line.green{color:#6bd4aa}
+html[data-theme="dark"] .equipment-row-actions .sold-action{background:#321f24;border-color:#63363b;color:#ff9093}
