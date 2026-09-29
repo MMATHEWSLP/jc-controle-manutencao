@@ -21,6 +21,8 @@ on:
           - ajustar-saldo
           - vincular-terceiros-simulacao
           - vincular-terceiros
+          - conferir-terceiros-simulacao
+          - conferir-terceiros
       vinculos:
         description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
         required: false
@@ -87,6 +89,12 @@ jobs:
           VINCULOS: ${{ github.event.inputs.vinculos }}
           EMPRESA: ${{ github.event.inputs.empresa }}
         run: |
+          if [ "$MODO" = "conferir-terceiros-simulacao" ] || [ "$MODO" = "conferir-terceiros" ]; then
+            ARGS=("--arquivo=$ARQUIVO" "--vinculos=$VINCULOS")
+            if [ "$MODO" = "conferir-terceiros" ]; then ARGS+=("--confirmar"); fi
+            node conferir-saidas-terceiros.mjs "${ARGS[@]}"
+            exit $?
+          fi
           if [ "$MODO" = "vincular-terceiros-simulacao" ] || [ "$MODO" = "vincular-terceiros" ]; then
             ARGS=("--vinculos=$VINCULOS")
             if [ -n "$EMPRESA" ]; then ARGS+=("--empresa=$EMPRESA"); fi
