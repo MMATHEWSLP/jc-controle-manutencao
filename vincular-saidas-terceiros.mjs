@@ -55,17 +55,18 @@ try {
     const found = vehicles.filter((vehicle) => vehicle.plate_key === link.key);
     console.log(`  ${link.plate.padEnd(9)} ${link.name.padEnd(12)} ${found.length === 0 ? "NÃO CADASTRADO" : found.map((vehicle) => `${vehicle.party_name} (${vehicle.kind}${vehicle.active && vehicle.party_active ? "" : ", INATIVO"})`).join(" | ")}`);
   }
-  const matched = new Map(links.map((link) => [link.key, []]));
+  // Agrupado por nome: dois motoristas podem usar o mesmo caminhão.
+  const matched = new Map(links.map((link) => [link.name, []]));
   const unmatched = new Map();
   for (const row of rows) {
     const link = matchName(row.responsible);
-    if (link) matched.get(link.key).push(row);
+    if (link) matched.get(link.name).push(row);
     else { const key = row.responsible ? normalize(row.responsible) : "(sem responsável)"; unmatched.set(key, [...(unmatched.get(key) ?? []), row]); }
   }
   linha();
   console.log(`Saídas "teste" pendentes encontradas: ${rows.length}`);
   for (const link of links) {
-    const list = matched.get(link.key);
+    const list = matched.get(link.name);
     const fronts = [...new Set(list.map((row) => row.front))].join(", ");
     console.log(`  ${link.name.padEnd(12)} → ${link.plate.padEnd(9)} ${String(list.length).padStart(4)} saídas  ${litros(list.reduce((sum, row) => sum + Number(row.quantity), 0)).padStart(14)}${list.length ? `  (${list[0].movement_date} a ${list[list.length - 1].movement_date}; ${fronts})` : ""}`);
   }
@@ -75,7 +76,7 @@ try {
   }
 
   // Caminhão sem cadastro: cria no prestador informado em --empresa.
-  const missing = links.filter((link) => !vehicles.some((vehicle) => vehicle.plate_key === link.key));
+  const missing = links.filter((link, index) => !vehicles.some((vehicle) => vehicle.plate_key === link.key) && links.findIndex((other) => other.key === link.key) === index);
   const ambiguous = links.filter((link) => vehicles.filter((vehicle) => vehicle.plate_key === link.key).length > 1);
   if (ambiguous.length) throw new Error(`Placa cadastrada em mais de um terceiro: ${ambiguous.map((link) => link.plate).join(", ")}. Resolva no cadastro antes.`);
   if (missing.length) console.log(EMPRESA ? `Serão cadastrados no prestador ${EMPRESA}: ${missing.map((link) => link.plate).join(", ")}` : `Sem cadastro e sem --empresa: ${missing.map((link) => link.plate).join(", ")} (informe a empresa para criar).`);
@@ -98,7 +99,7 @@ try {
     let updated = 0;
     for (const link of links) {
       const vehicle = vehicles.find((item) => item.plate_key === link.key);
-      const ids = matched.get(link.key).map((row) => row.id);
+      const ids = matched.get(link.name).map((row) => row.id);
       if (!ids.length) continue;
       const result = await client.query(`UPDATE fuel_movements SET third_party=true, third_party_kind='PRESTADOR', third_party_id=$1, third_party_vehicle_id=$2,
           provider_company=$3, provider_equipment=$4, third_party_description=NULL, equipment_id=NULL, vehicle_pending=false,
@@ -108,7 +109,7 @@ try {
       updated += result.rowCount;
     }
     await client.query(`INSERT INTO audit_logs (entity_type,entity_id,action,new_value,occurred_at) VALUES ('FUEL_MOVEMENT','vinculo-teste','SAÍDAS "TESTE" VINCULADAS A CAMINHÕES DE PRESTADOR',$1,$2)`,
-      [JSON.stringify({ links: links.map(({ plate, name }) => ({ plate, name, saidas: matched.get(plateKey(plate)).map((row) => row.id) })) }), now]);
+      [JSON.stringify({ links: links.map(({ plate, name }) => ({ plate, name, saidas: matched.get(normalize(name)).map((row) => row.id) })) }), now]);
     await client.query("COMMIT");
     console.log(`Saídas vinculadas: ${updated}`);
     linha();
