@@ -33,6 +33,8 @@ export type LedgerMovement = {
   movementType: FuelMovementType;
   movementDate: string;
   quantity: number;
+  // Ajuste de saldo: muda o saldo, mas não conta como entrada/saída.
+  balanceAdjustment?: boolean;
 };
 
 export type FuelTotals = { balance: number; entries: number; exits: number };
@@ -48,10 +50,10 @@ type Leg = { frontId: number; location: FuelLocation; delta: number };
 // Aplica os "pés" de um lançamento a um agrupamento (consolidado, uma frente, um estoque...).
 // Se os dois pés de uma transferência caem no MESMO agrupamento, ela é interna a ele: o saldo não
 // muda (os pés se anulam) e ela não conta como entrada/saída desse agrupamento.
-function apply(totals: FuelTotals, legs: Leg[], allLegs: number, inPeriod: boolean) {
+function apply(totals: FuelTotals, legs: Leg[], allLegs: number, inPeriod: boolean, balanceOnly = false) {
   if (legs.length === 0) return;
   for (const leg of legs) totals.balance += leg.delta;
-  if (!inPeriod || (allLegs === 2 && legs.length === 2)) return;
+  if (balanceOnly || !inPeriod || (allLegs === 2 && legs.length === 2)) return;
   for (const leg of legs) {
     if (leg.delta > 0) totals.entries += leg.delta; else totals.exits -= leg.delta;
   }
@@ -69,6 +71,7 @@ export function computeFuelBalances(movements: LedgerMovement[], scope: { fronts
   const result = new Map<number, FuelBalance>();
   for (const movement of movements) {
     const inPeriod = movement.movementDate >= scope.from && movement.movementDate <= scope.to;
+    const adjustment = movement.balanceAdjustment === true;
     const quantity = movement.quantity;
     const origin: FuelLocation = movement.stockLocation ?? "FRENTE";
     const legs: Leg[] =
@@ -82,14 +85,14 @@ export function computeFuelBalances(movements: LedgerMovement[], scope: { fronts
     if (scoped.length === 0) continue;
     let balance = result.get(movement.fuelTypeId);
     if (!balance) { balance = { ...emptyLocationTotals(), byFront: new Map() }; result.set(movement.fuelTypeId, balance); }
-    apply(balance, scoped, legs.length, inPeriod);
-    for (const location of FUEL_LOCATIONS) apply(balance.byLocation[location], scoped.filter((leg) => leg.location === location), legs.length, inPeriod);
+    apply(balance, scoped, legs.length, inPeriod, adjustment);
+    for (const location of FUEL_LOCATIONS) apply(balance.byLocation[location], scoped.filter((leg) => leg.location === location), legs.length, inPeriod, adjustment);
     for (const frontId of new Set(scoped.map((leg) => leg.frontId))) {
       let front = balance.byFront.get(frontId);
       if (!front) { front = emptyLocationTotals(); balance.byFront.set(frontId, front); }
       const frontLegs = scoped.filter((leg) => leg.frontId === frontId);
-      apply(front, frontLegs, legs.length, inPeriod);
-      for (const location of FUEL_LOCATIONS) apply(front.byLocation[location], frontLegs.filter((leg) => leg.location === location), legs.length, inPeriod);
+      apply(front, frontLegs, legs.length, inPeriod, adjustment);
+      for (const location of FUEL_LOCATIONS) apply(front.byLocation[location], frontLegs.filter((leg) => leg.location === location), legs.length, inPeriod, adjustment);
     }
   }
   for (const balance of result.values()) {

@@ -176,6 +176,13 @@
       "when": 1790704703241,
       "tag": "0024_remove_arla",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790711457767,
+      "tag": "0025_fuel_balance_adjustment",
+      "breakpoints": true
     }
   ]
 }

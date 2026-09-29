@@ -148,3 +148,17 @@ test("lançamento importado do histórico: correção sem os campos obrigatório
   assert.match(validateFuelMovement({ ...pending, quantity: 0 }, null, today, historical), /quantidade/);
   assert.match(validateFuelMovement({ ...pending, movementType: "TRANSFERENCIA", destinationLocation: "FRENTE" }, null, today, historical), /diferente da origem/);
 });
+
+test("ajuste de saldo muda o saldo, mas não conta como entrada/saída", () => {
+  const ledger = [
+    { serviceFrontId: 1, destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-02", quantity: 500 },
+    { serviceFrontId: 1, destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-29", quantity: 200, balanceAdjustment: true },
+    { serviceFrontId: 1, stockLocation: "PORTO", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-09-29", quantity: 50, balanceAdjustment: true },
+  ];
+  const diesel = computeFuelBalances(ledger, { fronts: [1], ...september }).get(DIESEL);
+  assert.equal(diesel.balance, 500 + 200 - 50);
+  assert.equal(diesel.entries, 500);
+  assert.equal(diesel.exits, 0);
+  assert.equal(diesel.byLocation.PORTO.balance, -50);
+  assert.equal(diesel.byLocation.PORTO.exits, 0);
+});
