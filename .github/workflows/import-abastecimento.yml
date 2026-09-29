@@ -23,13 +23,16 @@ on:
           - vincular-terceiros
           - conferir-terceiros-simulacao
           - conferir-terceiros
+          - relatorio-terceiro
+          - excluir-lancamentos-simulacao
+          - excluir-lancamentos
       vinculos:
         description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
         required: false
         default: ""
         type: string
       empresa:
-        description: "Só em vincular-terceiros: prestador onde cadastrar os caminhões que ainda não estão no cadastro"
+        description: "vincular-terceiros: prestador onde cadastrar os caminhões novos; relatorio-terceiro: nome do terceiro"
         required: false
         default: ""
         type: string
@@ -57,6 +60,11 @@ on:
         description: "Combustível para as linhas sem 'Tipo Combustível' (vazio = essas linhas dão erro)"
         required: false
         default: "Diesel S10"
+        type: string
+      ids:
+        description: "Só em excluir-lancamentos: ID:AAAA-MM-DD:LITROS separados por ; (ex.: 6945:2026-09-09:350)"
+        required: false
+        default: ""
         type: string
       ignorar_erros:
         description: "Gravar as linhas válidas mesmo se houver linhas com erro"
@@ -88,7 +96,18 @@ jobs:
           ALVO: ${{ github.event.inputs.saldos_alvo }}
           VINCULOS: ${{ github.event.inputs.vinculos }}
           EMPRESA: ${{ github.event.inputs.empresa }}
+          IDS: ${{ github.event.inputs.ids }}
         run: |
+          if [ "$MODO" = "relatorio-terceiro" ]; then
+            node relatorio-terceiro.mjs "--empresa=$EMPRESA"
+            exit $?
+          fi
+          if [ "$MODO" = "excluir-lancamentos-simulacao" ] || [ "$MODO" = "excluir-lancamentos" ]; then
+            ARGS=("--ids=$IDS")
+            if [ "$MODO" = "excluir-lancamentos" ]; then ARGS+=("--confirmar"); fi
+            node excluir-lancamentos-combustivel.mjs "${ARGS[@]}"
+            exit $?
+          fi
           if [ "$MODO" = "conferir-terceiros-simulacao" ] || [ "$MODO" = "conferir-terceiros" ]; then
             ARGS=("--arquivo=$ARQUIVO" "--vinculos=$VINCULOS")
             if [ "$MODO" = "conferir-terceiros" ]; then ARGS+=("--confirmar"); fi
