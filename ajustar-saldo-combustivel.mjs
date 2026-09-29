@@ -9,8 +9,9 @@ import { normalizeText, parseBalanceTargets, planBalanceAdjustments } from "./sc
 // ---------------------------------------------------------------------------
 // Ajusta o saldo de combustível de uma frente (Frente e Porto) para valores informados, por
 // exemplo para igualar ao saldo do sistema anterior depois da carga do histórico. O saldo nunca é
-// gravado: o ajuste é um lançamento (Entrada se falta, Saída se sobra) por combustível/estoque,
-// marcado com import_source = lote (filtrável em "Importados do histórico" e reversível).
+// gravado: o ajuste é um lançamento (Entrada se falta, Saída se sobra) por combustível/estoque com
+// balance_adjustment = true — conta no saldo, mas não aparece no Histórico, na exportação nem nos
+// totais de entradas/saídas. Marcado com import_source = lote (reversível).
 // Simula por padrão; só grava com --confirmar. Rodar de novo com o mesmo alvo não lança nada.
 //
 // Uso:
@@ -88,8 +89,8 @@ try {
     let inserted = 0;
     for (const record of records) {
       const result = await client.query(
-        `INSERT INTO fuel_movements (service_front_id,fuel_type_id,movement_type,movement_date,quantity,stock_location,third_party,notes,import_source,import_hash,origin_confirmed,vehicle_pending,created_at,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,true,false,$10,$10) ON CONFLICT (import_hash) DO NOTHING`,
+        `INSERT INTO fuel_movements (service_front_id,fuel_type_id,movement_type,movement_date,quantity,stock_location,third_party,notes,import_source,import_hash,origin_confirmed,vehicle_pending,balance_adjustment,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,true,false,true,$10,$10) ON CONFLICT (import_hash) DO NOTHING`,
         [record.serviceFrontId, record.fuelTypeId, record.movementType, record.movementDate, record.quantity, record.stockLocation, record.notes, record.importSource, record.importHash, now]);
       inserted += result.rowCount;
     }

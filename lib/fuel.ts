@@ -63,6 +63,7 @@ export async function fuelBalances(db: Db, scopeFronts: number[], from: string, 
   const rows = await db.select({
     serviceFrontId: fuelMovements.serviceFrontId, stockLocation: fuelMovements.stockLocation, destinationFrontId: fuelMovements.destinationFrontId,
     destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType, movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity,
+    balanceAdjustment: fuelMovements.balanceAdjustment,
   }).from(fuelMovements).where(and(isNull(fuelMovements.deletedAt), or(inArray(fuelMovements.serviceFrontId, scopeFronts), inArray(fuelMovements.destinationFrontId, scopeFronts))));
   return computeFuelBalances(rows, { fronts: scopeFronts, from, to });
 }
@@ -74,6 +75,8 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
   if (scopeFronts.length === 0) return sql`FALSE`;
   const conditions: (SQL | undefined)[] = [
     isNull(fuelMovements.deletedAt),
+    // Ajustes de saldo não são movimentação: não aparecem no Histórico nem na exportação.
+    eq(fuelMovements.balanceAdjustment, false),
     or(inArray(fuelMovements.serviceFrontId, scopeFronts), inArray(fuelMovements.destinationFrontId, scopeFronts)),
     gte(fuelMovements.movementDate, filters.from),
     lte(fuelMovements.movementDate, filters.to),

@@ -1019,6 +1019,9 @@ export const fuelMovements = pgTable("fuel_movements", {
   // guarda o texto original da planilha.
   vehiclePending: boolean("vehicle_pending").notNull().default(false),
   importedVehicle: text("imported_vehicle"),
+  // Ajuste de saldo (ajustar-saldo-combustivel.mjs): conta no saldo, mas não é movimentação — fica
+  // fora do Histórico, da exportação e dos totais de entradas/saídas.
+  balanceAdjustment: boolean("balance_adjustment").notNull().default(false),
   ...timestamps,
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
