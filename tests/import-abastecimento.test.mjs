@@ -19,9 +19,12 @@ test("cabeçalho da aba Dados_Limpos com e sem acento", () => {
   assert.deepEqual(mapHeaders(["Data", "Quantidade (L)"]).missing, ["TIPO COMBUSTIVEL", "TIPO MOVIMENTACAO"]);
 });
 
-test("datas: Date do Excel (hora de parede em UTC), texto dd/mm/aaaa hh:mm e número de série", () => {
-  assert.deepEqual(parseDateTime(utc("2025-05-27T08:30:00")), { day: "2025-05-27", stamp: "2025-05-27 08:30:00" });
-  assert.deepEqual(parseDateTime("27/09/2026 14:05"), { day: "2026-09-27", stamp: "2026-09-27 14:05:00" });
+test("datas: instante (fuso de Brasília), texto dd/mm/aaaa hh:mm e número de série", () => {
+  // Como vêm na planilha limpa: meia-noite de Brasília = 03:00Z; algumas linhas 04:00Z.
+  assert.deepEqual(parseDateTime(utc("2025-05-27T03:00:00")), { day: "2025-05-27", stamp: "2025-05-27 00:00:00", hasTime: false });
+  assert.deepEqual(parseDateTime(utc("2025-05-27T04:00:00")), { day: "2025-05-27", stamp: "2025-05-27 01:00:00", hasTime: false });
+  assert.deepEqual(parseDateTime(utc("2026-09-27T21:39:34")), { day: "2026-09-27", stamp: "2026-09-27 18:39:34", hasTime: true });
+  assert.deepEqual(parseDateTime("27/09/2026 14:05"), { day: "2026-09-27", stamp: "2026-09-27 14:05:00", hasTime: true });
   assert.equal(parseDateTime(45804).day, "2025-05-27");
   assert.equal(parseDateTime("31/02/2026"), null);
   assert.equal(parseDateTime(""), null);
@@ -53,7 +56,7 @@ test("veículo por prefixo (com variações) ou placa", () => {
 });
 
 test("linha vira lançamento da frente fixa, origem Frente não confirmada, lote e hash", () => {
-  const result = plan([row(2, { date: utc("2025-05-27T08:30:00"), fuel: "Diesel S10", movement: "Entrada", quantity: 5000, totalPrice: 31250, responsible: "João da Silva" })]);
+  const result = plan([row(2, { date: utc("2025-05-27T11:30:00"), fuel: "Diesel S10", movement: "Entrada", quantity: 5000, totalPrice: 31250, responsible: "João da Silva" })]);
   const [item] = result.items;
   assert.equal(item.status, "IMPORTAR");
   assert.equal(item.record.serviceFrontId, 3);

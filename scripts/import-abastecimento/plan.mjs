@@ -52,19 +52,26 @@ const validDay = (y, m, d) => {
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 };
 
-// Data/hora da planilha -> { day: "AAAA-MM-DD", stamp: "AAAA-MM-DD HH:MM:SS" } ou null.
-// Datas do Excel chegam como Date em UTC representando a hora "de parede" (sem fuso).
+// Fuso das frentes (mesmo de lib/fuel.ts:fuelLocalDay).
+const LOCAL_TIME = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+
+// Data/hora da planilha -> { day: "AAAA-MM-DD", stamp: "AAAA-MM-DD HH:MM:SS", hasTime } ou null.
+// Datas da planilha limpa chegam como instante (meia-noite de Brasília = 03:00Z): o dia e a hora
+// são os do fuso das frentes. hasTime = false para as datas "só dia" (00:00, ou 01:00 das linhas
+// gravadas num fuso uma hora atrás).
 export function parseDateTime(value) {
   if (value === null || value === undefined || value === "") return null;
   let y, m, d, hh = 0, mm = 0, ss = 0;
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return null;
-    y = value.getUTCFullYear(); m = value.getUTCMonth() + 1; d = value.getUTCDate();
-    hh = value.getUTCHours(); mm = value.getUTCMinutes(); ss = value.getUTCSeconds();
+    const parts = Object.fromEntries(LOCAL_TIME.formatToParts(value).map((part) => [part.type, part.value]));
+    y = Number(parts.year); m = Number(parts.month); d = Number(parts.day);
+    hh = Number(parts.hour); mm = Number(parts.minute); ss = Number(parts.second);
   } else if (typeof value === "number") {
-    // Número de série do Excel (dias desde 1899-12-30).
-    const ms = Math.round((value - 25569) * 86400000);
-    return parseDateTime(new Date(ms));
+    // Número de série do Excel (dias desde 1899-12-30), sem fuso: vale a hora "de parede".
+    const date = new Date(Math.round((value - 25569) * 86400000));
+    y = date.getUTCFullYear(); m = date.getUTCMonth() + 1; d = date.getUTCDate();
+    hh = date.getUTCHours(); mm = date.getUTCMinutes(); ss = date.getUTCSeconds();
   } else {
     const text = String(value).trim();
     let match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
@@ -77,7 +84,7 @@ export function parseDateTime(value) {
   }
   if (!validDay(y, m, d) || hh > 23 || mm > 59 || ss > 59) return null;
   const day = `${y}-${pad(m)}-${pad(d)}`;
-  return { day, stamp: `${day} ${pad(hh)}:${pad(mm)}:${pad(ss)}` };
+  return { day, stamp: `${day} ${pad(hh)}:${pad(mm)}:${pad(ss)}`, hasTime: !(hh <= 1 && mm === 0 && ss === 0) };
 }
 
 // "1.234,56" / "1234.56" / 1234.56 -> número; vazio -> null; inválido -> NaN.
@@ -192,7 +199,7 @@ export function buildImportPlan({ rows, fuelTypes, equipment, employees, existin
     const unitPrice = movementType === "ENTRADA" && totalPrice !== null && totalPrice > 0 ? Math.round((totalPrice / quantity) * 10000) / 10000 : null;
     const notes = [
       `Importado do histórico (${fileName}, linha ${rowNumber}).`,
-      when.stamp.endsWith("00:00:00") ? null : `Data/hora original: ${when.stamp}.`,
+      when.hasTime ? `Data/hora original: ${when.stamp}.` : null,
       totalPrice !== null ? `Preço total na planilha: R$ ${totalPrice.toFixed(2)}.` : null,
       vehiclePending ? `Veículo na planilha: ${vehicleText}.` : null,
     ].filter(Boolean).join(" ");
