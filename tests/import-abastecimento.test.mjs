@@ -19,9 +19,12 @@ test("cabeçalho da aba Dados_Limpos com e sem acento", () => {
   assert.deepEqual(mapHeaders(["Data", "Quantidade (L)"]).missing, ["TIPO COMBUSTIVEL", "TIPO MOVIMENTACAO"]);
 });
 
-test("datas: Date do Excel (hora de parede em UTC), texto dd/mm/aaaa hh:mm e número de série", () => {
-  assert.deepEqual(parseDateTime(utc("2025-05-27T08:30:00")), { day: "2025-05-27", stamp: "2025-05-27 08:30:00" });
-  assert.deepEqual(parseDateTime("27/09/2026 14:05"), { day: "2026-09-27", stamp: "2026-09-27 14:05:00" });
+test("datas: instante (fuso de Brasília), texto dd/mm/aaaa hh:mm e número de série", () => {
+  // Como vêm na planilha limpa: meia-noite de Brasília = 03:00Z; algumas linhas 04:00Z.
+  assert.deepEqual(parseDateTime(utc("2025-05-27T03:00:00")), { day: "2025-05-27", stamp: "2025-05-27 00:00:00", hasTime: false });
+  assert.deepEqual(parseDateTime(utc("2025-05-27T04:00:00")), { day: "2025-05-27", stamp: "2025-05-27 01:00:00", hasTime: false });
+  assert.deepEqual(parseDateTime(utc("2026-09-27T21:39:34")), { day: "2026-09-27", stamp: "2026-09-27 18:39:34", hasTime: true });
+  assert.deepEqual(parseDateTime("27/09/2026 14:05"), { day: "2026-09-27", stamp: "2026-09-27 14:05:00", hasTime: true });
   assert.equal(parseDateTime(45804).day, "2025-05-27");
   assert.equal(parseDateTime("31/02/2026"), null);
   assert.equal(parseDateTime(""), null);
@@ -53,7 +56,7 @@ test("veículo por prefixo (com variações) ou placa", () => {
 });
 
 test("linha vira lançamento da frente fixa, origem Frente não confirmada, lote e hash", () => {
-  const result = plan([row(2, { date: utc("2025-05-27T08:30:00"), fuel: "Diesel S10", movement: "Entrada", quantity: 5000, totalPrice: 31250, responsible: "João da Silva" })]);
+  const result = plan([row(2, { date: utc("2025-05-27T11:30:00"), fuel: "Diesel S10", movement: "Entrada", quantity: 5000, totalPrice: 31250, responsible: "João da Silva" })]);
   const [item] = result.items;
   assert.equal(item.status, "IMPORTAR");
   assert.equal(item.record.serviceFrontId, 3);
@@ -97,6 +100,24 @@ test("idempotência: linha repetida na planilha e linha já importada são pulad
   const hash = rowHash({ stamp: "2025-06-03 07:00:00", fuel: "Diesel S10", movement: "SAIDA", quantity: 50, vehicle: "CM-30", responsible: "João" });
   assert.equal(first.items[0].record.importHash, hash);
   assert.notEqual(hash, rowHash({ stamp: "2025-06-03 07:00:00", fuel: "Diesel S10", movement: "SAIDA", quantity: 50, vehicle: "CM-30", responsible: "Maria" }));
+});
+
+test("linhas de ARLA 32 são ignoradas (combustível não usado), sem virar erro", () => {
+  const result = plan([
+    row(2, { date: "01/06/2025", fuel: "ARLA 32", movement: "Entrada", quantity: 100 }),
+    row(3, { date: "01/06/2025", fuel: "Arla32", movement: "Saída", quantity: 10, vehicle: "CM-30" }),
+    row(4, { date: "01/06/2025", fuel: "Diesel S10", movement: "Saída", quantity: 10, vehicle: "CM-30" }),
+  ]);
+  assert.deepEqual(result.items.map((item) => item.status), ["IGNORADO", "IGNORADO", "IMPORTAR"]);
+  assert.equal(result.totals.ERRO, undefined);
+});
+
+test("linha sem combustível: erro por padrão; com missingFuel entra com o combustível indicado e observação", () => {
+  const cells = { date: "17/07/2025", fuel: null, movement: "Saída", quantity: 225, vehicle: "CM-30" };
+  assert.equal(plan([row(2, cells)]).items[0].status, "ERRO");
+  const [item] = buildImportPlan({ rows: [row(2, cells)], fuelTypes, equipment, employees, existingHashes: new Set(), frontId: 3, importSource: "lote", fileName: "p.xlsx", destination: { frontId: 3, location: "PORTO" }, missingFuel: "Diesel S10" }).items;
+  assert.deepEqual([item.status, item.record.fuelTypeId], ["IMPORTAR", 1]);
+  assert.match(item.record.notes, /Combustível ausente na planilha — importado como Diesel S10/);
 });
 
 test("linhas inválidas vão para ERRO com o motivo", () => {

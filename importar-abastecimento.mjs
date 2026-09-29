@@ -17,7 +17,8 @@ import { buildImportPlan, mapHeaders, normalizeText, SHEET_NAME, summarize } fro
 //   - frente fixa (--frente, padrão Arapiuns) e estoque de origem = Frente;
 //   - origin_confirmed = false (corrigir para Porto depois, no Histórico, filtro "Origem a confirmar");
 //   - vehicle_pending = true para "A IDENTIFICAR" e veículos que não existem no cadastro;
-//   - import_source = lote (--lote) e import_hash = hash da linha (rodar de novo não duplica).
+//   - import_source = lote (--lote) e import_hash = hash da linha (rodar de novo não duplica);
+//   - linhas de ARLA 32 (não usado no sistema) são ignoradas e contadas no relatório.
 // O saldo do módulo nunca é gravado: é sempre recalculado a partir dos lançamentos, então os saldos
 // do relatório final já são os que a tela vai mostrar.
 //
@@ -30,6 +31,7 @@ import { buildImportPlan, mapHeaders, normalizeText, SHEET_NAME, summarize } fro
 //   --arquivo=caminho.xlsx  --frente=Arapiuns  --lote=historico_planilha_2026-09-29
 //   --destino-transferencia=PORTO   (Frente → Porto da mesma frente; ou o nome de outra frente)
 //   --ignorar-erros         (grava as linhas válidas mesmo havendo linhas com erro)
+//   --combustivel-ausente="Diesel S10"  (combustível das linhas com "Tipo Combustível" vazio)
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
@@ -41,6 +43,7 @@ const ARQUIVO = arg("arquivo", DEFAULT_FILE);
 const FRENTE = arg("frente", "Arapiuns");
 const LOTE = arg("lote", "historico_planilha_2026-09-29");
 const DESTINO = arg("destino-transferencia", "PORTO");
+const COMBUSTIVEL_AUSENTE = arg("combustivel-ausente", null);
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -157,7 +160,7 @@ async function importar(pool) {
   const plan = buildImportPlan({
     rows, fuelTypes: types, equipment: equipment.rows.map((row) => ({ ...row, id: Number(row.id) })),
     employees: employees.rows.map((row) => ({ ...row, id: Number(row.id) })), existingHashes: new Set(hashes.rows.map((row) => row.import_hash)),
-    frontId: front.id, importSource: LOTE, fileName: path.basename(ARQUIVO), destination,
+    frontId: front.id, importSource: LOTE, fileName: path.basename(ARQUIVO), destination, missingFuel: COMBUSTIVEL_AUSENTE,
   });
   const records = plan.items.filter((item) => item.status === "IMPORTAR").map((item) => item.record);
   const errors = plan.items.filter((item) => item.status === "ERRO");
@@ -169,10 +172,13 @@ async function importar(pool) {
   console.log(`  Aba lida: ${SHEET_NAME} (ignoradas: ${sheets.filter((name) => name !== SHEET_NAME).join(", ") || "nenhuma"})`);
   console.log(`  Frente fixa: ${front.name} (id ${front.id}) · origem padrão: Frente · lote: ${LOTE}`);
   console.log(`  Transferências: ${destination.label}`);
+  if (COMBUSTIVEL_AUSENTE) console.log(`  Linhas sem combustível: importadas como ${COMBUSTIVEL_AUSENTE}`);
   console.log(`  Linhas lidas:                   ${rows.length}`);
   console.log(`  A importar:                     ${plan.totals.IMPORTAR ?? 0}`);
   console.log(`  Já importadas antes (hash):     ${plan.totals.JA_EXISTE ?? 0}`);
   console.log(`  Repetidas na própria planilha:  ${plan.totals.DUPLICADO_NA_PLANILHA ?? 0}`);
+  const ignored = plan.items.filter((item) => item.status === "IGNORADO");
+  console.log(`  Ignoradas (combustível não usado, ex.: ARLA): ${ignored.length}${ignored.length ? ` — ${[...new Set(ignored.map((item) => item.fuel))].join(", ")}` : ""}`);
   console.log(`  Com erro (não importadas):      ${plan.totals.ERRO ?? 0}`);
   if (records.length) { linha(); console.log(`RESUMO DO QUE ${CONFIRMAR ? "SERÁ GRAVADO" : "SERIA GRAVADO"}`); printSummary(records); }
   const notFound = new Map();
@@ -215,17 +221,23 @@ async function importar(pool) {
     try {
       await client.query("BEGIN");
       const now = new Date().toISOString();
-      for (const record of records) {
-        const result = await client.query(
-          `INSERT INTO fuel_movements (service_front_id,fuel_type_id,movement_type,movement_date,quantity,stock_location,third_party,unit_price,equipment_id,
-            destination_front_id,destination_location,responsible,responsible_employee_id,notes,import_source,import_hash,origin_confirmed,vehicle_pending,imported_vehicle,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,$16,$17,$18,$18)
-           ON CONFLICT (import_hash) DO NOTHING`,
-          [record.serviceFrontId, record.fuelTypeId, record.movementType, record.movementDate, record.quantity, record.stockLocation, record.unitPrice, record.equipmentId,
-            record.destinationFrontId, record.destinationLocation, record.responsible, record.responsibleEmployeeId, record.notes, record.importSource, record.importHash,
-            record.vehiclePending, record.importedVehicle, now],
-        );
+      // Em blocos de 500 linhas por INSERT (uma linha por vez leva ~200 ms de ida e volta ao Supabase).
+      const COLUMNS = ["service_front_id", "fuel_type_id", "movement_type", "movement_date", "quantity", "stock_location", "third_party", "unit_price", "equipment_id",
+        "destination_front_id", "destination_location", "responsible", "responsible_employee_id", "notes", "import_source", "import_hash", "origin_confirmed", "vehicle_pending",
+        "imported_vehicle", "created_at", "updated_at"];
+      for (let offset = 0; offset < records.length; offset += 500) {
+        const chunk = records.slice(offset, offset + 500);
+        const values = [];
+        const tuples = chunk.map((record) => {
+          const row = [record.serviceFrontId, record.fuelTypeId, record.movementType, record.movementDate, record.quantity, record.stockLocation, false, record.unitPrice, record.equipmentId,
+            record.destinationFrontId, record.destinationLocation, record.responsible, record.responsibleEmployeeId, record.notes, record.importSource, record.importHash, false,
+            record.vehiclePending, record.importedVehicle, now, now];
+          const placeholders = row.map((value) => { values.push(value); return `$${values.length}`; });
+          return `(${placeholders.join(",")})`;
+        });
+        const result = await client.query(`INSERT INTO fuel_movements (${COLUMNS.join(",")}) VALUES ${tuples.join(",")} ON CONFLICT (import_hash) DO NOTHING`, values);
         inserted += result.rowCount;
+        console.log(`  gravadas ${Math.min(offset + 500, records.length)}/${records.length}...`);
       }
       await client.query(`INSERT INTO audit_logs (entity_type,entity_id,action,new_value,occurred_at) VALUES ('FUEL_IMPORT',$1,'HISTÓRICO DE ABASTECIMENTO IMPORTADO',$2,$3)`,
         [LOTE, JSON.stringify({ arquivo: path.basename(ARQUIVO), frente: front.name, inseridos: inserted, destinoTransferencia: destination.label }), now]);

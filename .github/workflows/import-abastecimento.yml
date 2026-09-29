@@ -22,6 +22,11 @@ on:
         required: true
         default: "PORTO"
         type: string
+      combustivel_ausente:
+        description: "Combustível para as linhas sem 'Tipo Combustível' (vazio = essas linhas dão erro)"
+        required: false
+        default: "Diesel S10"
+        type: string
       ignorar_erros:
         description: "Gravar as linhas válidas mesmo se houver linhas com erro"
         type: boolean
@@ -46,9 +51,11 @@ jobs:
           MODO: ${{ github.event.inputs.modo }}
           DESTINO: ${{ github.event.inputs.destino_transferencia }}
           IGNORAR: ${{ github.event.inputs.ignorar_erros }}
+          AUSENTE: ${{ github.event.inputs.combustivel_ausente }}
         run: |
           ARGS=("--destino-transferencia=$DESTINO")
           if [ "$IGNORAR" = "true" ]; then ARGS+=("--ignorar-erros"); fi
+          if [ -n "$AUSENTE" ]; then ARGS+=("--combustivel-ausente=$AUSENTE"); fi
           case "$MODO" in
             confirmar) ARGS+=("--confirmar") ;;
             reverter-simulacao) ARGS+=("--reverter") ;;
