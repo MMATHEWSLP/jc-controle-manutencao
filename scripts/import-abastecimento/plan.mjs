@@ -161,7 +161,8 @@ export function isIgnoredFuel(value, ignoredFuels = IGNORED_FUELS) {
   return key !== "" && ignoredFuels.some((prefix) => key.startsWith(compact(prefix)));
 }
 
-export function buildImportPlan({ rows, fuelTypes, equipment, employees, existingHashes, frontId, importSource, fileName, destination, ignoredFuels = IGNORED_FUELS }) {
+// missingFuel = nome do combustível a usar nas linhas com "Tipo Combustível" vazio (sem ele, são erro).
+export function buildImportPlan({ rows, fuelTypes, equipment, employees, existingHashes, frontId, importSource, fileName, destination, ignoredFuels = IGNORED_FUELS, missingFuel = null }) {
   const equipmentIndex = buildEquipmentIndex(equipment);
   const employeeIndex = buildEmployeeIndex(employees);
   const seen = new Set();
@@ -171,7 +172,8 @@ export function buildImportPlan({ rows, fuelTypes, equipment, employees, existin
     const errors = [];
     const when = parseDateTime(cells.date);
     if (!when) errors.push("data inválida");
-    const fuelType = resolveFuelType(cells.fuel, fuelTypes);
+    const fuelMissing = textOrNull(cells.fuel) === null && missingFuel !== null;
+    const fuelType = resolveFuelType(fuelMissing ? missingFuel : cells.fuel, fuelTypes);
     if (!fuelType) errors.push(`combustível não cadastrado: "${textOrNull(cells.fuel) ?? "vazio"}"`);
     const movementType = parseMovementType(cells.movement);
     if (!movementType) errors.push(`tipo de movimentação inválido: "${textOrNull(cells.movement) ?? "vazio"}"`);
@@ -184,7 +186,7 @@ export function buildImportPlan({ rows, fuelTypes, equipment, employees, existin
 
     const vehicleText = textOrNull(cells.vehicle);
     const responsibleText = textOrNull(cells.responsible);
-    const hash = rowHash({ stamp: when.stamp, fuel: fuelType.name, movement: movementType, quantity, vehicle: vehicleText, responsible: responsibleText });
+    const hash = rowHash({ stamp: when.stamp, fuel: fuelMissing ? "" : fuelType.name, movement: movementType, quantity, vehicle: vehicleText, responsible: responsibleText });
     if (seen.has(hash)) { items.push({ rowNumber, status: "DUPLICADO_NA_PLANILHA" }); continue; }
     seen.add(hash);
     if (existingHashes.has(hash)) { items.push({ rowNumber, status: "JA_EXISTE" }); continue; }
@@ -199,6 +201,7 @@ export function buildImportPlan({ rows, fuelTypes, equipment, employees, existin
     const unitPrice = movementType === "ENTRADA" && totalPrice !== null && totalPrice > 0 ? Math.round((totalPrice / quantity) * 10000) / 10000 : null;
     const notes = [
       `Importado do histórico (${fileName}, linha ${rowNumber}).`,
+      fuelMissing ? `Combustível ausente na planilha — importado como ${fuelType.name}.` : null,
       when.hasTime ? `Data/hora original: ${when.stamp}.` : null,
       totalPrice !== null ? `Preço total na planilha: R$ ${totalPrice.toFixed(2)}.` : null,
       vehiclePending ? `Veículo na planilha: ${vehicleText}.` : null,

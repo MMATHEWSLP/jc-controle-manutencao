@@ -112,6 +112,14 @@ test("linhas de ARLA 32 são ignoradas (combustível não usado), sem virar erro
   assert.equal(result.totals.ERRO, undefined);
 });
 
+test("linha sem combustível: erro por padrão; com missingFuel entra com o combustível indicado e observação", () => {
+  const cells = { date: "17/07/2025", fuel: null, movement: "Saída", quantity: 225, vehicle: "CM-30" };
+  assert.equal(plan([row(2, cells)]).items[0].status, "ERRO");
+  const [item] = buildImportPlan({ rows: [row(2, cells)], fuelTypes, equipment, employees, existingHashes: new Set(), frontId: 3, importSource: "lote", fileName: "p.xlsx", destination: { frontId: 3, location: "PORTO" }, missingFuel: "Diesel S10" }).items;
+  assert.deepEqual([item.status, item.record.fuelTypeId], ["IMPORTAR", 1]);
+  assert.match(item.record.notes, /Combustível ausente na planilha — importado como Diesel S10/);
+});
+
 test("linhas inválidas vão para ERRO com o motivo", () => {
   const result = plan([row(2, { date: "sem data", fuel: "Querosene", movement: "Empréstimo", quantity: 0 })]);
   assert.equal(result.items[0].status, "ERRO");

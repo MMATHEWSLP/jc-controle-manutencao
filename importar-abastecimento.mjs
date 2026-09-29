@@ -31,6 +31,7 @@ import { buildImportPlan, mapHeaders, normalizeText, SHEET_NAME, summarize } fro
 //   --arquivo=caminho.xlsx  --frente=Arapiuns  --lote=historico_planilha_2026-09-29
 //   --destino-transferencia=PORTO   (Frente → Porto da mesma frente; ou o nome de outra frente)
 //   --ignorar-erros         (grava as linhas válidas mesmo havendo linhas com erro)
+//   --combustivel-ausente="Diesel S10"  (combustível das linhas com "Tipo Combustível" vazio)
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
@@ -42,6 +43,7 @@ const ARQUIVO = arg("arquivo", DEFAULT_FILE);
 const FRENTE = arg("frente", "Arapiuns");
 const LOTE = arg("lote", "historico_planilha_2026-09-29");
 const DESTINO = arg("destino-transferencia", "PORTO");
+const COMBUSTIVEL_AUSENTE = arg("combustivel-ausente", null);
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -158,7 +160,7 @@ async function importar(pool) {
   const plan = buildImportPlan({
     rows, fuelTypes: types, equipment: equipment.rows.map((row) => ({ ...row, id: Number(row.id) })),
     employees: employees.rows.map((row) => ({ ...row, id: Number(row.id) })), existingHashes: new Set(hashes.rows.map((row) => row.import_hash)),
-    frontId: front.id, importSource: LOTE, fileName: path.basename(ARQUIVO), destination,
+    frontId: front.id, importSource: LOTE, fileName: path.basename(ARQUIVO), destination, missingFuel: COMBUSTIVEL_AUSENTE,
   });
   const records = plan.items.filter((item) => item.status === "IMPORTAR").map((item) => item.record);
   const errors = plan.items.filter((item) => item.status === "ERRO");
@@ -170,6 +172,7 @@ async function importar(pool) {
   console.log(`  Aba lida: ${SHEET_NAME} (ignoradas: ${sheets.filter((name) => name !== SHEET_NAME).join(", ") || "nenhuma"})`);
   console.log(`  Frente fixa: ${front.name} (id ${front.id}) · origem padrão: Frente · lote: ${LOTE}`);
   console.log(`  Transferências: ${destination.label}`);
+  if (COMBUSTIVEL_AUSENTE) console.log(`  Linhas sem combustível: importadas como ${COMBUSTIVEL_AUSENTE}`);
   console.log(`  Linhas lidas:                   ${rows.length}`);
   console.log(`  A importar:                     ${plan.totals.IMPORTAR ?? 0}`);
   console.log(`  Já importadas antes (hash):     ${plan.totals.JA_EXISTE ?? 0}`);
