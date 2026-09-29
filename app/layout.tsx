@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { siteUrl } from "../lib/site";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./qr-admin.css";
@@ -23,7 +24,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.jcsistema.online"),
+  metadataBase: new URL(siteUrl()),
   title: "Controle de Manutenção Preventiva",
   description: "Gestão preventiva profissional de máquinas, caminhões e equipamentos.",
   openGraph: {

@@ -190,6 +190,20 @@
       "when": 1790713268973,
       "tag": "0026_third_parties",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790725294750,
+      "tag": "0027_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790725343410,
+      "tag": "0028_normalize_reading_dates",
+      "breakpoints": true
     }
   ]
 }

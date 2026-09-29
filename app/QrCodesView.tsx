@@ -17,8 +17,10 @@ function QrPreview({url,prefix,size=92}:{url:string;prefix:string;size?:number})
   return src?<img className="qr-preview" src={src} alt={`QR Code do equipamento ${prefix}`}/>:<span className="qr-loading">Gerando...</span>;
 }
 
+// Etiquetas saem sempre com o domínio oficial (NEXT_PUBLIC_SITE_URL), mesmo que a tela tenha sido
+// aberta por outro endereço; só no computador local (testes) vale o endereço aberto.
 export default function QrCodesView({data}:{data:SystemData}){
-  const [query,setQuery]=useState("");const [category,setCategory]=useState("TODOS");const [status,setStatus]=useState("TODOS");const [origin]=useState(()=>typeof window==="undefined"?"":window.location.origin);const [busy,setBusy]=useState(false);
+  const [query,setQuery]=useState("");const [category,setCategory]=useState("TODOS");const [status,setStatus]=useState("TODOS");const [origin]=useState(()=>typeof window==="undefined"?"":/^(localhost|127\.|192\.168\.)/.test(window.location.hostname)?window.location.origin:(process.env.NEXT_PUBLIC_SITE_URL||window.location.origin).replace(/\/+$/,""));const [busy,setBusy]=useState(false);
   const categories=[...new Set(data.equipment.map((item)=>item.prefix.split("-")[0].toUpperCase()))].sort();const normalized=query.trim().toLowerCase();
   const available=data.equipment.filter((item)=>item.qrToken);const items=available.filter((item)=>(category==="TODOS"||item.prefix.toUpperCase().startsWith(`${category}-`))&&(status==="TODOS"||qrStatus(item)===status)&&(!normalized||[item.prefix,item.type,item.brand,item.model].some((value)=>value.toLowerCase().includes(normalized))));
   const urlFor=(item:Equipment)=>item.qrToken&&origin?`${origin}/equipamento/qr/${encodeURIComponent(item.qrToken)}`:"";

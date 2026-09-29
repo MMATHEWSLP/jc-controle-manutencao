@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeSqliteisms, toPgQuery } from "../db/index.ts";
+import { BOOLEAN_COLUMNS, normalizeSqliteisms, toPgQuery } from "../db/index.ts";
 
 // Este teste cobre a causa raiz do bug de transferência de equipamento sem
 // frente: "coluna IS ?" é válido no SQLite/D1 (a base original do projeto),
@@ -100,4 +100,16 @@ test("aspas em apelido camelCase sobrevivem à conversão final de placeholders 
   const query = "SELECT p.interval_hours AS intervalHours FROM maintenance_plans p WHERE p.id=?";
   const finalSql = toPgQuery(normalizeSqliteisms(query));
   assert.equal(finalSql, 'SELECT p.interval_hours AS "intervalHours" FROM maintenance_plans p WHERE p.id=$1');
+});
+
+test("colunas booleanas saem do schema: as novas (terceiros, combustível, diário) entram na tradução", () => {
+  for (const column of ["third_party", "vehicle_pending", "full_tank", "balance_adjustment", "is_generic_date", "worked_today", "all_service_fronts", "active"])
+    assert.ok(BOOLEAN_COLUMNS.includes(column), column);
+  assert.equal(normalizeSqliteisms("SELECT id FROM fuel_movements WHERE vehicle_pending=1 AND fm.third_party = 0"),
+    "SELECT id FROM fuel_movements WHERE vehicle_pending=TRUE AND fm.third_party=FALSE");
+});
+
+test("'?' dentro de aspas duplas e comentários não vira parâmetro", () => {
+  assert.equal(toPgQuery(`SELECT "a?b", 'x?' -- pergunta?\nFROM t /* e aqui? */ WHERE id=? AND n=?`),
+    `SELECT "a?b", 'x?' -- pergunta?\nFROM t /* e aqui? */ WHERE id=$1 AND n=$2`);
 });

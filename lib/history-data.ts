@@ -69,7 +69,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       LEFT JOIN maintenance_types t ON t.id=h.maintenance_type_id
       LEFT JOIN maintenance_types legacy_t ON h.maintenance_type_id IS NULL AND LOWER(TRIM(legacy_t.description))=LOWER(TRIM(h.service))
       LEFT JOIN maintenance_interval_configs c ON c.maintenance_type_id=COALESCE(t.id,legacy_t.id) AND c.active=1 AND c.unit=h.control_type
-        AND c.category=UPPER(CASE WHEN instr(h.prefix,'-')>0 THEN substr(h.prefix,1,instr(h.prefix,'-')-1) ELSE h.prefix END)
+        AND c.category=UPPER(CASE WHEN strpos(h.prefix,'-')>0 THEN substr(h.prefix,1,strpos(h.prefix,'-')-1) ELSE h.prefix END)
       ORDER BY h.created_at DESC,h.id DESC LIMIT 2000`).all() as Promise<{results:Row[]}>,
   ]);
 

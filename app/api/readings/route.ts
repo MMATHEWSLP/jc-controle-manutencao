@@ -4,6 +4,7 @@ import { loadEquipmentCore } from "../../../lib/maintenance-data";
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
 import { ReadingOperationError,saveReading,type ReadingSource } from "../../../lib/readings";
 import { equipmentAccessResponse,requireEquipmentAccess } from "../../../lib/front-scope";
+import { toLocalWallTime } from "../../../lib/local-datetime";
 
 type Row=Record<string,unknown>;
 
@@ -56,7 +57,7 @@ export async function PUT(request:Request){
     }
     const operator=clean(body.operator)||auth.user!.name;const notes=clean(body.notes)||null;const now=new Date().toISOString();const statements:D1PreparedStatementLike[]=[
       d1.prepare(`UPDATE meter_readings SET reading_date=?,hours=?,km=?,operator=?,notes=?,authorized_regression=?,updated_at=? WHERE id=?`)
-        .bind(readingDate,requiresHours?hours:null,requiresKm?km:null,operator,notes,regression||Number(current.authorized_regression)===1?1:0,now,id),
+        .bind(toLocalWallTime(readingDate),requiresHours?hours:null,requiresKm?km:null,operator,notes,regression||Number(current.authorized_regression)===1?1:0,now,id),
       d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
         .bind(auth.user!.id,"METER_READING",String(id),"LEITURA EDITADA",JSON.stringify(current),JSON.stringify({readingDate,hours:requiresHours?hours:null,km:requiresKm?km:null,operator,notes,currentReadingChanged:controlsCurrent}),now),
     ];

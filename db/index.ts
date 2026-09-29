@@ -1,5 +1,7 @@
 import { Pool } from "pg";
+import { getTableColumns, is } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
 // ---------------------------------------------------------------------------
@@ -32,35 +34,43 @@ function getPool():Pool {
       "DATABASE_URL não está configurada. Cadastre a connection string do Supabase (Settings > Database > Connection string) nas variáveis de ambiente do servidor."
     );
   }
+  // O Supabase exige TLS. Com DATABASE_CA_CERT (conteúdo PEM do certificado CA do Supabase,
+  // Settings > Database > SSL) a conexão confere o certificado do servidor; sem ele, continua
+  // criptografada mas sem validar quem está do outro lado (comportamento antigo).
+  const ca=process.env.DATABASE_CA_CERT?.replace(/\\n/g,"\n").trim();
   pool=new Pool({
     connectionString,
-    // O Supabase exige TLS; a maioria dos provedores usa certificado válido,
-    // mas alguns modos de conexão (pooler) usam certificado que o Node não
-    // reconhece automaticamente — por isso relaxamos a verificação aqui.
-    ssl:{ rejectUnauthorized:false },
+    ssl:ca?{ ca, rejectUnauthorized:true }:{ rejectUnauthorized:false },
+    // Limites para o pooler do Supabase: poucas conexões, devolvidas rápido, e nenhuma consulta
+    // presa indefinidamente segurando uma conexão.
+    max:Number(process.env.DATABASE_POOL_MAX)||10,
+    idleTimeoutMillis:30_000,
+    connectionTimeoutMillis:15_000,
+    statement_timeout:Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS)||30_000,
   });
   return pool;
 }
 
 // Converte marcadores de posição no estilo SQLite/D1 ("?") para o estilo do
 // Postgres ("$1", "$2", ...), sem mexer em "?" que apareçam dentro de textos
-// entre aspas simples.
+// entre aspas simples, identificadores entre aspas duplas ou comentários (-- e /* */).
+// Limitação: os operadores JSON do Postgres que usam "?" (?, ?|, ?&) não podem ser
+// escritos nas consultas deste adaptador — use o Drizzle (getDb) nesses casos.
 export function toPgQuery(query:string):string {
   let result="";
   let paramIndex=0;
-  let insideString=false;
+  let mode:"code"|"single"|"double"|"line"|"block"="code";
   for (let index=0;index<query.length;index++) {
     const char=query[index];
-    if (char==="'") {
-      insideString=!insideString;
-      result+=char;
-      continue;
-    }
-    if (char==="?"&&!insideString) {
-      paramIndex+=1;
-      result+=`$${paramIndex}`;
-      continue;
-    }
+    const next=query[index+1];
+    if (mode==="code") {
+      if (char==="'") mode="single";
+      else if (char==='"') mode="double";
+      else if (char==="-"&&next==="-") mode="line";
+      else if (char==="/"&&next==="*") mode="block";
+      else if (char==="?") { paramIndex+=1; result+=`$${paramIndex}`; continue; }
+    } else if ((mode==="single"&&char==="'")||(mode==="double"&&char==='"')||(mode==="line"&&char==="\n")) mode="code";
+    else if (mode==="block"&&char==="*"&&next==="/") { result+="*/"; index+=1; mode="code"; continue; }
     result+=char;
   }
   return result;
@@ -71,16 +81,12 @@ export function toPgQuery(query:string):string {
 // elas são BOOLEAN de verdade, e a comparação com número é recusada com o erro
 // "operator does not exist: boolean = integer". Em vez de reescrever dezenas de
 // consultas espalhadas pelas rotas, a tradução acontece aqui, num ponto só.
-const BOOLEAN_COLUMNS = [
-  "active",
-  "enabled",
-  "applicable",
-  "oil_change_enabled",
-  "automatic_enabled",
-  "authorized_regression",
-  "is_primary_admin",
-  "success",
-];
+// A lista sai do próprio schema (todas as colunas boolean de todas as tabelas), então uma coluna
+// nova já entra na tradução. Nenhum nome de coluna é boolean numa tabela e numérico em outra
+// (conferido em tests/db-sql-translation.test.mjs).
+export const BOOLEAN_COLUMNS = [...new Set(Object.values(schema)
+  .filter((table)=>is(table,PgTable))
+  .flatMap((table)=>Object.values(getTableColumns(table as PgTable)).filter((column)=>column.columnType==="PgBoolean").map((column)=>column.name)))].sort();
 
 // Casa também quando a coluna vem com prefixo de tabela (e.oil_change_enabled=1).
 // A borda \b impede que "active" case dentro de nomes como "is_active".
