@@ -1,0 +1,398 @@
+[
+{
+"n": 1,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 359.0,
+"current": 216934.0,
+"correct": 216934.0
+},
+{
+"n": 2,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 360.0,
+"current": 217247.0,
+"correct": 217247.0
+},
+{
+"n": 3,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 358.0,
+"current": 217561.0,
+"correct": 217561.0
+},
+{
+"n": 4,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 400.0,
+"current": 217875.0,
+"correct": 217875.0
+},
+{
+"n": 5,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 395.0,
+"current": 218189.0,
+"correct": 218189.0
+},
+{
+"n": 6,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 400.0,
+"current": 218504.0,
+"correct": 218504.0
+},
+{
+"n": 7,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 376.0,
+"current": 21881.0,
+"correct": 218818.0
+},
+{
+"n": 8,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": "2026-09-18",
+"liters": 372.0,
+"current": 21913.0,
+"correct": 219132.0
+},
+{
+"n": 9,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 391.0,
+"current": 219447.0,
+"correct": 219447.0
+},
+{
+"n": 10,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 370.0,
+"current": 219761.0,
+"correct": 219761.0
+},
+{
+"n": 11,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 363.0,
+"current": 220074.0,
+"correct": 220074.0
+},
+{
+"n": 12,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": "2026-09-25",
+"liters": 510.0,
+"current": 220388.0,
+"correct": 220388.0
+},
+{
+"n": 13,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 390.0,
+"current": 220703.0,
+"correct": 220703.0
+},
+{
+"n": 14,
+"plate": "QEH4C88",
+"driver": "Reginaldo",
+"date": null,
+"liters": 284.0,
+"current": 221006.0,
+"correct": 221006.0
+},
+{
+"n": 15,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-04",
+"liters": 481.0,
+"current": 407224.0,
+"correct": 407224.0
+},
+{
+"n": 16,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-07",
+"liters": 482.0,
+"current": 407576.0,
+"correct": 407576.0
+},
+{
+"n": 17,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-09",
+"liters": 422.0,
+"current": 407878.0,
+"correct": 407878.0
+},
+{
+"n": 18,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-10",
+"liters": 379.0,
+"current": 408179.0,
+"correct": 408179.0
+},
+{
+"n": 19,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-13",
+"liters": 406.0,
+"current": 408481.0,
+"correct": 408481.0
+},
+{
+"n": 20,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-15",
+"liters": 375.0,
+"current": 408784.0,
+"correct": 408784.0
+},
+{
+"n": 21,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-16",
+"liters": 395.0,
+"current": 409080.0,
+"correct": 409080.0
+},
+{
+"n": 22,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-18",
+"liters": 397.0,
+"current": 409394.0,
+"correct": 409394.0
+},
+{
+"n": 23,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-21",
+"liters": 375.0,
+"current": 409713.0,
+"correct": 409713.0
+},
+{
+"n": 24,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-23",
+"liters": 410.0,
+"current": 410010.0,
+"correct": 410010.0
+},
+{
+"n": 25,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-24",
+"liters": 389.0,
+"current": 410307.0,
+"correct": 410307.0
+},
+{
+"n": 26,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-25",
+"liters": 538.0,
+"current": 410603.0,
+"correct": 410603.0
+},
+{
+"n": 27,
+"plate": "FXU0H93",
+"driver": "Caio",
+"date": "2026-09-27",
+"liters": 392.0,
+"current": 410900.0,
+"correct": 410900.0
+},
+{
+"n": 28,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-09",
+"liters": 339.0,
+"current": 449616.0,
+"correct": 449616.0
+},
+{
+"n": 29,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-10",
+"liters": 318.0,
+"current": 449919.0,
+"correct": 449919.0
+},
+{
+"n": 30,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-12",
+"liters": 330.0,
+"current": 450222.0,
+"correct": 450222.0
+},
+{
+"n": 31,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-17",
+"liters": 433.0,
+"current": 450527.0,
+"correct": 450527.0
+},
+{
+"n": 32,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-19",
+"liters": 358.0,
+"current": 450830.0,
+"correct": 450830.0
+},
+{
+"n": 33,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-21",
+"liters": 351.0,
+"current": 451134.0,
+"correct": 451134.0
+},
+{
+"n": 34,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-23",
+"liters": 362.0,
+"current": 451438.0,
+"correct": 451438.0
+},
+{
+"n": 35,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-24",
+"liters": 338.0,
+"current": 451741.0,
+"correct": 451741.0
+},
+{
+"n": 36,
+"plate": "PFV6F73",
+"driver": "Grimaldo",
+"date": "2026-09-26",
+"liters": 370.0,
+"current": 1520457.0,
+"correct": 452045.0
+},
+{
+"n": 37,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-05",
+"liters": 492.0,
+"current": 305185.0,
+"correct": 305185.0
+},
+{
+"n": 38,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-06",
+"liters": 374.0,
+"current": 305513.0,
+"correct": 305513.0
+},
+{
+"n": 39,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-08",
+"liters": 332.0,
+"current": 305841.0,
+"correct": 305841.0
+},
+{
+"n": 40,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-09",
+"liters": 350.0,
+"current": 306168.0,
+"correct": 306168.0
+},
+{
+"n": 41,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-12",
+"liters": 370.0,
+"current": 306823.0,
+"correct": 306823.0
+},
+{
+"n": 42,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-18",
+"liters": 397.0,
+"current": 307190.0,
+"correct": 307190.0
+},
+{
+"n": 43,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-25",
+"liters": 370.0,
+"current": 307572.0,
+"correct": 307572.0
+},
+{
+"n": 44,
+"plate": "NTA0B14",
+"driver": "André",
+"date": "2026-09-26",
+"liters": 410.0,
+"current": 307900.0,
+"correct": 307900.0
+}
+]
