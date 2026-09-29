@@ -125,7 +125,12 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Devolve a mensagem de erro (ou null se o lançamento é válido). A regra mais importante: nunca
 // lançar combustível para um equipamento que está em outra frente que não a do lançamento.
-export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEquipmentContext, today: string): string | null {
+// historical = lançamento vindo da carga retroativa de histórico (fuel_movements.import_source): na
+// correção dele continuam valendo as regras de estrutura (tipo, data, quantidade, destino da
+// transferência), mas não os campos obrigatórios dos lançamentos novos (responsável, valor por litro,
+// veículo na saída) nem a frente ATUAL do equipamento (ele pode ter sido transferido ou vendido depois).
+export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEquipmentContext, today: string, options: { historical?: boolean } = {}): string | null {
+  const historical = options.historical === true;
   if (!isFuelMovementType(input.movementType)) return "Escolha o tipo de movimentação (Entrada, Saída ou Transferência).";
   if (!Number.isInteger(input.serviceFrontId) || input.serviceFrontId <= 0) return "Escolha a frente de serviço do lançamento.";
   if (!isFuelLocation(input.stockLocation)) return "Escolha a origem do lançamento (Frente ou Porto).";
@@ -135,9 +140,9 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) return "Informe a quantidade em litros (maior que zero).";
   if (input.meterReading !== null && (!Number.isFinite(input.meterReading) || input.meterReading < 0)) return "Informe um hodômetro/horímetro válido (zero ou mais).";
   // Responsável é obrigatório em todos os tipos (na Entrada é quem recebeu o combustível).
-  if (!input.responsible?.trim()) return input.movementType === "ENTRADA" ? "Informe o responsável que recebeu o combustível." : "Informe o responsável.";
+  if (!historical && !input.responsible?.trim()) return input.movementType === "ENTRADA" ? "Informe o responsável que recebeu o combustível." : "Informe o responsável.";
   if (input.movementType === "ENTRADA") {
-    if (input.unitPrice === null || !Number.isFinite(input.unitPrice) || input.unitPrice <= 0) return "Informe o valor por litro (R$) desta entrada.";
+    if (historical ? input.unitPrice !== null && (!Number.isFinite(input.unitPrice) || input.unitPrice <= 0) : input.unitPrice === null || !Number.isFinite(input.unitPrice) || input.unitPrice <= 0) return "Informe o valor por litro (R$) desta entrada.";
     if (input.equipmentId) return "A entrada não é vinculada a veículo/máquina.";
   }
   if (input.thirdParty) {
@@ -147,7 +152,7 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
       if (!input.providerCompany?.trim()) return "Informe a empresa do prestador de serviço.";
       if (!input.providerEquipment?.trim()) return "Informe a descrição do equipamento do prestador.";
     } else if (!input.thirdPartyDescription?.trim()) return "Na saída para terceiros, informe o Destino/Descrição (quem recebeu o combustível).";
-  } else if (input.movementType === "SAIDA" && !input.equipmentId) return "Na saída, informe o veículo/máquina abastecido (ou use Saída para terceiros).";
+  } else if (!historical && input.movementType === "SAIDA" && !input.equipmentId) return "Na saída, informe o veículo/máquina abastecido (ou use Saída para terceiros).";
   if (input.movementType === "TRANSFERENCIA") {
     if (!isFuelLocation(input.destinationLocation)) return "Na transferência, informe o estoque de destino (Frente ou Porto).";
     const destinationFront = input.destinationFrontId ?? input.serviceFrontId;
@@ -155,7 +160,7 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
   }
   if (input.equipmentId) {
     if (!equipment) return "Veículo/máquina não encontrado.";
-    if (equipment.serviceFrontId !== input.serviceFrontId)
+    if (!historical && equipment.serviceFrontId !== input.serviceFrontId)
       return `O equipamento ${equipment.prefix} está em ${equipment.frontName ?? "outra frente"}, não na frente deste lançamento. Transfira o equipamento ou lance pela frente correta.`;
   }
   return null;

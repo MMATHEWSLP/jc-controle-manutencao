@@ -21,6 +21,8 @@ type Movement = {
   meterReading: number | null; meterUnit: "HOURS" | "KM" | null; destinationFrontId: number | null; destinationFrontName: string | null;
   destinationLocation: Location | null; destinationLocationLabel: string | null;
   responsible: string | null; notes: string | null; createdByName: string | null; createdAt: string;
+  // Carga retroativa de histórico: lote, origem ainda não conferida, veículo a identificar.
+  importSource: string | null; originConfirmed: boolean; vehiclePending: boolean; importedVehicle: string | null;
 };
 type HistoryResponse = { movements: Movement[]; total: number; page: number; pageSize: number };
 type EquipmentOption = {
@@ -34,6 +36,8 @@ const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "P
 const locationLabel = (value: Location) => (value === "PORTO" ? "Porto" : "Frente");
 const liters = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`;
 const brDay = (value: string) => value.split("-").reverse().join("/");
+// Início do período quando se filtra pendências da carga de histórico (planilha começa em 2025).
+const HISTORY_START = "2020-01-01";
 const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function monthPeriod() {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -157,6 +161,10 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
     id: editing.equipmentId, prefix: editing.equipmentPrefix ?? "", brand: "", model: editing.equipmentModel ?? "", type: "", controlType: editing.meterUnit === "KM" ? "KM" : "HOURS",
     currentHours: 0, currentKm: 0, serviceFrontId: editing.serviceFrontId, frontName: editing.frontName, inActiveFront: true,
   } : null);
+  // Lançamento importado do histórico: sem os campos obrigatórios dos lançamentos novos e com a
+  // confirmação da origem (Frente/Porto) feita aqui.
+  const historical = Boolean(editing?.importSource);
+  const [originConfirmed, setOriginConfirmed] = useState(editing?.originConfirmed ?? true);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -169,7 +177,8 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   // Veículo/Máquina só na saída para a frota (entrada nunca é vinculada a equipamento).
   const showEquipment = isExit && exitKind === "FROTA";
   const frontName = summary.fronts.find((front) => front.id === frontId)?.name ?? null;
-  const wrongFront = showEquipment && equipment !== null && frontId !== null && equipment.serviceFrontId !== frontId;
+  // No histórico importado o equipamento pode ter mudado de frente depois do abastecimento: só avisa.
+  const wrongFront = !historical && showEquipment && equipment !== null && frontId !== null && equipment.serviceFrontId !== frontId;
   const meterLabel = equipment?.controlType === "KM" ? "Hodômetro (km)" : equipment?.controlType === "HOURS_KM" ? "Horímetro / Hodômetro" : "Horímetro (h)";
   const fuelBalance = summary.balances.find((balance) => balance.fuelTypeId === fuelTypeId);
   const balanceHere = fuelBalance?.byFront.find((front) => front.serviceFrontId === frontId)?.byLocation[stockLocation].balance;
@@ -187,12 +196,12 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   if (summary.multiFront && !frontId) missing.push(["front", "Frente de Serviço"]);
   if (!movementDate) missing.push(["date", "Data"]);
   if (!(quantityValue > 0)) missing.push(["quantity", "Quantidade"]);
-  if (isEntry && !(unitPriceValue > 0)) missing.push(["unitPrice", "Valor por litro"]);
-  if (showEquipment && !equipment) missing.push(["equipment", "Veículo/Máquina"]);
+  if (isEntry && !historical && !(unitPriceValue > 0)) missing.push(["unitPrice", "Valor por litro"]);
+  if (showEquipment && !historical && !equipment) missing.push(["equipment", "Veículo/Máquina"]);
   if (isExit && exitKind === "TERCEIROS" && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
   if (isProvider && !providerCompany.trim()) missing.push(["company", "Empresa"]);
   if (isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
-  if (!responsibleName) missing.push(["responsible", isEntry ? "Responsável (quem recebeu)" : "Responsável"]);
+  if (!responsibleName && !historical) missing.push(["responsible", isEntry ? "Responsável (quem recebeu)" : "Responsável"]);
   const missingKeys = new Set(missing.map(([key]) => key));
   const fieldError = (key: string, message = "Campo obrigatório.") => (touched[key] && missingKeys.has(key) ? <small className="fuel-field-error">{message}</small> : null);
   const touch = (key: string) => () => setTouched((current) => ({ ...current, [key]: true }));
@@ -200,6 +209,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
 
   function changeOrigin(value: Location) {
     setStockLocation(value);
+    if (historical && value !== editing?.stockLocation) setOriginConfirmed(true);
     // Transferência interna: o destino natural é o outro estoque da mesma frente.
     if (isTransfer && !destinationFrontId && destinationLocation === value) setDestinationLocation(value === "FRENTE" ? "PORTO" : "FRENTE");
   }
@@ -214,6 +224,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
       const payload = {
         serviceFrontId: frontId, fuelTypeId, movementType, movementDate, quantity, stockLocation, notes,
         unitPrice: isEntry ? unitPrice : "",
+        ...(historical ? { originConfirmed } : {}),
         thirdParty: isThirdParty, thirdPartyKind: isProvider ? "PRESTADOR" : isThirdParty ? "GERAL" : null,
         thirdPartyDescription: isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
         providerCompany: isProvider ? providerCompany : "", providerEquipment: isProvider ? providerEquipment : "",
@@ -320,7 +331,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         )}
         {showEquipment && (
           <div className={invalid("equipment")} onBlur={touch("equipment")}>
-            <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required />
+            <EquipmentPicker frontId={frontId} frontName={frontName} value={equipment} onChange={setEquipment} required={!historical} historical={historical} />
             {fieldError("equipment", "Selecione o veículo/máquina abastecido.")}
           </div>
         )}
@@ -367,6 +378,13 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
           Observações
           <textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={isEntry ? "Ex.: nota fiscal, fornecedor, placa do caminhão-tanque." : "Informações adicionais deste lançamento."} />
         </label>
+        {historical && (
+          <div className="full fuel-import-note">
+            <p><b>Lançamento importado do histórico</b> ({editing!.importSource}). Na correção, responsável, valor por litro e veículo não são obrigatórios.</p>
+            {editing!.vehiclePending && <p>Veículo a identificar — na planilha: <b>{editing!.importedVehicle ?? "sem veículo"}</b>. Escolha o veículo acima para tirar a pendência.</p>}
+            <label className="fuel-origin-check"><input type="checkbox" checked={originConfirmed} onChange={(event) => setOriginConfirmed(event.target.checked)} /> Origem ({locationLabel(stockLocation)}) conferida</label>
+          </div>
+        )}
         {!summary.multiFront && frontName && <p className="full fuel-auto-front">Lançamento da frente <b>{frontName}</b> (frente do seu usuário). Lançado por {authUser.name}.</p>}
         {wrongFront && (
           <div className="equipment-form-error full"><span>!</span><strong>O equipamento {equipment!.prefix} está em {equipment!.frontName ?? "outra frente"}, não em {frontName}. Transfira o equipamento ou lance pela frente correta.</strong></div>
@@ -446,7 +464,7 @@ function EmployeePicker({ label, frontId, value, onChange, placeholder }: { labe
 
 // Busca de equipamento: prioriza a frente do lançamento, mas mostra também os de outras frentes,
 // identificados com a frente onde realmente estão (o lançamento para eles é bloqueado).
-function EquipmentPicker({ frontId, frontName, value, onChange, required }: { frontId: number | null; frontName: string | null; value: EquipmentOption | null; onChange: (item: EquipmentOption | null) => void; required: boolean }) {
+function EquipmentPicker({ frontId, frontName, value, onChange, required, historical = false }: { frontId: number | null; frontName: string | null; value: EquipmentOption | null; onChange: (item: EquipmentOption | null) => void; required: boolean; historical?: boolean }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<EquipmentOption[]>([]);
@@ -457,10 +475,11 @@ function EquipmentPicker({ frontId, frontName, value, onChange, required }: { fr
       setLoading(true);
       const params = new URLSearchParams({ q: query });
       if (frontId) params.set("serviceFrontId", String(frontId));
+      if (historical) params.set("historico", "1");
       api<{ equipment: EquipmentOption[] }>(`/api/fuel/equipment?${params.toString()}`).then((result) => setItems(result.equipment)).catch(() => setItems([])).finally(() => setLoading(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query, frontId, open]);
+  }, [query, frontId, open, historical]);
 
   if (value) {
     const other = frontId !== null && value.serviceFrontId !== frontId;
@@ -505,6 +524,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
   const [fuelTypeId, setFuelTypeId] = useState("");
   const [movementType, setMovementType] = useState("");
   const [location, setLocation] = useState("");
+  const [pending, setPending] = useState("");
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
@@ -512,7 +532,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => { const timer = window.setTimeout(() => setDebounced(query), 300); return () => window.clearTimeout(timer); }, [query]);
-  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, location, debounced, period.from, period.to, frontFilter]);
+  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, location, debounced, period.from, period.to, frontFilter, pending]);
   const params = useMemo(() => {
     const value = new URLSearchParams({ from: period.from, to: period.to });
     if (fuelTypeId) value.set("fuelTypeId", fuelTypeId);
@@ -520,8 +540,9 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
     if (location) value.set("location", location);
     if (debounced) value.set("q", debounced);
     if (frontFilter) value.set("frontId", frontFilter);
+    if (pending) value.set("pending", pending);
     return value;
-  }, [period, fuelTypeId, movementType, location, debounced, frontFilter]);
+  }, [period, fuelTypeId, movementType, location, debounced, frontFilter, pending]);
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -561,6 +582,8 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         <label>Combustível<select value={fuelTypeId} onChange={(event) => setFuelTypeId(event.target.value)}><option value="">Todos</option>{summary.fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
         <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída para terceiros</option><option value="PRESTADORES">Saída — Prestador de Serviço</option></select></label>
         <label>Estoque<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">Frente e Porto</option>{LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {/* Pendências da carga de histórico: ao escolher, o período abre desde o início do histórico. */}
+        <label>Pendências<select value={pending} onChange={(event) => { setPending(event.target.value); if (event.target.value && period.from > HISTORY_START) setPeriod({ ...period, from: HISTORY_START }); }}><option value="">Nenhum filtro</option><option value="VEICULO">Veículo a identificar</option><option value="ORIGEM">Origem a confirmar</option><option value="IMPORTADOS">Importados do histórico</option></select></label>
         <div className="fuel-export-actions">
           <a className="secondary" href={exportUrl("pdf")} target="_blank" rel="noopener noreferrer">Exportar PDF</a>
           <a className="secondary" href={exportUrl("xlsx")}>Exportar Excel</a>
@@ -584,8 +607,8 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
                       {movement.unitCost !== null && <small className="fuel-unit-cost">{money(movement.unitCost)}/L</small>}
                     </td>
                     <td>{movement.frontName}</td>
-                    <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}</td>
-                    <td>{movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
+                    <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}{!movement.originConfirmed && <span className="fuel-pending-badge origin" title="Origem assumida na importação do histórico">a confirmar</span>}</td>
+                    <td>{movement.vehiclePending && !movement.equipmentPrefix ? <span className="fuel-pending-badge" title="Abastecimento importado sem veículo identificado">A identificar{movement.importedVehicle ? ` · ${movement.importedVehicle}` : ""}</span> : movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
                     <td>{movement.meterReading === null ? "—" : `${movement.meterReading.toLocaleString("pt-BR")} ${movement.meterUnit === "KM" ? "km" : "h"}`}</td>
                     <td title={movement.notes ?? undefined}>{movement.responsible ?? "—"}{movement.createdByName && movement.createdByName !== movement.responsible && <small className="fuel-created-by"> · lançado por {movement.createdByName}</small>}</td>
                     {canManage && <td><div className="equipment-row-actions"><button onClick={() => onEdit(movement)}>Editar</button><button onClick={() => remove(movement)}>Excluir</button></div></td>}

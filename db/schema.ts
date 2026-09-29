@@ -1008,9 +1008,22 @@ export const fuelMovements = pgTable("fuel_movements", {
   createdBy: integer("created_by").references(() => users.id),
   deletedAt: text("deleted_at"),
   deletedBy: integer("deleted_by").references(() => users.id),
+  // Carga retroativa de histórico (importar-abastecimento.mjs). importSource identifica o lote
+  // (filtrar/auditar/reverter); importHash impede importar a mesma linha duas vezes.
+  // Lançamentos importados não passam pelas validações obrigatórias dos lançamentos novos.
+  importSource: text("import_source"),
+  importHash: text("import_hash"),
+  // FALSE = origem (Frente/Porto) assumida na importação, ainda não conferida por alguém.
+  originConfirmed: boolean("origin_confirmed").notNull().default(true),
+  // TRUE = abastecimento real sem o veículo identificado (corrigir no Histórico). importedVehicle
+  // guarda o texto original da planilha.
+  vehiclePending: boolean("vehicle_pending").notNull().default(false),
+  importedVehicle: text("imported_vehicle"),
   ...timestamps,
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
+  uniqueIndex("fuel_movements_import_hash_unique").on(table.importHash),
+  index("fuel_movements_import_source_idx").on(table.importSource),
   index("fuel_movements_destination_idx").on(table.destinationFrontId),
   index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),
 ]);

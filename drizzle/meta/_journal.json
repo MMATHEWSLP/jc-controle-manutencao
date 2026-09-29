@@ -162,6 +162,13 @@
       "when": 1790689148015,
       "tag": "0022_equipment_sold_company_ipva",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790691008280,
+      "tag": "0023_fuel_history_import",
+      "breakpoints": true
     }
   ]
 }

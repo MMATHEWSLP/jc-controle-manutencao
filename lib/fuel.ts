@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
 import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
@@ -19,7 +19,10 @@ export function monthStart(day: string) {
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // movementType "TERCEIROS" = só as saídas para terceiros. location = estoque Frente/Porto (origem ou destino).
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string };
+// pending = pendências da carga de histórico: VEICULO (veículo a identificar), ORIGEM (Frente/Porto
+// a confirmar) ou IMPORTADOS (todo lançamento vindo de importação).
+export type FuelPendingFilter = "VEICULO" | "ORIGEM" | "IMPORTADOS";
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -31,7 +34,9 @@ export function parseFuelFilters(params: URLSearchParams): FuelFilters {
   const movementType = rawType === "TERCEIROS" || rawType === "PRESTADORES" ? rawType : isFuelMovementType(rawType) ? rawType : null;
   const location = isFuelLocation(params.get("location")) ? params.get("location") as FuelLocation : null;
   const frontId = Number(params.get("frontId")) || null;
-  return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim() };
+  const rawPending = params.get("pending");
+  const pending = rawPending === "VEICULO" || rawPending === "ORIGEM" || rawPending === "IMPORTADOS" ? rawPending : null;
+  return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim(), pending };
 }
 
 export async function activeFuelTypes(db: Db) {
@@ -78,10 +83,13 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
   if (filters.movementType === "TERCEIROS") conditions.push(and(eq(fuelMovements.thirdParty, true), sql`coalesce(${fuelMovements.thirdPartyKind}, 'GERAL') <> 'PRESTADOR'`));
   else if (filters.movementType === "PRESTADORES") conditions.push(and(eq(fuelMovements.thirdParty, true), eq(fuelMovements.thirdPartyKind, "PRESTADOR")));
   else if (filters.movementType) conditions.push(eq(fuelMovements.movementType, filters.movementType));
+  if (filters.pending === "VEICULO") conditions.push(eq(fuelMovements.vehiclePending, true));
+  else if (filters.pending === "ORIGEM") conditions.push(eq(fuelMovements.originConfirmed, false));
+  else if (filters.pending === "IMPORTADOS") conditions.push(isNotNull(fuelMovements.importSource));
   if (filters.location) conditions.push(or(eq(fuelMovements.stockLocation, filters.location), and(eq(fuelMovements.movementType, "TRANSFERENCIA"), eq(fuelMovements.destinationLocation, filters.location))));
   if (filters.q) {
     const like = `%${filters.q}%`;
-    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.thirdPartyDescription, like), ilike(fuelMovements.providerCompany, like), ilike(fuelMovements.providerEquipment, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like)));
+    conditions.push(or(ilike(equipment.prefix, like), ilike(fuelMovements.origin, like), ilike(fuelMovements.thirdPartyDescription, like), ilike(fuelMovements.providerCompany, like), ilike(fuelMovements.providerEquipment, like), ilike(fuelMovements.responsible, like), ilike(fuelMovements.notes, like), ilike(fuelMovements.importedVehicle, like)));
   }
   return and(...conditions);
 }
@@ -101,6 +109,7 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       meterReading: fuelMovements.meterReading, meterUnit: fuelMovements.meterUnit,
       destinationFrontId: fuelMovements.destinationFrontId, destinationFrontName: destinationFront.name,
       responsible: fuelMovements.responsible, notes: fuelMovements.notes, createdByName: creator.name, createdAt: fuelMovements.createdAt,
+      importSource: fuelMovements.importSource, originConfirmed: fuelMovements.originConfirmed, vehiclePending: fuelMovements.vehiclePending, importedVehicle: fuelMovements.importedVehicle,
     }).from(fuelMovements)
       .innerJoin(serviceFronts, eq(fuelMovements.serviceFrontId, serviceFronts.id))
       .innerJoin(fuelTypes, eq(fuelMovements.fuelTypeId, fuelTypes.id))

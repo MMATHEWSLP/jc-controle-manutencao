@@ -1,0 +1,57 @@
+name: Importar histórico de abastecimento (Arapiuns)
+
+# Carga retroativa da planilha scripts/import-abastecimento/data/Historico_de_Abastecimento_LIMPO_2026-09-29.xlsx
+# (aba Dados_Limpos) para o módulo Combustível. Rode primeiro em dry-run e confira o resumo no log.
+# Pré-requisito: migração 0023 aplicada (workflow "Migrar banco de dados (Drizzle)").
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "dry-run (simulação), confirmar (grava), reverter-simulacao (mostra o lote) ou reverter (apaga o lote)"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - confirmar
+          - reverter-simulacao
+          - reverter
+      destino_transferencia:
+        description: "Destino das linhas de Transferência: PORTO (Frente → Porto da própria Arapiuns) ou o nome de outra frente"
+        required: true
+        default: "PORTO"
+        type: string
+      ignorar_erros:
+        description: "Gravar as linhas válidas mesmo se houver linhas com erro"
+        type: boolean
+        default: false
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Rodar importação
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODO: ${{ github.event.inputs.modo }}
+          DESTINO: ${{ github.event.inputs.destino_transferencia }}
+          IGNORAR: ${{ github.event.inputs.ignorar_erros }}
+        run: |
+          ARGS=("--destino-transferencia=$DESTINO")
+          if [ "$IGNORAR" = "true" ]; then ARGS+=("--ignorar-erros"); fi
+          case "$MODO" in
+            confirmar) ARGS+=("--confirmar") ;;
+            reverter-simulacao) ARGS+=("--reverter") ;;
+            reverter) ARGS+=("--reverter" "--confirmar") ;;
+          esac
+          node importar-abastecimento.mjs "${ARGS[@]}"

@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     };
     const receiver = (row: Row) => row.thirdParty
       ? row.thirdPartyKind === "PRESTADOR" ? `${row.providerCompany ?? "—"} · ${row.providerEquipment ?? "—"}` : `Terceiro: ${row.thirdPartyDescription ?? "—"}`
-      : row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : "—";
+      : row.equipmentPrefix ? `${row.equipmentPrefix} ${row.equipmentModel ?? ""}`.trim() : row.vehiclePending ? `A identificar (${row.importedVehicle ?? "sem veículo"})` : "—";
     const money = (value: number | null) => value === null ? "—" : value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     // Entrada = valor total do lote; saída/transferência = custo médio do estoque de origem.
     const costText = (row: Row) => row.cost === null ? "sem valor" : money(row.cost);
@@ -96,7 +96,7 @@ export async function GET(request: Request) {
         date: new Date(`${row.movementDate}T12:00:00Z`), type: row.movementLabel, fuel: row.fuelName, quantity: row.quantity, unitCost: row.unitCost, cost: row.cost, front: row.frontName,
         origin: `${row.stockLocationLabel}${row.origin ? ` (${row.origin})` : ""}`,
         destination: row.movementType === "TRANSFERENCIA" ? `${row.destinationFrontName ?? row.frontName} — ${row.destinationLocationLabel ?? "Frente"}` : "",
-        equipment: row.equipmentPrefix ?? "", model: row.equipmentModel ?? "", thirdParty: row.thirdParty && row.thirdPartyKind !== "PRESTADOR" ? row.thirdPartyDescription ?? "" : "",
+        equipment: row.equipmentPrefix ?? (row.vehiclePending ? `A identificar (${row.importedVehicle ?? "sem veículo"})` : ""), model: row.equipmentModel ?? "", thirdParty: row.thirdParty && row.thirdPartyKind !== "PRESTADOR" ? row.thirdPartyDescription ?? "" : "",
         providerCompany: row.providerCompany ?? "", providerEquipment: row.providerEquipment ?? "", meter: meter(row),
         responsible: row.responsible ?? "", notes: row.notes ?? "", createdBy: row.createdByName ?? "",
       });
