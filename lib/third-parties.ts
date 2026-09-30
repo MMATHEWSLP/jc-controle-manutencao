@@ -224,6 +224,9 @@ export type ThirdPartyFuelRequest = {
   mode: "PRESTADOR" | "GERAL"; thirdPartyId: number; vehicleId: number | null; reading: number | null; fullTank: boolean; quantity: number;
   movementDate: string; notes: string | null; readingException: boolean; confirmTank: boolean; confirmOutlier: boolean; editingId: number | null;
   current: { thirdPartyId: number | null; thirdPartyVehicleId: number | null } | null;
+  // Importação de fichas antigas: a leitura de referência é a do último abastecimento até a data
+  // deste (não a última leitura do veículo, que pode ser de um dia posterior).
+  referenceByDate?: boolean;
 };
 
 const fmt = (value: number, digits = 2) => value.toLocaleString("pt-BR", { maximumFractionDigits: digits });
@@ -250,7 +253,9 @@ export async function prepareThirdPartyFuel(db: Db, user: SessionUser, request: 
     // Referência: na inclusão, a última leitura do veículo; na edição, o abastecimento anterior a este.
     const reference = request.editingId
       ? [...others].filter((row) => row.reading !== null && (row.date < request.movementDate || (row.date === request.movementDate && row.id < request.editingId!))).sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).pop()?.reading ?? null
-      : vehicle.lastReading;
+      : request.referenceByDate
+        ? [...others].filter((row) => row.reading !== null && row.date <= request.movementDate).sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id).pop()?.reading ?? (others.some((row) => row.reading !== null) ? null : vehicle.lastReading)
+        : vehicle.lastReading;
     if (reference !== null && request.reading <= reference) {
       if (!canManageThirdParties(user)) throw new ThirdPartyError(`A leitura informada (${fmt(request.reading)}) não é maior que a última do veículo ${vehicle.plate} (${fmt(reference)}). Só ADMIN/GESTOR podem aceitar, com justificativa.`, 400, { exception: false });
       if (!request.readingException) throw new ThirdPartyError(`A leitura informada (${fmt(request.reading)}) não é maior que a última do veículo ${vehicle.plate} (${fmt(reference)}). Marque a exceção e justifique em Observações.`, 400, { exception: true });

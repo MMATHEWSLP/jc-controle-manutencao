@@ -24,7 +24,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // a confirmar) ou IMPORTADOS (todo lançamento vindo de importação).
 export type FuelPendingFilter = "VEICULO" | "ORIGEM" | "IMPORTADOS";
 // thirdPartyId / vehicleId = empresa e veículo do cadastro de Terceiros.
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null; thirdPartyId: number | null; vehicleId: number | null };
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null; thirdPartyId: number | null; vehicleId: number | null; equipmentId?: number | null };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -89,6 +89,8 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
   if (filters.fuelTypeId) conditions.push(eq(fuelMovements.fuelTypeId, filters.fuelTypeId));
   if (filters.thirdPartyId) conditions.push(eq(fuelMovements.thirdPartyId, filters.thirdPartyId));
   if (filters.vehicleId) conditions.push(eq(fuelMovements.thirdPartyVehicleId, filters.vehicleId));
+  // Equipamento da frota (Assistente JC).
+  if (filters.equipmentId) conditions.push(eq(fuelMovements.equipmentId, filters.equipmentId));
   // TERCEIROS = saída para terceiros geral; PRESTADORES = prestadores de serviço.
   if (filters.movementType === "TERCEIROS") conditions.push(and(eq(fuelMovements.thirdParty, true), sql`coalesce(${fuelMovements.thirdPartyKind}, 'GERAL') <> 'PRESTADOR'`));
   else if (filters.movementType === "PRESTADORES") conditions.push(and(eq(fuelMovements.thirdParty, true), eq(fuelMovements.thirdPartyKind, "PRESTADOR")));

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import ThirdPartiesView, { METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
+import FuelImportModal from "./FuelImportView";
 import QueuedRequests from "./QueuedRequests";
 import { enqueueRequest } from "../lib/offline-queue";
 import { METER_PHRASES as METER_PHRASE } from "../lib/third-party-rules";
@@ -44,7 +45,7 @@ type EquipmentOption = {
   id: number; prefix: string; brand: string; model: string; type: string; controlType: "HOURS" | "KM" | "HOURS_KM";
   currentHours: number; currentKm: number; serviceFrontId: number | null; frontName: string | null; inActiveFront: boolean;
 };
-type User = { id: number; name: string; permissions: string[] };
+type User = { id: number; name: string; profile?: string; permissions: string[] };
 
 const MOVEMENT_OPTIONS: Array<[MovementType, string, string]> = [["ENTRADA", "Entrada", "↓"], ["SAIDA", "Saída", "↑"], ["TRANSFERENCIA", "Transferência", "⇄"]];
 const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"]];
@@ -70,6 +71,9 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
+  // Importação por planilha: só ADMIN e GESTOR (o servidor confere de novo).
+  const canImport = (authUser.profile === "ADMIN" || authUser.profile === "GESTOR") && canRegister;
+  const [importOpen, setImportOpen] = useState(false);
   const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(canRegister ? "new" : "history");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
@@ -86,6 +90,12 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
     }
   }, []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
+  // Importação aberta pelo Assistente JC (leitor de fichas): recarrega saldos e Histórico.
+  useEffect(() => {
+    const reload = () => { void loadSummary(); setHistoryVersion((value) => value + 1); };
+    window.addEventListener("jc:fuel-changed", reload);
+    return () => window.removeEventListener("jc:fuel-changed", reload);
+  }, [loadSummary]);
 
   if (error && !summary) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o módulo de combustível</strong><p>{error}</p></div><button onClick={loadSummary}>Tentar novamente</button></div>;
   if (!summary) return <div className="page-loading"><span /><p>Carregando saldos de combustível...</p></div>;
@@ -106,7 +116,9 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
           <h1>Registro de Movimentação de Combustível</h1>
           <span>Entradas, saídas e transferências de Diesel e Gasolina, com saldo separado em Frente e Porto.</span>
         </div>
+        {canImport && <div className="heading-actions"><button className="secondary" onClick={() => setImportOpen(true)}>⇧ Importar planilha</button></div>}
       </div>
+      {importOpen && <FuelImportModal close={() => setImportOpen(false)} flash={flash} imported={async (message) => { await afterSave(message); }} />}
       <section className="fuel-balance-grid" aria-label="Saldos por tipo de combustível">
         {summary.balances.map((balance) => (
           <article key={balance.fuelTypeId} className={`fuel-balance-card fuel-${balance.code.toLowerCase().replace(/_/g, "-")} ${balance.balance < 0 ? "negative" : ""}`}>

@@ -60,9 +60,9 @@ function parseDelimited(text:string){
 }
 
 function xmlDocument(bytes:Uint8Array){const document=new DOMParser().parseFromString(utf8.decode(bytes),"application/xml");if(document.querySelector("parsererror"))throw new Error("O arquivo Excel está corrompido ou não pôde ser lido.");return document;}
-function xlsxMatrix(bytes:Uint8Array){
+function xlsxMatrix(bytes:Uint8Array,preferredSheet?:string){
   const files=unzipSync(bytes);const workbook=files["xl/workbook.xml"],relationships=files["xl/_rels/workbook.xml.rels"];if(!workbook||!relationships)throw new Error("O arquivo XLSX não possui uma pasta de trabalho válida.");
-  const workbookXml=xmlDocument(workbook),relsXml=xmlDocument(relationships);const firstSheet=workbookXml.querySelector("sheet");const relationId=firstSheet?.getAttribute("r:id")??firstSheet?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
+  const workbookXml=xmlDocument(workbook),relsXml=xmlDocument(relationships);const sheets=[...workbookXml.querySelectorAll("sheet")];const firstSheet=(preferredSheet?sheets.find((item)=>headerKey(item.getAttribute("name"))===headerKey(preferredSheet)):undefined)??sheets[0]??null;const relationId=firstSheet?.getAttribute("r:id")??firstSheet?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
   const relation=[...relsXml.querySelectorAll("Relationship")].find((item)=>item.getAttribute("Id")===relationId);const target=relation?.getAttribute("Target");if(!target)throw new Error("Não encontrei a primeira aba do arquivo Excel.");
   const sheetPath=target.startsWith("/")?target.slice(1):`xl/${target.replace(/^\.\//,"")}`;const sheetBytes=files[sheetPath]??files[sheetPath.replace("xl/xl/","xl/")];if(!sheetBytes)throw new Error("Não foi possível abrir a primeira aba do arquivo Excel.");
   const shared=files["xl/sharedStrings.xml"]?[...xmlDocument(files["xl/sharedStrings.xml"]).querySelectorAll("si")].map((item)=>item.textContent??""):[];
@@ -111,13 +111,46 @@ function legacyXlsMatrix(bytes:Uint8Array){
   if(matrix.length===0)throw new Error("Não encontrei linhas legíveis no arquivo .xls.");return matrix;
 }
 
-export async function readSpreadsheetFile(file:File){
+// Matriz de células da planilha (.xlsx: a aba preferida, se existir; senão a primeira).
+export async function readSpreadsheetMatrix(file:File,preferredSheet?:string){
   if(file.size>8*1024*1024)throw new Error("O arquivo ultrapassa o limite de 8 MB.");const extension=file.name.split(".").pop()?.toLowerCase();if(!extension||!["xlsx","xls","csv"].includes(extension))throw new Error("Selecione um arquivo .xlsx, .xls ou .csv.");
-  const bytes=new Uint8Array(await file.arrayBuffer());let matrix:unknown[][];
-  if(extension==="csv")matrix=parseDelimited(utf8.decode(bytes));
-  else if(bytes[0]===0x50&&bytes[1]===0x4b)matrix=xlsxMatrix(bytes);
-  else if(bytes[0]===0xd0&&bytes[1]===0xcf)matrix=legacyXlsMatrix(bytes);
-  else if(win1252.decode(bytes.subarray(0,500)).includes("Workbook"))matrix=spreadsheetXmlMatrix(bytes);
-  else matrix=parseDelimited(win1252.decode(bytes));
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  if(extension==="csv"){const text=utf8.decode(bytes);return parseDelimited(text.includes("\ufffd")?win1252.decode(bytes):text);}
+  if(bytes[0]===0x50&&bytes[1]===0x4b)return xlsxMatrix(bytes,preferredSheet);
+  if(bytes[0]===0xd0&&bytes[1]===0xcf)return legacyXlsMatrix(bytes);
+  if(win1252.decode(bytes.subarray(0,500)).includes("Workbook"))return spreadsheetXmlMatrix(bytes);
+  return parseDelimited(win1252.decode(bytes));
+}
+
+export async function readSpreadsheetFile(file:File){
+  const matrix=await readSpreadsheetMatrix(file);
   const rows=rowsFromMatrix(matrix);if(rows.length===0)throw new Error("A planilha não possui linhas preenchidas para analisar.");if(rows.length>1000)throw new Error("Importe no máximo 1.000 linhas por arquivo.");return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Importação de abastecimentos: linhas no modelo exato (lib/fuel-import-rules.ts). Cada célula vira
+// texto (data do Excel → DD/MM/AAAA; número → formato brasileiro), e o servidor valida tudo.
+// ---------------------------------------------------------------------------
+export type FuelImportFileRow={rowNumber:number;values:Record<string,string>};
+const FUEL_COLUMNS=["data","tipo","frente","origem","combustivel","equipamento","empresa","litros","leitura","tanque_cheio","motorista","observacao"];
+function serialToBrDate(value:number){const date=new Date(Math.round((value-25569)*86400000));return `${String(date.getUTCDate()).padStart(2,"0")}/${String(date.getUTCMonth()+1).padStart(2,"0")}/${date.getUTCFullYear()}`;}
+function fuelCell(column:string,value:unknown){
+  if(value===null||value===undefined)return "";
+  if(typeof value==="number"){if(column==="data"&&value>20000&&value<80000)return serialToBrDate(value);return String(value).replace(".",",");}
+  if(typeof value==="boolean")return value?"SIM":"NAO";
+  return String(value).trim();
+}
+export async function readFuelImportFile(file:File):Promise<FuelImportFileRow[]>{
+  const matrix=await readSpreadsheetMatrix(file,"Lançamentos");
+  const headerIndex=matrix.slice(0,25).findIndex((row)=>{const keys=(row??[]).map(headerKey);return keys.includes("DATA")&&keys.includes("LITROS")&&keys.includes("EQUIPAMENTO");});
+  if(headerIndex<0)throw new Error("Cabeçalho diferente do modelo: não encontrei as colunas data, equipamento e litros. Baixe o modelo e use a aba Lançamentos.");
+  const headers=(matrix[headerIndex]??[]).map(headerKey);
+  const missing=FUEL_COLUMNS.filter((column)=>!headers.includes(headerKey(column)));
+  if(missing.length)throw new Error(`Faltam colunas do modelo: ${missing.join(", ")}.`);
+  const index=Object.fromEntries(FUEL_COLUMNS.map((column)=>[column,headers.indexOf(headerKey(column))]));
+  const rows=matrix.slice(headerIndex+1).map((row,offset)=>({rowNumber:headerIndex+offset+2,values:Object.fromEntries(FUEL_COLUMNS.map((column)=>[column,fuelCell(column,(row??[])[index[column]])]))}))
+    .filter((row)=>Object.values(row.values).some((value)=>value));
+  if(!rows.length)throw new Error("A planilha não tem linhas preenchidas na aba Lançamentos.");
+  if(rows.length>1000)throw new Error("Importe no máximo 1.000 linhas por arquivo.");
+  return rows;
 }
