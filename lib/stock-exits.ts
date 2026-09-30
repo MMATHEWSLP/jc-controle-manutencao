@@ -79,7 +79,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
   const catalog = await productsById(db, input.items.map((item) => item.productId));
   const missing = input.items.find((item) => !catalog.get(item.productId)?.active);
   if (missing) throw new StockError("Um dos produtos escolhidos não existe mais ou foi desativado.");
-  await assertStockAvailable(db, input.serviceFrontId, input.items.map((item) => ({ ...item, label: `${catalog.get(item.productId)!.tag} ${catalog.get(item.productId)!.name}` })), input.allowNegative);
+  await assertStockAvailable(db, input.serviceFrontId, input.items.map((item) => ({ ...item, label: `${catalog.get(item.productId)!.tag} ${catalog.get(item.productId)!.name}` })), input.allowNegative, user);
 
   return db.transaction(async (tx) => {
     const [exit] = await tx.insert(stockExits).values({

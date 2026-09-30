@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Pacotes temporários gerados pelos testes (npm test).
+    "tests/.tmp-*.mjs",
   ]),
 ]);
 

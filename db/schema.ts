@@ -332,7 +332,7 @@ export const meterReadings = pgTable("meter_readings", {
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
-  index("meter_equipment_date_idx").on(table.equipmentId, table.readingDate),
+  index("meter_equipment_date_idx").on(table.equipmentId, table.readingDate), index("meter_front_idx").on(table.serviceFrontId),
 ]);
 
 export const readingImports = pgTable("reading_imports", {
@@ -387,7 +387,7 @@ export const equipmentMaintenanceTypes = pgTable("equipment_maintenance_types", 
   ...timestamps,
 }, (table) => [
   uniqueIndex("equipment_maintenance_type_unique").on(table.equipmentId, table.maintenanceTypeId),
-  index("equipment_maintenance_applicable_idx").on(table.equipmentId, table.applicable),
+  index("equipment_maintenance_applicable_idx").on(table.equipmentId, table.applicable), index("equipment_maintenance_type_idx").on(table.maintenanceTypeId),
 ]);
 
 export const maintenancePlans = pgTable("maintenance_plans", {
@@ -420,7 +420,7 @@ export const maintenancePlans = pgTable("maintenance_plans", {
 }, (table) => [
   uniqueIndex("plan_equipment_type_unique").on(table.equipmentId, table.maintenanceTypeId),
   index("plan_next_hours_idx").on(table.nextHours),
-  index("plan_next_km_idx").on(table.nextKm),
+  index("plan_next_km_idx").on(table.nextKm), index("plan_maintenance_type_idx").on(table.maintenanceTypeId),
 ]);
 
 export const maintenances = pgTable("maintenances", {
@@ -541,7 +541,7 @@ export const alerts = pgTable("alerts", {
   ...timestamps,
 }, (table) => [
   uniqueIndex("alerts_fingerprint_unique").on(table.fingerprint),
-  index("alerts_status_level_idx").on(table.status, table.level),
+  index("alerts_status_level_idx").on(table.status, table.level), index("alerts_plan_idx").on(table.planId), index("alerts_equipment_idx").on(table.equipmentId, table.status),
 ]);
 
 export const whatsappSettings = pgTable("whatsapp_settings", {
@@ -647,7 +647,7 @@ export const auditLogs = pgTable("audit_logs", {
   previousValue: text("previous_value"),
   newValue: text("new_value"),
   occurredAt: text("occurred_at").notNull().default(isoNow),
-}, (table) => [index("audit_entity_idx").on(table.entityType, table.entityId)]);
+}, (table) => [index("audit_entity_idx").on(table.entityType, table.entityId), index("audit_user_idx").on(table.userId)]);
 
 export const materialRequests = pgTable("material_requests", {
   id: serial("id").primaryKey(),
@@ -694,7 +694,7 @@ export const materialRequestItems = pgTable("material_request_items", {
   // (sai da frente de origem, entra na frente que pediu). NULL = item digitado à mão, sem estoque.
   productId: integer("product_id").references((): AnyPgColumn => products.id, { onDelete:"set null" }),
   ...timestamps,
-}, (table) => [index("material_request_items_request_idx").on(table.requestId)]);
+}, (table) => [index("material_request_items_request_idx").on(table.requestId), index("material_request_items_product_idx").on(table.productId)]);
 
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
@@ -757,7 +757,7 @@ export const tasks = pgTable("tasks", {
   index("tasks_parent_idx").on(table.parentTaskId),
   index("tasks_assignee_idx").on(table.assigneeId, table.status),
   index("tasks_due_date_idx").on(table.dueDate),
-  index("tasks_deleted_idx").on(table.deletedAt),
+  index("tasks_deleted_idx").on(table.deletedAt), index("tasks_created_by_idx").on(table.createdBy),
 ]);
 
 // Notificações do módulo Tarefas (seção 18): uma linha por destinatário/evento, gerada no mesmo
@@ -1088,7 +1088,7 @@ export const fuelMovements = pgTable("fuel_movements", {
   index("fuel_movements_destination_idx").on(table.destinationFrontId),
   index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),
   index("fuel_movements_third_party_vehicle_idx").on(table.thirdPartyVehicleId, table.movementDate),
-  index("fuel_movements_third_party_idx").on(table.thirdPartyId),
+  index("fuel_movements_third_party_idx").on(table.thirdPartyId), index("fuel_movements_fuel_type_idx").on(table.fuelTypeId), index("fuel_movements_responsible_employee_idx").on(table.responsibleEmployeeId),
 ]);
 
 // ---------------------------------------------------------------------------

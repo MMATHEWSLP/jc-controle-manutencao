@@ -1,6 +1,7 @@
 import type { D1DatabaseLike,D1PreparedStatementLike } from "../db";
 import { buildAlertStatements,loadEquipmentCore,loadPlansForEquipment,loadThresholds } from "./maintenance-data";
 import { recalculateMaintenanceCycles } from "./maintenance-recalculation";
+import { toLocalWallTime } from "./local-datetime";
 
 export type ReadingSource="MANUAL"|"EXCEL_IMPORT"|"QR_CODE"|"MAINTENANCE";
 export type SaveReadingInput={equipmentId:number;readingDate:string;hours:number|null;km:number|null;operator:string;notes:string|null;serviceFrontId?:number|null;authorizeRegression?:boolean;actor:{id:number;name:string;profile:string};source:ReadingSource};
@@ -29,7 +30,7 @@ export async function saveReading(d1:D1DatabaseLike,input:SaveReadingInput){
   const updatedEquipment={...equipment,current_hours:nextHours,current_km:nextKm};const statements:D1PreparedStatementLike[]=[
     d1.prepare(`UPDATE equipment SET current_hours=?,current_km=?,updated_at=? WHERE id=?`).bind(nextHours,nextKm,now,input.equipmentId),
     d1.prepare(`INSERT INTO meter_readings (equipment_id,reading_date,hours,km,operator,service_front_id,notes,source,authorized_regression,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(input.equipmentId,input.readingDate,requiresHours?nextHours:null,requiresKm?nextKm:null,operator,input.serviceFrontId??null,notes,input.source,hoursRegression||kmRegression?1:0,input.actor.id,now,now),
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(input.equipmentId,toLocalWallTime(input.readingDate),requiresHours?nextHours:null,requiresKm?nextKm:null,operator,input.serviceFrontId??null,notes,input.source,hoursRegression||kmRegression?1:0,input.actor.id,now,now),
     d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
       .bind(input.actor.id,"EQUIPMENT",String(input.equipmentId),equipment.control_type==="KM"?"ATUALIZAÇÃO DE KM":equipment.control_type==="HOURS_KM"?"ATUALIZAÇÃO DE HORÍMETRO / KM":"ATUALIZAÇÃO DE HORÍMETRO",JSON.stringify({hours:equipment.current_hours,km:equipment.current_km}),JSON.stringify({hours:nextHours,km:nextKm,operator,notes,source:input.source}),now),
     ...buildAlertStatements(d1,updatedEquipment,plans,thresholds,now),

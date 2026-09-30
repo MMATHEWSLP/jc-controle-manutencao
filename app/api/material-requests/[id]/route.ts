@@ -4,7 +4,7 @@ import { materialRequestItems, materialRequests, serviceFronts } from "../../../
 import { frentesVisiveis } from "../../../../lib/access";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { loadMaterialRequestHistory, logMaterialRequestAudit } from "../../../../lib/material-request-audit";
-import { reverseStockMovements, stockShortages, transferStock } from "../../../../lib/stock";
+import { canAuthorizeNegativeStock, NEGATIVE_STOCK_NEEDS_MANAGER, reverseStockMovements, stockShortages, transferStock } from "../../../../lib/stock";
 import { ACTIVE_STATUSES, canSeeAllRequests, loadRequests, requestNumber } from "../route";
 
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -125,6 +125,8 @@ export async function PUT(request: Request, { params }: Context) {
       const shortages = await stockShortages(db, origin.id, stockLines);
       if (shortages.length && body.allowNegative !== true)
         return Response.json({ error: "Saldo insuficiente na frente de origem para alguns produtos.", shortages }, { status: 409 });
+      if (shortages.length && !canAuthorizeNegativeStock(auth.user!))
+        return Response.json({ error: NEGATIVE_STOCK_NEEDS_MANAGER, shortages }, { status: 403 });
     }
 
     await db.transaction(async (tx) => {

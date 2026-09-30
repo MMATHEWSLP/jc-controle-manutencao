@@ -132,9 +132,9 @@ export default function PurchaseOrdersView({ authUser, flash }: { authUser: User
         </div>}
       </div>
       <div className="main-tabs secondary-module-nav" role="tablist">
-        <button type="button" className={tab === "ativas" ? "active" : ""} onClick={() => { setTab("ativas"); setStatus(""); }}>Ativas <b className="nav-badge soft">{count("ativas")}</b></button>
-        <button type="button" className={tab === "acao" ? "active" : ""} onClick={() => { setTab("acao"); setStatus(""); }}>Precisam da minha ação <b className="nav-badge soft">{count("acao")}</b></button>
-        <button type="button" className={tab === "historico" ? "active" : ""} onClick={() => { setTab("historico"); setStatus(""); }}>Histórico <b className="nav-badge soft">{count("historico")}</b></button>
+        <button type="button" className={tab === "ativas" ? "active" : ""} onClick={() => { setTab("ativas"); setStatus(""); }}>Ativas {count("ativas") > 0 && <b className="nav-badge soft">{count("ativas")}</b>}</button>
+        <button type="button" className={tab === "acao" ? "active" : ""} onClick={() => { setTab("acao"); setStatus(""); }}>Precisam da minha ação {count("acao") > 0 && <b className="nav-badge soft">{count("acao")}</b>}</button>
+        <button type="button" className={tab === "historico" ? "active" : ""} onClick={() => { setTab("historico"); setStatus(""); }}>Histórico {count("historico") > 0 && <b className="nav-badge soft">{count("historico")}</b>}</button>
       </div>
       {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
       <article className="panel module-panel">

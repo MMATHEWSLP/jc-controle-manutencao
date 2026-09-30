@@ -1,0 +1,129 @@
+/* ---------------------------------------------------------------------------
+   Ajustes de uso (relatório de teste de 29/09/2026). Carregado por último no layout, para valer
+   sobre as regras antigas sem precisar mexer em cada arquivo de tela.
+   --------------------------------------------------------------------------- */
+
+/* VIS-06: foco visível na navegação por teclado (as regras antigas tiravam o outline). */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #1f8fd1 !important;
+  outline-offset: 2px;
+}
+html[data-theme="dark"] :where(button, a, input, select, textarea, [tabindex]):focus-visible { outline-color: #6cc4ff !important; }
+
+/* CMB-01 e demais formulários: botão principal desativado continua legível (cinza, sem sumir) e
+   não mostra o cursor de "aguarde" quando só falta preencher campos. */
+.modal-footer .primary:disabled,
+.daily-submit .primary:disabled,
+button.primary:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: #d5dde2;
+  border-color: #c3ced5;
+  color: #4d5f6b;
+  box-shadow: none;
+}
+html[data-theme="dark"] .modal-footer .primary:disabled,
+html[data-theme="dark"] .daily-submit .primary:disabled,
+html[data-theme="dark"] button.primary:disabled {
+  background: #2e2c28;
+  border-color: #4a4640;
+  color: #b9b4ab;
+}
+.modal-footer .primary { font-size: 12px; }
+
+/* PRD-01: filtros rápidos de Pedidos legíveis no escuro. */
+html[data-theme="dark"] .po-situation-chips button { color: #d0ccc4; border-color: #4a4640; }
+
+/* PRD-03: a lupa da busca não encosta no texto (algumas telas sobrescreviam o recuo do campo). */
+label.page-search > input { padding-left: 34px !important; }
+
+/* PRD-04 e VIS-08: cabeçalhos de tabela e textos secundários com contraste mínimo no tema claro. */
+html:not([data-theme="dark"]) th { color: #4b5d6a; }
+html:not([data-theme="dark"]) .table-sub,
+html:not([data-theme="dark"]) .header-brand span,
+html:not([data-theme="dark"]) .profile-button small { color: #56666f; }
+
+/* TAR-02: descrição e "Ver mais" das tarefas com tamanho legível. */
+.task-card-description { font-size: 12px; }
+.task-card-description-more { font-size: 11px; }
+
+/* VIS-07: área de toque mínima nos botões de fechar "×". */
+.sheet-close, [aria-label="Fechar"] { min-width: 36px; min-height: 36px; }
+
+/* ---------------------------------------------------------------------------
+   Celular
+   --------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  /* VIS-01: menu principal em duas linhas de três botões, sem sobrepor nem cortar o texto. */
+  .primary-module-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+    padding: 8px 10px;
+  }
+  .primary-module-nav button {
+    min-width: 0 !important;
+    width: 100%;
+    padding: 0 6px !important;
+    font-size: 11px;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    justify-content: center;
+  }
+  .primary-module-nav .nav-icon { display: none; }
+
+  /* VIS-02: submenus viram uma faixa com rolagem horizontal (antes eram grades que ocupavam metade da tela). */
+  .secondary-module-nav {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto !important;
+    gap: 6px;
+    padding: 7px 10px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .secondary-module-nav::-webkit-scrollbar { display: none; }
+  .secondary-module-nav button {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-height: 38px;
+    padding: 0 12px;
+    white-space: nowrap;
+    scroll-snap-align: start;
+  }
+
+  /* VIS-03: tipos de movimentação do Combustível cabem no celular. */
+  .fuel-movement-type button { min-width: 0; padding: 9px 6px; justify-content: center; gap: 4px; font-size: 12px; }
+
+  /* VIS-04: indicadores dois por linha. */
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
+  .metric-card { min-height: 0; padding: 12px; gap: 9px; }
+  .metric-card strong { font-size: 20px; }
+  .fleet-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
+  .fleet-metric { min-height: 0; padding: 11px; }
+  .fleet-metric b { font-size: 21px; }
+}
+
+/* Tela Pendências */
+.pendencias-list { display: grid; gap: 10px; }
+.pendencia-card { padding: 14px 16px; }
+.pendencia-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font-size: 14px; }
+.pendencia-head strong { flex: 1; }
+.pendencia-count { min-width: 38px; padding: 3px 9px; border-radius: 12px; background: #eef3f6; color: #193b50; text-align: center; }
+html[data-theme="dark"] .pendencia-count { background: #2e2c28; color: #e7e3dc; }
+.pendencia-where { margin: 4px 0 0; font-size: 12px; }
+.pendencia-card .table-scroll { margin-top: 10px; max-height: 420px; overflow: auto; }
+.pendencias-ok { margin-top: 12px; }
+
+/* Custos e consumo */
+.fleet-costs-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 12px 16px; }
+.fleet-costs-filters label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fleet-costs-filters .fleet-costs-check { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.fleet-costs-metrics { margin: 10px 0; }
+.fleet-costs-metrics .metric-card span { display: block; font-weight: 700; }
+.fleet-costs-filters .fleet-costs-check { white-space: nowrap; min-height: 40px; }
+.fleet-costs-filters input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; }
+.fleet-costs-filters > button { min-height: 40px; padding: 0 18px; border-radius: 8px; font-size: 12px; font-weight: 800; }

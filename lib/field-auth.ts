@@ -34,8 +34,11 @@ async function codeMatches(code: string, stored: string | null) {
   return verifyPassword(code, salt, hash);
 }
 
+// IP de quem fez a requisição. O proxy da Hostinger ACRESCENTA o IP real no fim do
+// X-Forwarded-For; o começo da lista pode ter sido escrito pelo próprio cliente (e seria fácil
+// trocar a cada tentativa para fugir do bloqueio por aparelho), por isso vale o último item.
 export function clientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",").map((part) => part.trim()).filter(Boolean).pop();
   return (forwarded || request.headers.get("x-real-ip") || "desconhecido").slice(0, 64);
 }
 
@@ -55,7 +58,7 @@ export async function searchFieldOperators(query: string) {
   return rows.filter((row) => normalized(row.name).includes(key)).slice(0, 8);
 }
 
-async function recentFails(filter: { userId?: number; ip?: string }) {
+export async function recentFails(filter: { userId?: number; ip?: string }) {
   const db = await getDb();
   const since = new Date(Date.now() - LOCK_MINUTES * 60_000).toISOString();
   const rows = await db.select({ id: fieldLoginAttempts.id }).from(fieldLoginAttempts).where(and(
@@ -63,6 +66,19 @@ async function recentFails(filter: { userId?: number; ip?: string }) {
     filter.userId !== undefined ? eq(fieldLoginAttempts.userId, filter.userId) : eq(fieldLoginAttempts.ip, filter.ip!),
   ));
   return rows.length;
+}
+
+// Login com senha (tela principal) usa a mesma tabela de tentativas e a mesma janela de bloqueio.
+export const MAX_PASSWORD_FAILS_PER_USER = 5;
+
+export async function assertPasswordLoginAllowed(request: Request, userId: number | null) {
+  if (await recentFails({ ip: clientIp(request) }) >= MAX_FAILS_PER_IP) throw new FieldAuthError(`Muitas tentativas neste aparelho. Aguarde ${LOCK_MINUTES} minutos e tente de novo.`, 429);
+  if (userId !== null && await recentFails({ userId }) >= MAX_PASSWORD_FAILS_PER_USER) throw new FieldAuthError(`Acesso bloqueado por ${LOCK_MINUTES} minutos após várias senhas erradas. Aguarde ou peça ao administrador para trocar a senha.`, 429);
+}
+
+export async function recordLoginAttempt(request: Request, userId: number | null, success: boolean) {
+  const db = await getDb();
+  await db.insert(fieldLoginAttempts).values({ userId, ip: clientIp(request), success, attemptedAt: new Date().toISOString() });
 }
 
 // Confere nome (id escolhido na busca) + código. Toda tentativa é registrada; erro não diz se

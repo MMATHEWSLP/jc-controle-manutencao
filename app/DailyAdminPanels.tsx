@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { formatBrDate } from "../lib/date-format";
 
 // Painéis de gestão do Controle Diário: aprovação de mudança de frente (daily.front_requests)
 // e cadastro de funcionários de campo (daily.field_operators).
@@ -13,7 +14,7 @@ type FieldOperator = { id:number; name:string; jobTitle:string|null; active:bool
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const jsonInit=(method:string,body:unknown):RequestInit=>({ method, headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
-function formatDateTime(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
+function formatDateTime(value:string|null) { return formatBrDate(value); }
 const statusLabel={ PENDING:"Pendente", APPROVED:"Aprovada", REJECTED:"Recusada" } as const;
 const statusTone={ PENDING:"orange", APPROVED:"green", REJECTED:"gray" } as const;
 

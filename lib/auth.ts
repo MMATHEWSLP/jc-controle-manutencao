@@ -1,4 +1,5 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
+import { siteHosts } from "./site";
 import { getDb } from "../db";
 import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../db/schema";
 
@@ -235,21 +236,16 @@ function readCookie(request:Request,name:string) {
 
 export function assertSameOrigin(request:Request) {
   const origin=request.headers.get("origin");
+  // Sem Origin: não é um navegador fazendo requisição entre sites (os navegadores sempre mandam
+  // Origin em POST/PUT/DELETE). O cookie SameSite=Strict também impede o envio a partir de outro site.
   if(!origin)return true;
   let originHost:string;
-  try{ originHost=new URL(origin).host; }catch{ return false; }
-  // Atrás de um proxy reverso (Hostinger, Nginx, etc.) o servidor Node enxerga a si
-  // mesmo como "localhost:porta", então comparar com a URL interna do request faria
-  // todo login legítimo ser recusado. O endereço real do site chega nos cabeçalhos
-  // encaminhados pelo proxy, e é com eles que a origem precisa ser comparada.
-  const candidatos=[
-    request.headers.get("x-forwarded-host"),
-    request.headers.get("host"),
-    new URL(request.url).host,
-  ];
-  return candidatos.some((candidato)=>
-    Boolean(candidato)&&candidato!.split(",").some((parte)=>parte.trim()===originHost)
-  );
+  try{ originHost=new URL(origin).host.toLowerCase(); }catch{ return false; }
+  // Atrás do proxy da Hostinger o Node pode enxergar a si mesmo como "localhost:porta"; por isso o
+  // domínio oficial (SITE_URL, com e sem www) é sempre aceito. O host da própria requisição cobre o
+  // uso local. X-Forwarded-Host NÃO entra: é um cabeçalho que o cliente pode inventar.
+  const candidatos=[...siteHosts(),request.headers.get("host"),new URL(request.url).host];
+  return candidatos.some((candidato)=>Boolean(candidato)&&candidato!.toLowerCase()===originHost);
 }
 
 export function sessionCookie(token:string,seconds=SESSION_SECONDS) {
@@ -267,6 +263,8 @@ export async function createSession(userId:number,seconds=SESSION_SECONDS) {
   const now=new Date();
   const expires=new Date(now.getTime()+seconds*1000).toISOString();
   const db=await getDb();
+  // Faxina: sessões vencidas não servem para nada e só acumulam na tabela.
+  await db.delete(userSessions).where(lt(userSessions.expiresAt,now.toISOString()));
   await db.insert(userSessions).values({id:crypto.randomUUID(),userId,tokenHash:await tokenHash(token),expiresAt:expires,lastSeenAt:now.toISOString()});
   return token;
 }

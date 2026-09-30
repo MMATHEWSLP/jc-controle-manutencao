@@ -1,6 +1,8 @@
 // Teste de integração do serviço único de estoque (lib/stock.ts) num Postgres de teste.
-// Só roda com DATABASE_URL apontando para um banco de TESTE já migrado (npm run db:migrate):
-//   DATABASE_URL=postgres://... npm run test:stock
+// Só roda com TEST_DATABASE_URL apontando para um banco de TESTE já migrado (npm run db:migrate).
+// O teste GRAVA frentes, produtos e movimentações: nunca usa DATABASE_URL (que costuma ser a
+// produção) e recusa endereços do Supabase.
+//   TEST_DATABASE_URL=postgres://localhost/jc_teste npm run test:stock
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eq } from "drizzle-orm";
@@ -9,7 +11,10 @@ import { productFrontStock, products, serviceFronts, users } from "../db/schema.
 import { assertStockAvailable, reverseStockMovements, setStockLevel, stockEntry, stockExit, StockError, transferStock } from "../lib/stock.ts";
 import { listStockMovements } from "../lib/stock-history.ts";
 
-const enabled = Boolean(process.env.DATABASE_URL);
+const testUrl = process.env.TEST_DATABASE_URL ?? "";
+if (/supabase\.(co|com)|pooler\./i.test(testUrl)) throw new Error("TEST_DATABASE_URL aponta para o Supabase: este teste grava dados e só pode rodar num banco de teste.");
+const enabled = Boolean(testUrl);
+if (enabled) process.env.DATABASE_URL = testUrl;
 
 async function balance(db, productId, frontId) {
   const row = (await db.select().from(productFrontStock).where(eq(productFrontStock.productId, productId))).find((item) => item.serviceFrontId === frontId);

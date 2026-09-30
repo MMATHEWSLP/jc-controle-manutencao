@@ -4,6 +4,60 @@ Data: 29/09/2026 · Código: branch `claude/wizardly-cannon-fgfqd8` (igual à `m
 
 Nesta etapa **nada foi corrigido**. Os itens abaixo são para você escolher o que entra na próxima rodada.
 
+## Situação após as correções (30/09/2026)
+
+Todos os itens de código foram corrigidos na branch `claude/wizardly-cannon-fgfqd8`. Os itens de **dados** dependem de alguém corrigir o cadastro; para isso existe agora a tela **Pendências**.
+
+| Item | Situação |
+|---|---|
+| GER-01 | Corrigido: `test:stock` só roda com `TEST_DATABASE_URL` e recusa endereços do Supabase. |
+| GER-02 | Corrigido: `npm test` roda as 25 suítes uma a uma (`scripts/run-tests.mjs`) e a de reconciliação voltou a passar. |
+| GER-03 | Corrigido: o deploy só publica se lint, tipos e testes passarem. |
+| GER-04 / GER-05 | Corrigido: next 16.3.7, react 19.3, fflate 0.8, drizzle, tailwind; `uuid` corrigido no exceljs. Sobram avisos moderados só do `drizzle-kit`, ferramenta de desenvolvimento que não vai para o servidor. As versões maiores (TypeScript 7, ESLint 10) ficaram para depois. |
+| GER-06 | Corrigido: carregamentos que falham mostram aviso em vez de lista vazia. |
+| GER-07 | Corrigido: domínio em `SITE_URL` (lib/site.ts), usado em QR, WhatsApp e metadados. |
+| GER-08 | Corrigido: `og.png` passou de 1,7 MB para 420 KB; módulos carregados sob demanda (maior pacote JS: 646 KB → 229 KB). |
+| GER-09 | Não feito: formatar o código todo é uma mudança grande que atrapalha revisões; fica para quando não houver trabalho em paralelo. |
+| BD-01 a BD-03 | Corrigido: booleanos lidos do schema; `?` em aspas duplas e comentários preservado; `strpos` no lugar de `instr`. |
+| BD-04 | Corrigido no código: com `DATABASE_CA_CERT` (certificado do Supabase) a conexão valida o servidor. **Falta cadastrar a variável na Hostinger.** |
+| BD-05 | Corrigido: pool com limite, tempo ocioso e `statement_timeout` de 30 s. |
+| BD-06 | Corrigido: migração 0027 com os índices. |
+| BD-07 | Corrigido: leituras gravadas sempre em hora local; migração 0028 converte as antigas. |
+| BD-08 | Corrigido: sessões vencidas são apagadas ao entrar. |
+| DAD-01 a DAD-12, DAD-15 | Aparecem na nova tela **Pendências** (ADMIN/GESTOR), com o que corrigir e onde. A correção dos dados é manual. |
+| DAD-13 | Depende de configurar o WhatsApp na Hostinger (ver INT-01 e a tabela de variáveis). |
+| DAD-14 | Não é defeito: a tabela `alerts` guarda uma linha de situação por plano (inclusive nível OK), e o relatório de histórico lê essa linha. |
+| EQP-01 / EQP-02 | Corrigido: datas sem hora não voltam mais um dia e o histórico não mostra hora inventada. |
+| EQP-03 | Corrigido: as telas de consulta recalculam no máximo a cada 10 min; as gravações continuam recalculando na hora. |
+| EQP-04 | Corrigido: uso médio diário calculado por equipamento no banco. |
+| EQP-05 | Corrigido: o QR carrega só o histórico do equipamento. |
+| EQP-06 | Corrigido: quem está logado sem acesso à frente vê a mesma consulta pública; a visão pública não mostra nomes nem O.S. |
+| EQP-07 | Corrigido: etiquetas sempre com o domínio oficial; `jcsistema.online` redireciona para `www.jcsistema.online`. |
+| CMB-01 | Corrigido: botão desativado cinza e legível. |
+| CMB-02 | Aguardando decisão sobre as 2 saídas excluídas (ver a última seção). |
+| CMB-03 | Corrigido: aviso "Sem capacidade" no cadastro e na lista de veículos de terceiros. |
+| PRD-01 a PRD-04 | Corrigido. |
+| PRD-05 | Corrigido: saída sem saldo só com confirmação de ADMIN ou GESTOR. |
+| TAR-01 / TAR-02 | Corrigido. |
+| DIA-02 | Corrigido: a foto segue a frente do registro. |
+| VIS-01 a VIS-08 | Corrigido (prints em `docs/relatorio-teste-prints/depois/`). |
+| SEG-01 | Corrigido: 5 senhas erradas bloqueiam o usuário por 15 min; 20 bloqueiam o aparelho. |
+| SEG-02 | Corrigido: HSTS, X-Frame-Options, CSP `frame-ancestors`, nosniff, Referrer-Policy, Permissions-Policy; sem `X-Powered-By`. |
+| SEG-03 a SEG-06 | Corrigido. |
+| INT-01 | Corrigido: workflow diário "Lembretes de manutenção vencida". **Falta cadastrar o secret `WHATSAPP_CRON_SECRET` no GitHub** (mesmo valor da Hostinger). |
+| CFG-01 | Corrigido: workflow semanal "Backup das fotos e anexos" guarda a pasta `uploads` por 90 dias. |
+
+**Ideias de melhoria:**
+- **Implementadas:**
+  - 1, 2 e 8: nova tela **Custos e Consumo**, em Equipamentos.
+  - 5: nova tela **Pendências**.
+- **Já existiam:**
+  - 3: previsão em dias da próxima troca, agora mais precisa com o EQP-04.
+  - 6: leitura de horímetro pela página do QR.
+- **Não feitas, porque precisam de cadastro novo e das regras da operação:** 4 (conciliação por régua), 7 (checklist pré-uso), 9 (pneus e baterias), 10 (documentos com vencimento), 11 (offline completo) e 12 (relatório semanal automático, que depende do WhatsApp funcionando).
+
+**Para publicar:** depois de mesclar, rode o workflow "Migrar banco de dados (Drizzle)" (migrações 0027 e 0028).
+
 ## Como o teste foi feito
 
 - **Verificações automáticas:** `npm run build`, `tsc --noEmit`, `eslint .`, `npm audit`, `npm outdated`, as 23 suítes de teste (uma a uma) e buscas no código.

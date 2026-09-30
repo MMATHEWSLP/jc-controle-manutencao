@@ -1,0 +1,30 @@
+name: Lembretes de manutenção vencida (WhatsApp)
+
+# Chama /api/whatsapp/process uma vez por dia. A rota só reenvia o lembrete de trocas VENCIDAS
+# quando já passou o intervalo configurado na tela do WhatsApp ("repetir a cada N dias").
+# Pré-requisitos (Settings > Secrets and variables > Actions):
+#   - secret WHATSAPP_CRON_SECRET: o MESMO valor cadastrado na Hostinger
+#   - variable SITE_URL (opcional): padrão https://www.jcsistema.online
+
+on:
+  schedule:
+    - cron: "50 10 * * *" # 07:50 em Fortaleza (UTC-3)
+  workflow_dispatch: {}
+
+jobs:
+  lembretes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Processar lembretes
+        env:
+          SECRET: ${{ secrets.WHATSAPP_CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$SECRET" ]; then
+            echo "::notice::WHATSAPP_CRON_SECRET não cadastrado no GitHub; nada a fazer."
+            exit 0
+          fi
+          BASE="${SITE_URL:-https://www.jcsistema.online}"
+          STATUS=$(curl -sS -o resposta.json -w "%{http_code}" -X POST "$BASE/api/whatsapp/process" -H "Authorization: Bearer $SECRET")
+          cat resposta.json; echo
+          if [ "$STATUS" != "200" ]; then echo "::error::A rota respondeu $STATUS"; exit 1; fi

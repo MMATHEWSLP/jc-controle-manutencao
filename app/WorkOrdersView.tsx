@@ -5,6 +5,7 @@ import {
   api, ApiError, brDateTime, brDay, EquipmentPicker, jsonBody, localToday, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat, ShortageNotice,
   type EmployeeOption, type EquipmentOption, type ProductOption, type Shortage, type StockOptions,
 } from "./stock-client";
+import LoadWarning from "./LoadWarning";
 
 type User = { name: string; permissions: string[] };
 type OrderCard = {
@@ -33,7 +34,8 @@ export default function WorkOrdersView({ authUser, flash }: { authUser: User; fl
   const [error, setError] = useState("");
   const [opening, setOpening] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
-  useEffect(() => { api<StockOptions>("/api/stock/options").then(setOptions).catch(() => undefined); }, []);
+  const [optionsError, setOptionsError] = useState("");
+  useEffect(() => { api<StockOptions>("/api/stock/options").then(setOptions).catch(() => setOptionsError("Não foi possível carregar as frentes e os equipamentos. Recarregue a página ou verifique a conexão.")); }, []);
   const load = useCallback(async () => {
     setError("");
     const params = new URLSearchParams(Object.entries({ status, equipamento: equipmentFilter ? String(equipmentFilter.id) : "" }).filter(([, value]) => value)).toString();
@@ -50,6 +52,7 @@ export default function WorkOrdersView({ authUser, flash }: { authUser: User; fl
 
   return (
     <>
+      <LoadWarning message={optionsError} />
       <div className="page-heading module-heading">
         <div><p className="eyebrow">OFICINA · MANUTENÇÃO</p><h1>Ordem de Serviço</h1><span>O.S. por equipamento com peças do estoque (baixadas na hora), mecânicos responsáveis e as trocas de óleo registradas pelo QR Code.</span></div>
         {data?.canManage && <div className="heading-actions"><button className="primary" onClick={() => setOpening(true)}>＋ Abrir O.S.</button></div>}

@@ -79,7 +79,7 @@ html[data-theme="dark"] .wo-mechanic-chip{background:#1f3a30;color:#8fe0bf;borde
 .po-photo-grid figure{margin:0;width:120px;display:grid;gap:4px;font-size:11px;color:var(--muted)}
 .po-photo-grid img{width:120px;height:90px;object-fit:cover;border:1px solid var(--line);border-radius:8px}
 .po-photo-grid figcaption{display:flex;flex-direction:column;gap:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.po-company{padding:2px 7px;border-radius:6px;background:#eef1f3;color:#394a58;font-size:9px;font-weight:800;letter-spacing:.04em}
+.po-company{padding:2px 7px;border-radius:6px;background:#eef1f3;color:#394a58;font-size:10.5px;font-weight:800;letter-spacing:.04em}
 .po-situation-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
 .po-situation-chips button{padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:#51606c;font-size:11px;font-weight:700;cursor:pointer}
 .po-situation-chips button.selected{border-color:#1f6b9c;background:#e5f1fb;color:#1f6b9c}
@@ -87,7 +87,7 @@ html[data-theme="dark"] .wo-mechanic-chip{background:#1f3a30;color:#8fe0bf;borde
 .po-stage-count{padding:3px 8px;border:1px solid var(--line);border-radius:12px;font-size:11px;color:var(--muted)}
 .po-cancelled{margin:0 0 10px;padding:8px 10px;border:1px solid #efb6bc;border-radius:8px;background:#fff0f2;color:#a62532;font-size:12px;font-weight:700}
 .po-header-info{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 14px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
-.po-header-info dt{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.po-header-info dt{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .po-header-info dd{margin:2px 0 0;font-size:12px;font-weight:600;overflow-wrap:anywhere}
 @media(max-width:700px){.po-header-info{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .po-bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:8px;padding:8px 10px;border:1px solid #cfe0ea;border-radius:10px;background:#f4f9fc}
@@ -114,15 +114,15 @@ html[data-theme="dark"] .po-qty-changed strong{color:#f0a060}
 .po-bulk-bar label{text-transform:none;letter-spacing:0}
 /* Fotos vinculadas ao item (Solicitação de Pedidos) */
 .po-item-photos{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin-top:8px}
-.po-item-photos figure{margin:0;width:96px;display:grid;gap:3px;font-size:10px;color:var(--muted)}
+.po-item-photos figure{margin:0;width:96px;display:grid;gap:3px;font-size:11px;color:var(--muted)}
 .po-item-photos img{width:96px;height:72px;object-fit:cover;border:1px solid var(--line);border-radius:7px}
 .po-item-photos figcaption{display:flex;flex-direction:column;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .po-photo-add{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:6px;padding:6px 10px;border:1px dashed #9bcdbb;border-radius:8px;background:#f2faf7;color:#11704f!important;font-size:11px!important;font-weight:800;cursor:pointer;text-transform:none!important;letter-spacing:0!important}
-.po-photo-add.small{padding:3px 7px;font-size:10px!important}
+.po-photo-add.small{padding:3px 7px;font-size:11px!important}
 .po-item-thumbs{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:5px}
 .po-item-thumbs span{position:relative;display:inline-flex}
 .po-item-thumbs img{width:40px;height:40px;object-fit:cover;border:1px solid var(--line);border-radius:6px}
-.po-item-thumbs .link-button{position:absolute;top:-6px;right:-6px;width:16px;height:16px;margin:0!important;border-radius:50%;background:#fff;border:1px solid var(--line)!important;font-size:10px!important;line-height:1}
+.po-item-thumbs .link-button{position:absolute;top:-6px;right:-6px;width:16px;height:16px;margin:0!important;border-radius:50%;background:#fff;border:1px solid var(--line)!important;font-size:11px!important;line-height:1}
 html[data-theme="dark"] .po-photo-add{background:#14352c;border-color:#285e4b;color:#7bd7b2!important}
 /* Movimentação: lançamento direto e cadastro de departamentos */
 .stock-movement-form{display:grid;gap:12px;padding:16px}

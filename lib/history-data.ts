@@ -9,6 +9,8 @@ export type HistoryEntry = {
   maintenanceTypeId:number|null;
   kind:"MAINTENANCE"|"READING"|"IMPORTED";
   date:string;
+  // true quando o registro só tem a data (sem hora): a tela não deve inventar um horário.
+  dateOnly:boolean;
   recordedAt:string;
   equipmentId:number|null;
   prefix:string;
@@ -34,6 +36,7 @@ export type HistoryEntry = {
 
 const numberOrNull=(value:unknown)=>value===null||value===undefined?null:Number(value);
 const textOrNull=(value:unknown)=>value===null||value===undefined?null:String(value);
+const isDateOnly=(value:unknown)=>/^\d{4}-\d{2}-\d{2}$/.test(String(value??"").trim());
 const asIso=(value:unknown)=>{
   if(value===null||value===undefined||value==="")return "";
   const raw=String(value??"");
@@ -41,7 +44,9 @@ const asIso=(value:unknown)=>{
   return Number.isNaN(date.getTime())?raw:date.toISOString();
 };
 
-export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry[]> {
+// Com equipmentId, traz só o histórico daquele equipamento (tela do QR Code).
+export async function loadHistoryEntries(d1:D1DatabaseLike,options:{equipmentId?:number}={}):Promise<HistoryEntry[]> {
+  const only=options.equipmentId??null;
   const [maintenanceResult,readingResult,importedResult]=await Promise.all([
     d1.prepare(`SELECT m.id,m.equipment_id,m.maintenance_type_id,m.performed_at,m.hours,m.km,m.mechanic,m.work_order,m.cost,m.notes,m.created_at,
       e.prefix,e.type AS equipment_category,e.control_type,t.name AS maintenance_name,t.category AS maintenance_category,
@@ -52,13 +57,15 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       LEFT JOIN maintenance_plans p ON p.id=m.plan_id
       LEFT JOIN service_fronts sf ON sf.id=m.service_front_id
       LEFT JOIN users u ON u.id=m.created_by
-      ORDER BY m.created_at DESC,m.id DESC LIMIT 2000`).all() as Promise<{results:Row[]}>,
+      WHERE (?::int IS NULL OR m.equipment_id=?::int)
+      ORDER BY m.created_at DESC,m.id DESC LIMIT 2000`).bind(only,only).all() as Promise<{results:Row[]}>,
     d1.prepare(`SELECT r.id,r.equipment_id,r.reading_date,r.hours,r.km,r.operator,r.notes,r.source,r.created_at,
       e.prefix,e.type AS equipment_category,e.control_type,COALESCE(r.operator,u.name,'Não informado') AS responsible,sf.name AS historical_front
       FROM meter_readings r INNER JOIN equipment e ON e.id=r.equipment_id
       LEFT JOIN service_fronts sf ON sf.id=r.service_front_id
       LEFT JOIN users u ON u.id=r.created_by
-      ORDER BY r.created_at DESC,r.id DESC LIMIT 2000`).all() as Promise<{results:Row[]}>,
+      WHERE (?::int IS NULL OR r.equipment_id=?::int)
+      ORDER BY r.created_at DESC,r.id DESC LIMIT 2000`).bind(only,only).all() as Promise<{results:Row[]}>,
     d1.prepare(`SELECT h.id,h.prefix,h.service,h.reading_value,h.control_type,h.performed_at,h.is_generic_date,h.source,h.import_type,h.notes,h.created_at,
       COALESCE(e.id,legacy_e.id) AS equipment_id,COALESCE(e.type,legacy_e.type) AS equipment_category,
       COALESCE(t.id,legacy_t.id) AS maintenance_type_id,c.category AS interval_category,c.interval_value,NULL AS historical_front
@@ -69,8 +76,9 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
       LEFT JOIN maintenance_types t ON t.id=h.maintenance_type_id
       LEFT JOIN maintenance_types legacy_t ON h.maintenance_type_id IS NULL AND LOWER(TRIM(legacy_t.description))=LOWER(TRIM(h.service))
       LEFT JOIN maintenance_interval_configs c ON c.maintenance_type_id=COALESCE(t.id,legacy_t.id) AND c.active=1 AND c.unit=h.control_type
-        AND c.category=UPPER(CASE WHEN instr(h.prefix,'-')>0 THEN substr(h.prefix,1,instr(h.prefix,'-')-1) ELSE h.prefix END)
-      ORDER BY h.created_at DESC,h.id DESC LIMIT 2000`).all() as Promise<{results:Row[]}>,
+        AND c.category=UPPER(CASE WHEN strpos(h.prefix,'-')>0 THEN substr(h.prefix,1,strpos(h.prefix,'-')-1) ELSE h.prefix END)
+      WHERE (?::int IS NULL OR COALESCE(e.id,legacy_e.id)=?::int)
+      ORDER BY h.created_at DESC,h.id DESC LIMIT 2000`).bind(only,only).all() as Promise<{results:Row[]}>,
   ]);
 
   const maintenances:HistoryEntry[]=maintenanceResult.results.map((row)=>{
@@ -78,7 +86,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
     const reading=numberOrNull(unit==="KM"?row.km:row.hours);
     const interval=numberOrNull(unit==="KM"?row.interval_km:row.interval_hours);
     return {
-      id:`M-${row.id}`,sourceId:Number(row.id),maintenanceId:Number(row.id),maintenanceTypeId:Number(row.maintenance_type_id),kind:"MAINTENANCE",date:asIso(row.performed_at),recordedAt:asIso(row.created_at),
+      id:`M-${row.id}`,sourceId:Number(row.id),maintenanceId:Number(row.id),maintenanceTypeId:Number(row.maintenance_type_id),kind:"MAINTENANCE",date:asIso(row.performed_at),dateOnly:isDateOnly(row.performed_at),recordedAt:asIso(row.created_at),
       equipmentId:Number(row.equipment_id),prefix:String(row.prefix),equipmentCategory:String(row.equipment_category??"Sem categoria cadastrada"),
       front:textOrNull(row.historical_front),
       action:String(row.maintenance_name).toUpperCase().includes("FILTRO")?"TROCA DE FILTRO":"TROCA DE ÓLEO",
@@ -90,7 +98,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
   const readings:HistoryEntry[]=readingResult.results.map((row)=>{
     const unit:string=String(row.control_type)==="KM"?"KM":"HOURS";const source=String(row.source??"MANUAL");const method=source==="EXCEL_IMPORT"?"IMPORTAÇÃO EXCEL":source==="QR_CODE"?"QR CODE":source==="MAINTENANCE"?"MANUTENÇÃO":"MANUAL";
     return {
-      id:`R-${row.id}`,sourceId:Number(row.id),maintenanceId:null,maintenanceTypeId:null,kind:"READING",date:asIso(row.reading_date),recordedAt:asIso(row.created_at),equipmentId:Number(row.equipment_id),prefix:String(row.prefix),equipmentCategory:String(row.equipment_category??"Sem categoria cadastrada"),
+      id:`R-${row.id}`,sourceId:Number(row.id),maintenanceId:null,maintenanceTypeId:null,kind:"READING",date:asIso(row.reading_date),dateOnly:isDateOnly(row.reading_date),recordedAt:asIso(row.created_at),equipmentId:Number(row.equipment_id),prefix:String(row.prefix),equipmentCategory:String(row.equipment_category??"Sem categoria cadastrada"),
       front:textOrNull(row.historical_front),
       action:String(row.control_type)==="KM"?"ATUALIZAÇÃO DE KM":String(row.control_type)==="HOURS_KM"?"ATUALIZAÇÃO DE HORÍMETRO / KM":"ATUALIZAÇÃO DE HORÍMETRO",
       category:"LEITURA",service:`Leitura operacional · ${method}`,previousReading:null,newReading:numberOrNull(unit==="KM"?row.km:row.hours),hours:numberOrNull(row.hours),km:numberOrNull(row.km),interval:null,nextReading:null,
@@ -100,7 +108,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike):Promise<HistoryEntry
   const imported:HistoryEntry[]=importedResult.results.map((row)=>{
     const reading=numberOrNull(row.reading_value);const interval=numberOrNull(row.interval_value);
     return {
-      id:`I-${row.id}`,sourceId:Number(row.id),maintenanceId:null,maintenanceTypeId:numberOrNull(row.maintenance_type_id),kind:"IMPORTED",date:asIso(row.performed_at),recordedAt:asIso(row.created_at),
+      id:`I-${row.id}`,sourceId:Number(row.id),maintenanceId:null,maintenanceTypeId:numberOrNull(row.maintenance_type_id),kind:"IMPORTED",date:asIso(row.performed_at),dateOnly:isDateOnly(row.performed_at),recordedAt:asIso(row.created_at),
       equipmentId:row.equipment_id===null||row.equipment_id===undefined?null:Number(row.equipment_id),prefix:String(row.prefix),equipmentCategory:String(row.equipment_category??"Sem categoria cadastrada"),
       front:textOrNull(row.historical_front),
       action:"TROCA DE ÓLEO",category:String(row.interval_category??String(row.prefix).split("-")[0]).toUpperCase(),service:String(row.service),

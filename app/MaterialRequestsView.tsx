@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DEFAULT_FISCAL_UNIT, FISCAL_UNITS } from "../lib/fiscal-units";
 import { ProductPicker as SharedProductPicker } from "./stock-client";
+import { formatBrDate } from "../lib/date-format";
 
 type ItemStatus = "PENDING" | "SENT" | "NOT_AVAILABLE";
 type RequestStatus = "PENDING" | "IN_SEPARATION" | "SENT" | "PARTIALLY_SENT" | "NOT_FULFILLED" | "CANCELLED";
@@ -27,7 +28,7 @@ type Tab = "received" | "sent" | "history";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw Object.assign(new Error(String(data.error??"A operação não pôde ser concluída.")),{ data }); return data as T; }
 function ItemKind({ row }:{ row:Pick<RequestItem,"linked"|"productTag"> }) { return row.linked ? <span className="material-item-kind linked" title="Item vinculado a produto cadastrado: movimenta o estoque no envio">Produto {row.productTag ?? ""}</span> : <span className="material-item-kind manual" title="Item digitado à mão: não movimenta estoque">Manual</span>; }
-function formatDate(value:string|null) { if(!value)return "—"; const date=new Date(value); return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat("pt-BR",{dateStyle:"short",timeStyle:"short"}).format(date); }
+function formatDate(value:string|null) { return formatBrDate(value); }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
 const statusTone:Record<RequestStatus,string> = { PENDING:"gray", IN_SEPARATION:"yellow", SENT:"green", PARTIALLY_SENT:"orange", NOT_FULFILLED:"red", CANCELLED:"gray" };
 const STATUS_OPTIONS:Array<{value:RequestStatus|"";label:string}> = [
@@ -338,7 +339,7 @@ function CancelRequestModal({ item, close, saved }:{ item:MaterialRequest; close
   }
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
     <section className="modal">
-      <header><div><p className="eyebrow">CANCELAR SOLICITAÇÃO</p><h2>{item.requestNumber}</h2><span>A solicitação irá para o Histórico. Informe o motivo.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">CANCELAR SOLICITAÇÃO</p><h2>{item.requestNumber}</h2><span>A solicitação irá para o Histórico. Informe o motivo.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Motivo do cancelamento *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)}/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}

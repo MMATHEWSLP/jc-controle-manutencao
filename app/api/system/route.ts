@@ -3,7 +3,7 @@ import { authorize } from "../../../lib/auth";
 import { calculatePlanState, levelPriority, summarizeEquipmentHealth, type ControlType, type PlanTriggerMode } from "../../../lib/maintenance-engine";
 import { loadThresholds } from "../../../lib/maintenance-data";
 import { loadHistoryEntries } from "../../../lib/history-data";
-import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
+import { recalculateMaintenanceIfStale } from "../../../lib/maintenance-recalculation";
 import { allowedEquipmentIds,isAdministrator } from "../../../lib/front-scope";
 
 type Row=Record<string,unknown>;
@@ -20,7 +20,7 @@ export async function GET(request:Request){
   const auth=await authorize(request);if(auth.response)return auth.response;
   try{
     const d1=await getD1();
-    await recalculateMaintenanceCycles(d1,{notify:false});
+    await recalculateMaintenanceIfStale(d1);
     const [equipmentResult,applicableResult,typeResult,planResult,readingResult,rawHistory,thresholds,allowedIds]=await Promise.all([
       d1.prepare(`SELECT e.id,e.code,e.prefix,e.type,e.brand,e.model,e.year,e.serial_number,e.chassis,e.identification_type,e.plate,e.qr_token,e.photo_key,
         e.service_front_id,e.oil_change_enabled,e.current_hours,e.current_km,e.control_type,e.status,e.notes,e.equipment_model_id,e.created_at,e.updated_at,sf.name AS front,
@@ -31,9 +31,18 @@ export async function GET(request:Request){
       d1.prepare(`SELECT id,name,category FROM maintenance_types WHERE active=1 AND category='OIL' ORDER BY name`).all() as Promise<{results:Row[]}>,
       d1.prepare(`SELECT p.*,t.name AS maintenance_name,t.category AS maintenance_category FROM maintenance_plans p
         INNER JOIN maintenance_types t ON t.id=p.maintenance_type_id WHERE p.active=1 ORDER BY t.name`).all() as Promise<{results:Row[]}>,
-      d1.prepare(`SELECT r.id,r.equipment_id,r.reading_date,r.hours,r.km,r.operator,r.notes,r.created_at,e.prefix,e.brand,e.model,e.control_type,
-        COALESCE(u.name,r.operator,'Não informado') AS responsible FROM meter_readings r INNER JOIN equipment e ON e.id=r.equipment_id
-        LEFT JOIN users u ON u.id=r.created_by ORDER BY r.reading_date DESC,r.id DESC LIMIT 1000`).all() as Promise<{results:Row[]}>,
+      // Uso médio por dia de cada equipamento: primeira e última leitura do último ano (por unidade),
+      // calculado no banco — antes vinha das 1.000 leituras mais recentes da frota inteira.
+      d1.prepare(`SELECT equipment_id,unit,first_date,first_value,last_date,last_value FROM (
+          SELECT equipment_id,unit,reading_date,value,
+            first_value(reading_date) OVER w AS first_date,first_value(value) OVER w AS first_value,
+            last_value(reading_date) OVER w AS last_date,last_value(value) OVER w AS last_value,
+            row_number() OVER (PARTITION BY equipment_id,unit ORDER BY reading_date,id) AS position,count(*) OVER (PARTITION BY equipment_id,unit) AS total
+          FROM (SELECT id,equipment_id,reading_date,'HOURS' AS unit,hours AS value FROM meter_readings WHERE hours IS NOT NULL
+                UNION ALL SELECT id,equipment_id,reading_date,'KM',km FROM meter_readings WHERE km IS NOT NULL) r
+          WHERE reading_date>=to_char(now()-interval '365 days','YYYY-MM-DD')
+          WINDOW w AS (PARTITION BY equipment_id,unit ORDER BY reading_date,id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+        ) x WHERE position=1 AND total>=2`).all() as Promise<{results:Row[]}>,
       loadHistoryEntries(d1),
       loadThresholds(d1),
       allowedEquipmentIds(d1,auth.user!,"OIL"),
@@ -48,15 +57,13 @@ export async function GET(request:Request){
     const rawPlanMap=new Map<number,Row[]>();
     for(const row of planResult.results){const equipmentId=Number(row.equipment_id);const list=rawPlanMap.get(equipmentId)??[];list.push(row);rawPlanMap.set(equipmentId,list);}
 
-    const readingsByEquipment=new Map<number,Row[]>();
-    for(const row of readingResult.results){const equipmentId=Number(row.equipment_id);const list=readingsByEquipment.get(equipmentId)??[];list.push(row);readingsByEquipment.set(equipmentId,list);}
+    const usageByEquipment=new Map<string,Row>();
+    for(const row of readingResult.results)usageByEquipment.set(`${Number(row.equipment_id)}:${String(row.unit)}`,row);
     const dailyAverage=(equipmentId:number,unit:"HOURS"|"KM")=>{
-      const rows=(readingsByEquipment.get(equipmentId)??[]).filter((row)=>n(unit==="KM"?row.km:row.hours)!==null);
-      if(rows.length<2)return 0;
-      const newest=rows[0],oldest=rows[rows.length-1];
-      const days=Math.max(1,(new Date(String(newest.reading_date)).getTime()-new Date(String(oldest.reading_date)).getTime())/86400000);
-      const delta=Number(unit==="KM"?newest.km:newest.hours)-Number(unit==="KM"?oldest.km:oldest.hours);
-      return Math.max(0,delta/days);
+      const row=usageByEquipment.get(`${equipmentId}:${unit}`);
+      if(!row)return 0;
+      const days=Math.max(1,(new Date(String(row.last_date)).getTime()-new Date(String(row.first_date)).getTime())/86400000);
+      return Math.max(0,(Number(row.last_value)-Number(row.first_value))/days);
     };
 
     const allPlanStates:Array<Record<string,unknown>>=[];

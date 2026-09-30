@@ -246,3 +246,19 @@ export async function recalculateMaintenanceCycles(
   catch(error){console.error("[maintenance.recalculation] Falha isolada ao processar alertas do WhatsApp",error);}}
   return {recalculated:true,equipment:equipment.length,plans:targets.length,withHistory:targets.filter((item)=>item.candidate).length};
 }
+
+// Telas de consulta (sistema, histórico, relatórios, QR) não precisam recalcular a frota inteira a
+// cada abertura: toda gravação que muda o cálculo (leitura, troca, plano, configuração, cadastro)
+// já chama recalculateMaintenanceCycles(..., {force:true}). Aqui fica só a rede de segurança para
+// mudanças feitas por fora do sistema (scripts de importação): no máximo uma vez a cada
+// RECALCULATION_MAX_AGE_MS por processo, e chamadas simultâneas esperam o mesmo recálculo.
+const RECALCULATION_MAX_AGE_MS=10*60_000;
+let lastBackgroundRecalculation=0;
+let runningRecalculation:Promise<void>|null=null;
+
+export async function recalculateMaintenanceIfStale(d1:D1DatabaseLike,now=Date.now()){
+  if(runningRecalculation)return runningRecalculation;
+  if(now-lastBackgroundRecalculation<RECALCULATION_MAX_AGE_MS)return;
+  runningRecalculation=recalculateMaintenanceCycles(d1,{notify:false}).then(()=>{lastBackgroundRecalculation=Date.now();}).finally(()=>{runningRecalculation=null;});
+  return runningRecalculation;
+}

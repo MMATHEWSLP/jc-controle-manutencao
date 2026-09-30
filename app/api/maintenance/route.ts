@@ -5,6 +5,7 @@ import { loadEquipmentCore, loadPlansForEquipment, loadThresholds } from "../../
 import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalculation";
 import { equipmentAccessResponse,requireEquipmentAccess } from "../../../lib/front-scope";
 import { workOrderNumber } from "../../../lib/document-numbers";
+import { toLocalWallTime } from "../../../lib/local-datetime";
 
 const clean=(value:unknown)=>typeof value==="string"?value.trim():"";
 const numeric=(value:unknown)=>{const parsed=Number(value);return Number.isFinite(parsed)?parsed:null;};
@@ -67,7 +68,7 @@ export async function POST(request:Request){
     if(updatedEquipment.current_hours!==equipment.current_hours||updatedEquipment.current_km!==equipment.current_km){
       statements.push(d1.prepare(`UPDATE equipment SET current_hours=?,current_km=?,updated_at=? WHERE id=?`).bind(updatedEquipment.current_hours,updatedEquipment.current_km,now,equipmentId));
       statements.push(d1.prepare(`INSERT INTO meter_readings (equipment_id,reading_date,hours,km,operator,service_front_id,notes,source,authorized_regression,created_by,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(equipmentId,performedAt,requiresHours?nextHours:null,requiresKm?nextKm:null,mechanic,access.serviceFrontId,"Leitura registrada junto com a manutenção","MAINTENANCE",regression?1:0,auth.user!.id,now,now));
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(equipmentId,toLocalWallTime(performedAt),requiresHours?nextHours:null,requiresKm?nextKm:null,mechanic,access.serviceFrontId,"Leitura registrada junto com a manutenção","MAINTENANCE",regression?1:0,auth.user!.id,now,now));
     }
     for(const plan of selected){
       const unit=plan.triggerMode==="KM"?"KM":"HOURS";const reading=unit==="KM"?nextKm:nextHours;const interval=unit==="KM"?plan.intervalKm!:plan.intervalHours!;

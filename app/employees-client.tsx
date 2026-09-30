@@ -101,7 +101,7 @@ export function Modal({ eyebrow, title, subtitle, close, children, wide }: { eye
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className={`modal ${wide ? "equipment-modal" : "transfer-modal"} employee-modal`}>
-        <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div><button onClick={close}>×</button></header>
+        <header><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div><button onClick={close} aria-label="Fechar">×</button></header>
         {children}
       </section>
     </div>

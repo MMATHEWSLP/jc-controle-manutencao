@@ -41,17 +41,18 @@ const searchKey = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, 
 export function useThirdPartyOptions() {
   const [options, setOptions] = useState<ThirdPartyOption[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [error, setError] = useState("");
   const reload = useCallback(async () => {
     const result = await api<{ thirdParties: ThirdPartyOption[]; canManage: boolean }>("/api/third-parties?opcoes=1");
     setOptions(result.thirdParties); setCanManage(result.canManage);
     return result.thirdParties;
   }, []);
-  useEffect(() => { reload().catch(() => undefined); }, [reload]);
-  return { options, canManage, reload };
+  useEffect(() => { reload().then(() => setError("")).catch(() => setError("Não foi possível carregar a lista de terceiros. Recarregue a página.")); }, [reload]);
+  return { options, canManage, reload, error };
 }
 
 // Select com busca de empresa/pessoa (filtrado pelos tipos permitidos).
-export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder }: { options: ThirdPartyOption[]; kinds?: Kind[]; value: ThirdPartyOption | null; onPick: (item: ThirdPartyOption | null) => void; placeholder?: string }) {
+export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder, loadError }: { options: ThirdPartyOption[]; kinds?: Kind[]; value: ThirdPartyOption | null; onPick: (item: ThirdPartyOption | null) => void; placeholder?: string; loadError?: string }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const results = useMemo(() => {
@@ -68,7 +69,7 @@ export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder }:
         {results.map((item) => (
           <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(item); setQuery(""); setOpen(false); }}><b>{item.name}</b><small> · {KIND_LABELS[item.kind]}{item.vehicles.length ? ` · ${item.vehicles.length} veículo(s)` : ""}</small></button></li>
         ))}
-        {results.length === 0 && <li className="muted"><small>Nenhum terceiro ativo encontrado.</small></li>}
+        {results.length === 0 && <li className="muted"><small>{loadError || "Nenhum terceiro ativo encontrado."}</small></li>}
       </ul>}
     </div>
   );
@@ -117,7 +118,7 @@ export function ThirdPartyFormModal({ item, fronts, defaultKind, close, saved }:
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="modal">
-        <header><div><p className="eyebrow">TERCEIROS</p><h2>{item ? `Editar ${item.name}` : "Novo terceiro"}</h2><span>Empresa prestadora, terceirizada ou pessoa que não é da JC.</span></div><button type="button" onClick={close}>×</button></header>
+        <header><div><p className="eyebrow">TERCEIROS</p><h2>{item ? `Editar ${item.name}` : "Novo terceiro"}</h2><span>Empresa prestadora, terceirizada ou pessoa que não é da JC.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
           <label className="full">Nome / razão social *<input name="name" required defaultValue={item?.name ?? ""} autoFocus /></label>
           <label>Tipo *<select name="kind" required defaultValue={item?.kind ?? defaultKind ?? "PRESTADOR"}>{(Object.keys(KIND_LABELS) as Kind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}</select></label>
@@ -151,15 +152,16 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="modal">
-        <header><div><p className="eyebrow">VEÍCULO / MÁQUINA DE TERCEIRO</p><h2>{item ? `Editar ${item.plate}` : "Novo veículo"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close}>×</button></header>
+        <header><div><p className="eyebrow">VEÍCULO / MÁQUINA DE TERCEIRO</p><h2>{item ? `Editar ${item.plate}` : "Novo veículo"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
           <label>Placa / identificação *<input name="plate" required defaultValue={item?.plate ?? ""} autoFocus /></label>
           <label>Modelo / descrição<input name="description" defaultValue={item?.description ?? ""} /></label>
           <label>Tipo *<select name="vehicleType" defaultValue={item?.vehicleType ?? "CAMINHAO"}>{(Object.keys(VEHICLE_LABELS) as VehicleType[]).map((type) => <option key={type} value={type}>{VEHICLE_LABELS[type]}</option>)}</select></label>
           <label>Medição *<select name="meterType" value={meterType} onChange={(event) => setMeterType(event.target.value as MeterType)}><option value="KM">KM (hodômetro)</option><option value="HORIMETRO">Horímetro (horas)</option></select></label>
           <label>Combustível<select name="fuelTypeId" defaultValue={item?.fuelTypeId ?? ""}><option value="">Não informado</option>{fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
-          <label>Capacidade do tanque (L)<input name="tankCapacityLiters" inputMode="decimal" defaultValue={item?.tankCapacityLiters ?? ""} placeholder="Opcional" /></label>
-          <label>Consumo esperado ({meterType === "KM" ? "km/L" : "L/h"})<input name="expectedConsumption" inputMode="decimal" defaultValue={item?.expectedConsumption ?? ""} placeholder="Opcional" /></label>
+          <label>Capacidade do tanque (L)<input name="tankCapacityLiters" inputMode="decimal" defaultValue={item?.tankCapacityLiters ?? ""} placeholder="Recomendado" /></label>
+          <label>Consumo esperado ({meterType === "KM" ? "km/L" : "L/h"})<input name="expectedConsumption" inputMode="decimal" defaultValue={item?.expectedConsumption ?? ""} placeholder="Recomendado" /></label>
+          <p className="full table-sub">Sem capacidade do tanque o sistema não avisa quando um abastecimento passa do tanque; sem consumo esperado, não compara o consumo com a média.</p>
           <label>{item?.hasMovements ? "Última leitura (vem dos abastecimentos)" : "Leitura atual"}<input name="lastReading" inputMode="decimal" disabled={item?.hasMovements} defaultValue={item?.lastReading ?? ""} placeholder="Opcional" /></label>
           {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
           <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy ? "Salvando..." : "Salvar veículo"}</button></div>
@@ -254,7 +256,7 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
                   <td>{number(vehicle.lastReading)}</td>
                   <td>{vehicle.averageConsumption === null ? <small className="table-sub">{vehicle.fuelings ? "sem consumo calculado" : "sem abastecimentos"}</small> : <strong>{number(vehicle.averageConsumption)} {vehicle.consumptionUnit}</strong>}
                     {vehicle.expectedConsumption !== null && <small className="table-sub">esperado {number(vehicle.expectedConsumption)} {vehicle.consumptionUnit}</small>}</td>
-                  <td>{vehicle.tankCapacityLiters === null ? "—" : `${number(vehicle.tankCapacityLiters)} L`}</td>
+                  <td>{vehicle.tankCapacityLiters === null ? <span className="status-pill orange" title="Cadastre a capacidade para o sistema avisar abastecimento acima do tanque">Sem capacidade</span> : `${number(vehicle.tankCapacityLiters)} L`}</td>
                   <td><span className={`status-pill ${vehicle.active ? "green" : "gray"}`}>{vehicle.active ? "Ativo" : "Inativo"}</span></td>
                   {canManage && <td><div className="equipment-row-actions">
                     <button onClick={() => setEditingVehicle({ party: opened, item: vehicle })}>Editar</button>
@@ -311,7 +313,7 @@ export function ThirdPartyConsumptionReport() {
         <label>De<input type="date" value={from} max={to} onChange={(event) => event.target.value && setFrom(event.target.value)} /></label>
         <label>Até<input type="date" value={to} min={from} onChange={(event) => event.target.value && setTo(event.target.value)} /></label>
         {data && data.fronts.length > 1 && <label>Frente<select value={front} onChange={(event) => setFront(event.target.value)}><option value="">Todas em exibição</option>{data.fronts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        <label className="stock-filter-wide">Empresa<ThirdPartyPicker options={options.options} value={party} onPick={(item) => { setParty(item); setVehicle(null); }} /></label>
+        <label className="stock-filter-wide">Empresa<ThirdPartyPicker options={options.options} loadError={options.error} value={party} onPick={(item) => { setParty(item); setVehicle(null); }} /></label>
         <label className="stock-filter-wide">Veículo<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} onPick={setVehicle} disabled={!party} /></label>
         <div className="fuel-export-actions"><a className="secondary" href={`/api/third-parties/consumption?${params}&formato=xlsx`}>Exportar Excel</a></div>
       </div>

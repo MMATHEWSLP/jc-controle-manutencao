@@ -1,4 +1,5 @@
 import type { D1DatabaseLike } from "../db";
+import { siteUrl } from "./site";
 
 type Row=Record<string,unknown>;
 export type WhatsappLevel="WARNING"|"NEAR"|"OVERDUE";
@@ -26,7 +27,7 @@ function maskToken(value:string){return value?`${value.slice(0,6)}${"•".repeat
 
 async function runtimeEnvironment():Promise<RuntimeEnvironment>{
   const values=process.env as unknown as Record<string,unknown>;
-  return {accessToken:clean(values.WHATSAPP_ACCESS_TOKEN),phoneNumberId:clean(values.WHATSAPP_PHONE_NUMBER_ID),apiVersion:clean(values.WHATSAPP_API_VERSION)||"v23.0",publicBaseUrl:(clean(values.WHATSAPP_PUBLIC_BASE_URL)||"https://www.jcsistema.online").replace(/\/$/,""),cronSecret:clean(values.WHATSAPP_CRON_SECRET),webhookVerifyToken:clean(values.WHATSAPP_WEBHOOK_VERIFY_TOKEN),appSecret:clean(values.WHATSAPP_APP_SECRET),encryptionKey:clean(values.WHATSAPP_CREDENTIALS_ENCRYPTION_KEY)};
+  return {accessToken:clean(values.WHATSAPP_ACCESS_TOKEN),phoneNumberId:clean(values.WHATSAPP_PHONE_NUMBER_ID),apiVersion:clean(values.WHATSAPP_API_VERSION)||"v23.0",publicBaseUrl:(clean(values.WHATSAPP_PUBLIC_BASE_URL)||siteUrl()).replace(/\/$/,""),cronSecret:clean(values.WHATSAPP_CRON_SECRET),webhookVerifyToken:clean(values.WHATSAPP_WEBHOOK_VERIFY_TOKEN),appSecret:clean(values.WHATSAPP_APP_SECRET),encryptionKey:clean(values.WHATSAPP_CREDENTIALS_ENCRYPTION_KEY)};
 }
 function bytesToBase64(bytes:Uint8Array){let binary="";for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary);}
 function base64ToBytes(value:string){const binary=atob(value);return Uint8Array.from(binary,(character)=>character.charCodeAt(0));}
