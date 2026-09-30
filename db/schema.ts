@@ -1203,6 +1203,67 @@ export const dailyRecordTrips = pgTable("daily_record_trips", {
 
 // "Memória" do último equipamento usado por cada operador: pré-seleciona o equipamento
 // ao abrir o Controle Diário. Uma linha por usuário, atualizada quando ele troca de máquina.
+// ---------------------------------------------------------------------------
+// Checklist pré-uso: antes de ligar o equipamento o operador marca cada item como OK / Não OK.
+// Modelo por tipo de equipamento (equipment.type); equipment_type NULL = modelo padrão para os
+// tipos sem modelo próprio. Item "Não OK" exige comentário (e foto, se o item pedir). Item que
+// bloqueia (blocking) marcado Não OK deixa o checklist BLOQUEADO: a máquina não deve trabalhar.
+// Com open_work_order, qualquer Não OK abre uma O.S. (ou se liga à O.S. aberta do equipamento).
+// As respostas guardam o texto e o "bloqueia" do item no momento (o modelo pode mudar depois).
+// ---------------------------------------------------------------------------
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  equipmentType: text("equipment_type"),
+  openWorkOrder: boolean("open_work_order").notNull().default(true),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("checklist_templates_type_unique").on(sql`coalesce(${table.equipmentType}, '')`)]);
+
+export const checklistTemplateItems = pgTable("checklist_template_items", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").notNull().references(() => checklistTemplates.id),
+  label: text("label").notNull(),
+  blocking: boolean("blocking").notNull().default(false),
+  photoRequired: boolean("photo_required").notNull().default(true),
+  position: integer("position").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [index("checklist_template_items_template_idx").on(table.templateId, table.position)]);
+
+export const checklistSubmissions = pgTable("checklist_submissions", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  operatorName: text("operator_name"),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  templateId: integer("template_id").references(() => checklistTemplates.id),
+  checklistDate: text("checklist_date").notNull(),
+  meterReading: doublePrecision("meter_reading"),
+  status: text("status", { enum:["OK","PENDENCIA","BLOQUEADO"] }).notNull(),
+  failedItems: integer("failed_items").notNull().default(0),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  notes: text("notes"),
+  clientRequestId: text("client_request_id"),
+  ...timestamps,
+}, (table) => [
+  index("checklist_submissions_equipment_date_idx").on(table.equipmentId, table.checklistDate),
+  index("checklist_submissions_date_idx").on(table.checklistDate, table.status),
+  uniqueIndex("checklist_submissions_client_request_unique").on(table.clientRequestId),
+]);
+
+export const checklistAnswers = pgTable("checklist_answers", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id").notNull().references(() => checklistSubmissions.id),
+  itemId: integer("item_id").references(() => checklistTemplateItems.id),
+  label: text("label").notNull(),
+  blocking: boolean("blocking").notNull().default(false),
+  ok: boolean("ok").notNull(),
+  comment: text("comment"),
+  photoKey: text("photo_key"),
+}, (table) => [index("checklist_answers_submission_idx").on(table.submissionId)]);
+
 export const equipmentCurrentAssignments = pgTable("equipment_current_assignments", {
   userId: integer("user_id").primaryKey().references(() => users.id),
   equipmentId: integer("equipment_id").notNull().references(() => equipment.id),

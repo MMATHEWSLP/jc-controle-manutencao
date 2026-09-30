@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- ícone estático pequeno do próprio app */
 import { useEffect, useState } from "react";
 import { CONNECTIVITY_EVENT, checkOnline } from "../lib/connectivity";
-import { QUEUE_EVENT, QUEUE_SENT_EVENT, listQueued, syncQueue } from "../lib/offline-queue";
+import { QUEUE_EVENT, QUEUE_SENT_EVENT, countPending, syncQueue } from "../lib/offline-queue";
 
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -21,7 +21,7 @@ export default function AppRuntime() {
     if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").then((registration) => registration.update()).catch(() => undefined);
     }
-    const refreshPending = () => { listQueued().then((items) => setPending(items.filter((item) => item.status === "PENDING").length)).catch(() => undefined); };
+    const refreshPending = () => { countPending().then(setPending).catch(() => undefined); };
     // O iPhone nem sempre avisa que ficou sem internet: a conexão é confirmada chamando o
     // servidor (lib/connectivity.ts) — a cada 20 s, ao voltar para o app e nos eventos do navegador.
     const probe = () => { checkOnline().then((ok) => { if (ok) syncQueue().catch(() => undefined); }).catch(() => undefined); };
@@ -64,9 +64,9 @@ export default function AppRuntime() {
   async function install() { if (!installPrompt) return; await installPrompt.prompt(); await installPrompt.userChoice.catch(() => undefined); setInstallPrompt(null); dismiss(); }
 
   return <>
-    {!online && <div className="app-offline-banner" role="status"><strong>Sem internet</strong><span>Mostrando os últimos dados salvos no celular. O Controle Diário pode ser preenchido e será enviado quando o sinal voltar.{pending > 0 ? ` ${pending} registro(s) aguardando envio.` : ""}</span></div>}
-    {online && pending > 0 && <div className="app-offline-banner syncing" role="status"><strong>Enviando</strong><span>{pending} registro(s) do Controle Diário aguardando envio...</span></div>}
-    {online && pending === 0 && sentNotice > 0 && <div className="app-offline-banner syncing" role="status"><strong>✓ Enviado</strong><span>{sentNotice} registro(s) guardado(s) no celular foram enviados. Já aparecem em &quot;Meus registros&quot;.</span></div>}
+    {!online && <div className="app-offline-banner" role="status"><strong>Sem internet</strong><span>Mostrando os últimos dados salvos no celular. Controle Diário e checklist podem ser preenchidos e serão enviados quando o sinal voltar.{pending > 0 ? ` ${pending} registro(s) aguardando envio.` : ""}</span></div>}
+    {online && pending > 0 && <div className="app-offline-banner syncing" role="status"><strong>Enviando</strong><span>{pending} registro(s) guardado(s) no celular aguardando envio...</span></div>}
+    {online && pending === 0 && sentNotice > 0 && <div className="app-offline-banner syncing" role="status"><strong>✓ Enviado</strong><span>{sentNotice} registro(s) guardado(s) no celular foram enviados.</span></div>}
     {!dismissed && (installPrompt || iosHint) && <div className="app-install-hint" role="dialog" aria-label="Instalar app">
       <img src="/icon-192.png" alt="" width={40} height={40}/>
       <div><strong>Instale o app JC Sistema</strong><span>{installPrompt ? "Abre direto da tela inicial, em tela cheia, e funciona sem internet." : "No Safari, toque em Compartilhar e depois em \"Adicionar à Tela de Início\"."}</span></div>

@@ -7,6 +7,7 @@ import {
   type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingHistory, type ReadingUnit,
 } from "../lib/daily-record-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
+import ChecklistView from "./ChecklistView";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
 import { FieldOperatorsPanel, FrontRequestsPanel } from "./DailyAdminPanels";
@@ -27,7 +28,7 @@ type RecordItem = {
   fuelings:Array<{number:number;liters:number;reading:number|null;location:string|null}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
-type Tab = "new" | "mine" | "history" | "fronts" | "operators";
+type Tab = "new" | "mine" | "checklist" | "history" | "fronts" | "operators";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
@@ -67,6 +68,7 @@ export default function DailyControlView({ flash, currentUser, activeFrontId=nul
     <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do Controle Diário">
       {context.canRegister && <button className={tab==="new"?"active":""} onClick={()=>go("new")}>Novo registro</button>}
       {context.canRegister && <button className={tab==="mine"?"active":""} onClick={()=>go("mine")}>Meus registros</button>}
+      {(context.canRegister||context.canViewAll) && <button className={tab==="checklist"?"active":""} onClick={()=>go("checklist")}>Checklist pré-uso</button>}
       {context.canViewAll && <button className={tab==="history"?"active":""} onClick={()=>go("history")}>Histórico de registros</button>}
       {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>go("fronts")}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
       {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>go("operators")}>Funcionários de campo</button>}
@@ -74,6 +76,7 @@ export default function DailyControlView({ flash, currentUser, activeFrontId=nul
     {context.canRegister && <PendingQueue userId={context.userId}/>}
     {editing ? <DailyForm key={`edit-${editing.id}`} context={context} currentUser={currentUser} flash={flash} editing={editing} onSent={()=>setEditing(null)} onCancel={()=>setEditing(null)}/>
       : tab==="new" && context.canRegister ? <DailyForm context={context} currentUser={currentUser} flash={flash} onSent={()=>setTab("mine")}/>
+      : tab==="checklist" && (context.canRegister||context.canViewAll) ? <ChecklistView userId={context.userId} equipment={context.equipment} assignedEquipmentId={context.assignedEquipmentId} manualOperator={context.manualOperator} canRegister={context.canRegister} canViewAll={context.canViewAll} canManage={context.canManage} flash={flash}/>
       : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
       : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
       : tab==="history" && context.canViewAll ? <DailyHistoryPanel fronts={context.fronts} onEdit={editFromHistory} defaultFrontId={activeFrontId}/>
