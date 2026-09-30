@@ -127,3 +127,27 @@ html[data-theme="dark"] .pendencia-count { background: #2e2c28; color: #e7e3dc; 
 .fleet-costs-filters .fleet-costs-check { white-space: nowrap; min-height: 40px; }
 .fleet-costs-filters input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; }
 .fleet-costs-filters > button { min-height: 40px; padding: 0 18px; border-radius: 8px; font-size: 12px; font-weight: 800; }
+
+/* Combustível → Tanque (conciliação) */
+.fuel-tank-intro { margin: 10px 0; }
+.fuel-tank-form { padding: 14px 16px; }
+.fuel-tank-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.fuel-tank-grid label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fuel-tank-grid .full, .fuel-tank-grid .modal-footer { grid-column: 1 / -1; }
+.fuel-tank-grid textarea { font-family: inherit; }
+.fuel-tank-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 4px; font-size: 13px; }
+.fuel-tank-adjust { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; font-weight: 600; }
+.fuel-tank-adjust input[type="checkbox"], .fuel-tank-grid input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; }
+.fuel-tank-history-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.fuel-tank-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.fuel-tank-filters label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fuel-tanks-modal { width: min(920px, 96vw); }
+.text-negative { color: #b42318; }
+html[data-theme="dark"] .text-negative { color: #ff9b91; }
+@media (max-width: 760px) { .fuel-tank-grid { grid-template-columns: 1fr; } }
+.fuel-tank-summary > .panel-heading, .fuel-tank-history > .panel-heading { padding: 12px 16px 8px; }
+.fuel-tank-summary h2, .fuel-tank-history h2, .fuel-tank-form h2 { margin: 0; font-size: 15px; }
+.fuel-tank-filters > button { min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.fuel-tank-form .panel-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.fuel-tanks-modal .modal-body { padding: 14px 20px 18px; }
+.fuel-tanks-modal .modal-footer { padding: 12px 0 0; }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import ThirdPartiesView, { KIND_LABELS, METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
+import FuelTankView from "./FuelTankView";
 
 type MovementType = "ENTRADA" | "SAIDA" | "TRANSFERENCIA";
 type Location = "FRENTE" | "PORTO";
@@ -59,7 +60,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
-  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption">(canRegister ? "new" : "history");
+  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(canRegister ? "new" : "history");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -130,8 +131,10 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button>
         <button className={tab === "third-parties" ? "active" : ""} onClick={() => setTab("third-parties")}>Terceiros</button>
         <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
+        <button className={tab === "tank" ? "active" : ""} onClick={() => setTab("tank")}>Tanque (régua)</button>
       </div>
-      {tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
+      {tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
+        : tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
         : tab === "new" && (canRegister || editing)
         ? <FuelForm key={editing ? `edit-${editing.id}` : "new"} summary={summary} authUser={authUser} editing={editing} onSaved={async (message) => { const wasEditing = Boolean(editing); await afterSave(message); setTab(wasEditing ? "history" : "new"); }} onCancel={editing ? () => { setEditing(null); setTab("history"); } : undefined} />

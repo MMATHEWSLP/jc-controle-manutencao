@@ -1092,6 +1092,49 @@ export const fuelMovements = pgTable("fuel_movements", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Conciliação do tanque. fuel_tanks: um tanque por frente + local (Frente/Porto) + combustível,
+// com a tabela de arqueação (centímetros da régua → litros, JSON [[cm, litros], ...]) e a
+// tolerância aceita entre o medido e o saldo do sistema. fuel_tank_measurements: cada medição
+// física guarda o saldo calculado NAQUELE momento (retrato), para o histórico não mudar quando
+// lançamentos antigos forem corrigidos. adjustment_movement_id = ajuste de saldo gerado a partir
+// da medição (lançamento balance_adjustment), quando o gestor decide igualar o sistema ao medido.
+// ---------------------------------------------------------------------------
+export const fuelTanks = pgTable("fuel_tanks", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  stockLocation: text("stock_location", { enum:["FRENTE","PORTO"] }).notNull().default("FRENTE"),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  name: text("name").notNull(),
+  capacityLiters: doublePrecision("capacity_liters"),
+  calibration: text("calibration"),
+  tolerancePercent: doublePrecision("tolerance_percent").notNull().default(1),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("fuel_tanks_stock_unique").on(table.serviceFrontId, table.stockLocation, table.fuelTypeId)]);
+
+export const fuelTankMeasurements = pgTable("fuel_tank_measurements", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  stockLocation: text("stock_location", { enum:["FRENTE","PORTO"] }).notNull().default("FRENTE"),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  tankId: integer("tank_id").references(() => fuelTanks.id),
+  measuredAt: text("measured_at").notNull(),
+  method: text("method", { enum:["LITROS","REGUA"] }).notNull().default("LITROS"),
+  rulerCm: doublePrecision("ruler_cm"),
+  measuredLiters: doublePrecision("measured_liters").notNull(),
+  calculatedLiters: doublePrecision("calculated_liters").notNull(),
+  differenceLiters: doublePrecision("difference_liters").notNull(),
+  tolerancePercent: doublePrecision("tolerance_percent").notNull().default(1),
+  adjustmentMovementId: integer("adjustment_movement_id").references(() => fuelMovements.id),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("fuel_tank_measurements_stock_idx").on(table.serviceFrontId, table.fuelTypeId, table.measuredAt)]);
+
+// ---------------------------------------------------------------------------
 // Controle Diário do equipamento. user_id vem sempre da sessão = a conta que EFETIVAMENTE fez o
 // lançamento (auditoria). No login de campo (CAMPO) essa conta é o próprio operador; nos demais
 // logins (ADMIN/GESTOR/USUÁRIO) o operador é digitado em operator_name e manual_entry = TRUE.
