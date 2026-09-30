@@ -106,3 +106,14 @@ html:not([data-theme="dark"]) .profile-button small { color: #56666f; }
   .fleet-metric { min-height: 0; padding: 11px; }
   .fleet-metric b { font-size: 21px; }
 }
+
+/* Tela Pendências */
+.pendencias-list { display: grid; gap: 10px; }
+.pendencia-card { padding: 14px 16px; }
+.pendencia-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font-size: 14px; }
+.pendencia-head strong { flex: 1; }
+.pendencia-count { min-width: 38px; padding: 3px 9px; border-radius: 12px; background: #eef3f6; color: #193b50; text-align: center; }
+html[data-theme="dark"] .pendencia-count { background: #2e2c28; color: #e7e3dc; }
+.pendencia-where { margin: 4px 0 0; font-size: 12px; }
+.pendencia-card .table-scroll { margin-top: 10px; max-height: 420px; overflow: auto; }
+.pendencias-ok { margin-top: 12px; }
