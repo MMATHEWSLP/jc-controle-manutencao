@@ -67,7 +67,7 @@ on:
         default: "Diesel S10"
         type: string
       ids:
-        description: "Só em excluir-lancamentos: ID:AAAA-MM-DD:LITROS separados por ; (ex.: 6945:2026-09-09:350)"
+        description: "excluir-lancamentos: ID:AAAA-MM-DD:LITROS separados por ; (ex.: 6945:2026-09-09:350) · corrigir-km: números da lista a processar (ex.: 21,40; vazio = todos) · ajustar-saldo: AAAA-MM-DD, o alvo não conta o que foi digitado desde esse dia"
         required: false
         default: ""
         type: string
@@ -114,6 +114,7 @@ jobs:
             if [ "$MODO" != "corrigir-km-simulacao" ]; then ARGS+=("--confirmar"); fi
             if [ "$MODO" = "corrigir-km-restaurando-excluidas" ]; then ARGS+=("--restaurar-excluidas"); fi
             if [ "$MODO" = "corrigir-km-mantendo-excluidas" ]; then ARGS+=("--manter-excluidas"); fi
+            if [ -n "$IDS" ]; then ARGS+=("--somente=$IDS"); fi
             node corrigir-km-terceiros.mjs "${ARGS[@]}"
             exit $?
           fi
@@ -144,6 +145,7 @@ jobs:
             ARGS=("--alvo=$ALVO")
             if [ -n "$LOTE" ]; then ARGS+=("--lote=$LOTE"); fi
             if [ "$MODO" = "ajustar-saldo" ]; then ARGS+=("--confirmar"); fi
+            if [ -n "$IDS" ]; then ARGS+=("--ignorar-criados-desde=$IDS"); fi
             node ajustar-saldo-combustivel.mjs "${ARGS[@]}"
             exit $?
           fi

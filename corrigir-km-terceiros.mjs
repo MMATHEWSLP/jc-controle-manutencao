@@ -13,7 +13,8 @@ import pg from "pg";
 // --restaurar-excluidas (volta a valer); com --manter-excluidas essas correções são puladas e o
 // lançamento continua excluído. Numa transação, com registro em audit_logs.
 //
-// Uso: node corrigir-km-terceiros.mjs --arquivo=lista.json --empresa=GREGOLETO [--confirmar] [--restaurar-excluidas | --manter-excluidas]
+// Uso: node corrigir-km-terceiros.mjs --arquivo=lista.json --empresa=GREGOLETO [--confirmar] [--restaurar-excluidas | --manter-excluidas] [--somente=21,40]
+// --somente = só estas correções da lista (pelo número "n"), ex.: restaurar depois as que ficaram excluídas.
 // lista.json = [{ "n": 1, "plate": "QEH4C88", "driver": "Reginaldo", "date": null | "AAAA-MM-DD", "liters": 359, "current": 216934, "correct": 216934 }]
 // ---------------------------------------------------------------------------
 
@@ -28,7 +29,11 @@ if (!url) { console.error("DATABASE_URL não encontrada no ambiente."); process.
 const plateKey = (value) => String(value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const num = (value) => Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 const linha = () => console.log("-".repeat(110));
-const list = JSON.parse(readFileSync(arg("arquivo", "scripts/import-abastecimento/data/gregoleto-km-2026-09-29.json"), "utf8"));
+const SOMENTE = arg("somente", "").split(/[,;\s]+/).filter(Boolean).map(Number);
+if (SOMENTE.some((n) => !Number.isInteger(n) || n <= 0)) { console.error("--somente deve ser uma lista de números da lista (ex.: 21,40)."); process.exit(1); }
+const fullList = JSON.parse(readFileSync(arg("arquivo", "scripts/import-abastecimento/data/gregoleto-km-2026-09-29.json"), "utf8"));
+const list = SOMENTE.length ? fullList.filter((item) => SOMENTE.includes(Number(item.n))) : fullList;
+if (SOMENTE.length && list.length !== SOMENTE.length) { console.error(`Correções não encontradas na lista: ${SOMENTE.filter((n) => !list.some((item) => Number(item.n) === n)).join(", ")}.`); process.exit(1); }
 
 const pool = new pg.Pool({ connectionString: url, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 20000 });
 const client = await pool.connect();

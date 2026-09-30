@@ -18,13 +18,21 @@ import { normalizeText, parseBalanceTargets, planBalanceAdjustments } from "./sc
 //   node ajustar-saldo-combustivel.mjs --alvo="Diesel S10:FRENTE=83174; Diesel S10:PORTO=16379,99"
 //   ... --confirmar                 (grava)
 //   --frente=Arapiuns  --data=AAAA-MM-DD (padrão: hoje)  --lote=ajuste_saldo_<data>
+//   --ignorar-criados-desde=AAAA-MM-DD: o alvo é o saldo SEM os lançamentos digitados a partir desse dia
+//     (hora de Fortaleza). Eles continuam valendo depois do ajuste: saldo final = alvo ± o que foi
+//     digitado. Sem --data, o ajuste fica com a data do dia anterior.
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
 const arg = (name, fallback) => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const FRENTE = arg("frente", "Arapiuns");
-const DATA = arg("data", today);
+const DESDE = arg("ignorar-criados-desde", "");
+if (DESDE && !/^\d{4}-\d{2}-\d{2}$/.test(DESDE)) { console.error("--ignorar-criados-desde deve ser AAAA-MM-DD."); process.exit(1); }
+// Meia-noite em Fortaleza (UTC-3) em UTC, no mesmo formato de created_at ("…Z").
+const CORTE = DESDE ? new Date(`${DESDE}T00:00:00-03:00`).toISOString() : null;
+const dayBefore = (day) => { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() - 1); return date.toISOString().slice(0, 10); };
+const DATA = arg("data", DESDE ? dayBefore(DESDE) : today);
 const LOTE = arg("lote", `ajuste_saldo_${DATA}`);
 const ALVO = arg("alvo", "");
 
@@ -42,9 +50,13 @@ async function loadFuelRules() {
   return { ...rules, cleanup: () => rmSync(outDir, { recursive: true, force: true }) };
 }
 
-async function currentBalances(client, rules, frontId) {
-  const rows = (await client.query(`SELECT service_front_id,stock_location,destination_front_id,destination_location,fuel_type_id,movement_type,movement_date,quantity
-    FROM fuel_movements WHERE deleted_at IS NULL AND (service_front_id=$1 OR destination_front_id=$1)`, [frontId])).rows;
+// Lançamentos digitados a partir do corte (não entram no saldo-alvo). Ajustes de saldo sempre contam.
+const typedSince = (row) => CORTE !== null && !row.balance_adjustment && String(row.created_at) >= CORTE;
+
+async function currentBalances(client, rules, frontId, skipTyped = false) {
+  const rows = (await client.query(`SELECT service_front_id,stock_location,destination_front_id,destination_location,fuel_type_id,movement_type,movement_date,quantity,balance_adjustment,created_at
+    FROM fuel_movements WHERE deleted_at IS NULL AND (service_front_id=$1 OR destination_front_id=$1)`, [frontId])).rows
+    .filter((row) => !skipTyped || !typedSince(row));
   const result = rules.computeFuelBalances(rows.map((row) => ({
     serviceFrontId: Number(row.service_front_id), stockLocation: row.stock_location, destinationFrontId: row.destination_front_id === null ? null : Number(row.destination_front_id),
     destinationLocation: row.destination_location, fuelTypeId: Number(row.fuel_type_id), movementType: row.movement_type, movementDate: row.movement_date, quantity: Number(row.quantity),
@@ -76,12 +88,25 @@ try {
   await client.query("BEGIN");
   // Trava os lançamentos da frente enquanto calcula e grava (ninguém muda o saldo no meio).
   await client.query(`SELECT id FROM fuel_movements WHERE service_front_id=$1 OR destination_front_id=$1 FOR UPDATE`, [frontId]);
-  const plan = planBalanceAdjustments({ targets, fuelTypes, current: await currentBalances(client, rules, frontId), frontId, date: DATA, importSource: LOTE });
+  const plan = planBalanceAdjustments({ targets, fuelTypes, current: await currentBalances(client, rules, frontId, true), frontId, date: DATA, importSource: LOTE });
+  const real = await currentBalances(client, rules, frontId);
   linha();
   console.log(CONFIRMAR ? `AJUSTE DE SALDO — ${front.name.toUpperCase()} (gravando)` : `SIMULAÇÃO DO AJUSTE DE SALDO — ${front.name.toUpperCase()} (nada será gravado)`);
   console.log(`  Data dos lançamentos de ajuste: ${DATA} · lote: ${LOTE}`);
-  linha();
+  if (CORTE) {
+    const typed = (await client.query(`SELECT fm.id,fm.created_at,fm.movement_date,fm.movement_type,fm.quantity,fm.stock_location,fm.service_front_id,fm.destination_front_id,fm.destination_location,
+        ft.name AS fuel,coalesce(e.prefix,fm.provider_equipment,fm.third_party_description,'') AS vehicle,fm.responsible
+      FROM fuel_movements fm JOIN fuel_types ft ON ft.id=fm.fuel_type_id LEFT JOIN equipment e ON e.id=fm.equipment_id
+      WHERE fm.deleted_at IS NULL AND NOT fm.balance_adjustment AND fm.created_at >= $2 AND (fm.service_front_id=$1 OR fm.destination_front_id=$1) ORDER BY fm.created_at`, [frontId, CORTE])).rows;
+    console.log(`  Saldo-alvo = saldo SEM os ${typed.length} lançamento(s) digitado(s) desde ${DESDE.split("-").reverse().join("/")} (eles continuam valendo):`);
+    for (const row of typed) {
+      const incoming = Number(row.destination_front_id) === frontId && Number(row.service_front_id) !== frontId;
+      console.log(`    #${row.id} digitado ${String(row.created_at).slice(0, 16).replace("T", " ")} UTC · data ${row.movement_date} · ${row.movement_type}${incoming ? " (chegando de outra frente)" : ""} ${litros(Number(row.quantity))} · ${row.fuel} · ${row.stock_location}${row.destination_location ? ` → ${row.destination_location}` : ""} · ${row.vehicle || "—"} · ${row.responsible ?? "—"}`);
+    }
+    linha();
+  }
   printPlan(plan);
+  if (CORTE) for (const item of plan) console.log(`  Saldo real hoje (${item.fuelName}, ${item.location === "PORTO" ? "Porto" : "Frente"}): ${litros(real(item.fuelTypeId, item.location))} → depois do ajuste: ${litros(real(item.fuelTypeId, item.location) + (item.record ? (item.record.movementType === "ENTRADA" ? 1 : -1) * item.record.quantity : 0))}`);
   const records = plan.filter((item) => item.record).map((item) => item.record);
   if (!CONFIRMAR) { await client.query("ROLLBACK"); linha(); console.log(records.length ? "Simulação concluída. Para gravar, rode de novo em modo confirmar." : "Nada a ajustar."); linha(); }
   else {
