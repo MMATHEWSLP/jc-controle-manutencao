@@ -17,7 +17,10 @@ export type DailyExit = {
 export const DAILY_EXIT_KIND_LABELS: Record<DailyExit["kind"], string> = { FROTA: "Frota", TERCEIRO: "Terceiro", PRESTADOR: "Prestador" };
 
 export async function dailySettings(db: Db, frontId: number): Promise<DailyMessageSettings & { configured: boolean }> {
-  const [row] = await db.select().from(fuelDailySettings).where(eq(fuelDailySettings.serviceFrontId, frontId)).limit(1);
+  let row: typeof fuelDailySettings.$inferSelect | undefined;
+  // Antes da migração 0036 a tabela não existe: usa os textos padrão (os números não dependem dela).
+  try { [row] = await db.select().from(fuelDailySettings).where(eq(fuelDailySettings.serviceFrontId, frontId)).limit(1); }
+  catch (error) { if ((error as { cause?: { code?: string } })?.cause?.code !== "42P01") throw error; }
   return row ? { greeting: row.greeting, title: row.title, balanceLabel: row.balanceLabel, configured: true } : { ...DEFAULT_DAILY_SETTINGS, configured: false };
 }
 
