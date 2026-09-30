@@ -12,7 +12,7 @@ export const FIELD_SESSION_SECONDS = 60 * 60 * 12;
 // AVISO DE SEGURANÇA: login sem senha = quem souber nome + código entra no lugar do colega.
 // Contrapartidas: bloqueio por tentativas (lib/field-auth.ts), código só em hash, sessão de
 // 12 h, acesso restrito a estas rotas e todo registro guarda quem lançou.
-const FIELD_ALLOWED_API = ["/api/daily-records", "/api/auth/", "/api/ping"];
+const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping"];
 // Cloudflare Workers Web Crypto accepts PBKDF2 iteration counts up to 100,000.
 // Keep the maximum supported cost so hashing works identically in production.
 const PASSWORD_ITERATIONS = 100_000;

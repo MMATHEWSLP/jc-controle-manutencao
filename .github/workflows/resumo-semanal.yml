@@ -1,0 +1,34 @@
+name: Resumo semanal (WhatsApp)
+
+# Toda segunda-feira manda o resumo da semana anterior (segunda a domingo, todas as frentes) para os
+# destinatários do WhatsApp marcados em "Recebe o resumo semanal". Cada semana vai uma vez só por
+# destinatário, mesmo que o workflow rode de novo.
+# Pré-requisitos (Settings > Secrets and variables > Actions):
+#   - secret WHATSAPP_CRON_SECRET: o MESMO valor cadastrado na Hostinger
+#   - variable SITE_URL (opcional): padrão https://www.jcsistema.online
+# Na Hostinger (opcional, recomendado): WHATSAPP_WEEKLY_TEMPLATE = nome de um modelo aprovado pela Meta
+# com 3 variáveis ({{1}} período, {{2}} resumo, {{3}} link). Sem ele, a Meta só entrega o texto para
+# quem mandou mensagem ao número da empresa nas últimas 24 h.
+
+on:
+  schedule:
+    - cron: "45 10 * * 1" # segunda 07:45 em Fortaleza (UTC-3)
+  workflow_dispatch: {}
+
+jobs:
+  resumo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar resumo semanal
+        env:
+          SECRET: ${{ secrets.WHATSAPP_CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$SECRET" ]; then
+            echo "::notice::WHATSAPP_CRON_SECRET não cadastrado no GitHub; nada a fazer."
+            exit 0
+          fi
+          BASE="${SITE_URL:-https://www.jcsistema.online}"
+          STATUS=$(curl -sS -o resposta.json -w "%{http_code}" -X POST "$BASE/api/weekly-report/send" -H "Authorization: Bearer $SECRET")
+          cat resposta.json; echo
+          if [ "$STATUS" != "200" ]; then echo "::error::A rota respondeu $STATUS"; exit 1; fi

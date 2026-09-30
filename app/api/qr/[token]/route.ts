@@ -64,7 +64,7 @@ export async function GET(request:Request,{params}:Context){
       plans,history:equipmentHistory,
       // Última O.S. do equipamento (aberta ou fechada): vem preenchida no registro da troca de óleo.
       lastWorkOrder:user?.permissions.includes("maintenance.create")?await lastWorkOrderOf(await getDb(),equipmentId):null,
-      viewer:{authenticated:Boolean(user),name:user?.name??null,canUpdateReading:Boolean(user?.permissions.includes("meter.create")),
+      viewer:{authenticated:Boolean(user),id:user?.id??null,name:user?.name??null,canUpdateReading:Boolean(user?.permissions.includes("meter.create")),
         canRegisterMaintenance:Boolean(user?.permissions.includes("maintenance.create")),isAdmin:user?.profile==="ADMIN"},
     },{headers:{"Cache-Control":"no-store, private"}});
   }catch(error){

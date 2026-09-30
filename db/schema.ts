@@ -330,9 +330,12 @@ export const meterReadings = pgTable("meter_readings", {
   source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE"] }).notNull().default("MANUAL"),
   authorizedRegression: boolean("authorized_regression").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
+  // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
+  clientRequestId: text("client_request_id"),
   ...timestamps,
 }, (table) => [
   index("meter_equipment_date_idx").on(table.equipmentId, table.readingDate), index("meter_front_idx").on(table.serviceFrontId),
+  uniqueIndex("meter_readings_client_request_unique").on(table.clientRequestId),
 ]);
 
 export const readingImports = pgTable("reading_imports", {
@@ -570,6 +573,8 @@ export const whatsappRecipients = pgTable("whatsapp_recipients", {
   active: boolean("active").notNull().default(true),
   categories: text("categories").notNull().default('["ALL"]'),
   alertTypes: text("alert_types").notNull().default('["WARNING","NEAR","OVERDUE"]'),
+  // Recebe o resumo semanal da operação (segunda-feira, lib/weekly-report.ts).
+  weeklyReport: boolean("weekly_report").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
@@ -598,7 +603,7 @@ export const whatsappDeliveries = pgTable("whatsapp_deliveries", {
   result: text("result", { enum:["SENT","DELIVERED","PENDING","FAILED"] }).notNull().default("PENDING"),
   providerMessageId: text("provider_message_id"),
   errorReason: text("error_reason"),
-  triggerType: text("trigger_type", { enum:["AUTOMATIC","MANUAL","TEST","OVERDUE_REPEAT"] }).notNull(),
+  triggerType: text("trigger_type", { enum:["AUTOMATIC","MANUAL","TEST","OVERDUE_REPEAT","WEEKLY_REPORT"] }).notNull(),
   dedupeKey: text("dedupe_key"),
   sentAt: text("sent_at"),
   deliveredAt: text("delivered_at"),
@@ -1060,6 +1065,8 @@ export const fuelMovements = pgTable("fuel_movements", {
   // Lançamentos importados não passam pelas validações obrigatórias dos lançamentos novos.
   importSource: text("import_source"),
   importHash: text("import_hash"),
+  // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
+  clientRequestId: text("client_request_id"),
   // FALSE = origem (Frente/Porto) assumida na importação, ainda não conferida por alguém.
   originConfirmed: boolean("origin_confirmed").notNull().default(true),
   // TRUE = abastecimento real sem o veículo identificado (corrigir no Histórico). importedVehicle
@@ -1084,12 +1091,56 @@ export const fuelMovements = pgTable("fuel_movements", {
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
   uniqueIndex("fuel_movements_import_hash_unique").on(table.importHash),
+  uniqueIndex("fuel_movements_client_request_unique").on(table.clientRequestId),
   index("fuel_movements_import_source_idx").on(table.importSource),
   index("fuel_movements_destination_idx").on(table.destinationFrontId),
   index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),
   index("fuel_movements_third_party_vehicle_idx").on(table.thirdPartyVehicleId, table.movementDate),
   index("fuel_movements_third_party_idx").on(table.thirdPartyId), index("fuel_movements_fuel_type_idx").on(table.fuelTypeId), index("fuel_movements_responsible_employee_idx").on(table.responsibleEmployeeId),
 ]);
+
+// ---------------------------------------------------------------------------
+// Conciliação do tanque. fuel_tanks: um tanque por frente + local (Frente/Porto) + combustível,
+// com a tabela de arqueação (centímetros da régua → litros, JSON [[cm, litros], ...]) e a
+// tolerância aceita entre o medido e o saldo do sistema. fuel_tank_measurements: cada medição
+// física guarda o saldo calculado NAQUELE momento (retrato), para o histórico não mudar quando
+// lançamentos antigos forem corrigidos. adjustment_movement_id = ajuste de saldo gerado a partir
+// da medição (lançamento balance_adjustment), quando o gestor decide igualar o sistema ao medido.
+// ---------------------------------------------------------------------------
+export const fuelTanks = pgTable("fuel_tanks", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  stockLocation: text("stock_location", { enum:["FRENTE","PORTO"] }).notNull().default("FRENTE"),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  name: text("name").notNull(),
+  capacityLiters: doublePrecision("capacity_liters"),
+  calibration: text("calibration"),
+  tolerancePercent: doublePrecision("tolerance_percent").notNull().default(1),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("fuel_tanks_stock_unique").on(table.serviceFrontId, table.stockLocation, table.fuelTypeId)]);
+
+export const fuelTankMeasurements = pgTable("fuel_tank_measurements", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  stockLocation: text("stock_location", { enum:["FRENTE","PORTO"] }).notNull().default("FRENTE"),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  tankId: integer("tank_id").references(() => fuelTanks.id),
+  measuredAt: text("measured_at").notNull(),
+  method: text("method", { enum:["LITROS","REGUA"] }).notNull().default("LITROS"),
+  rulerCm: doublePrecision("ruler_cm"),
+  measuredLiters: doublePrecision("measured_liters").notNull(),
+  calculatedLiters: doublePrecision("calculated_liters").notNull(),
+  differenceLiters: doublePrecision("difference_liters").notNull(),
+  tolerancePercent: doublePrecision("tolerance_percent").notNull().default(1),
+  adjustmentMovementId: integer("adjustment_movement_id").references(() => fuelMovements.id),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("fuel_tank_measurements_stock_idx").on(table.serviceFrontId, table.fuelTypeId, table.measuredAt)]);
 
 // ---------------------------------------------------------------------------
 // Controle Diário do equipamento. user_id vem sempre da sessão = a conta que EFETIVAMENTE fez o
@@ -1160,6 +1211,67 @@ export const dailyRecordTrips = pgTable("daily_record_trips", {
 
 // "Memória" do último equipamento usado por cada operador: pré-seleciona o equipamento
 // ao abrir o Controle Diário. Uma linha por usuário, atualizada quando ele troca de máquina.
+// ---------------------------------------------------------------------------
+// Checklist pré-uso: antes de ligar o equipamento o operador marca cada item como OK / Não OK.
+// Modelo por tipo de equipamento (equipment.type); equipment_type NULL = modelo padrão para os
+// tipos sem modelo próprio. Item "Não OK" exige comentário (e foto, se o item pedir). Item que
+// bloqueia (blocking) marcado Não OK deixa o checklist BLOQUEADO: a máquina não deve trabalhar.
+// Com open_work_order, qualquer Não OK abre uma O.S. (ou se liga à O.S. aberta do equipamento).
+// As respostas guardam o texto e o "bloqueia" do item no momento (o modelo pode mudar depois).
+// ---------------------------------------------------------------------------
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  equipmentType: text("equipment_type"),
+  openWorkOrder: boolean("open_work_order").notNull().default(true),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [uniqueIndex("checklist_templates_type_unique").on(sql`coalesce(${table.equipmentType}, '')`)]);
+
+export const checklistTemplateItems = pgTable("checklist_template_items", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").notNull().references(() => checklistTemplates.id),
+  label: text("label").notNull(),
+  blocking: boolean("blocking").notNull().default(false),
+  photoRequired: boolean("photo_required").notNull().default(true),
+  position: integer("position").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [index("checklist_template_items_template_idx").on(table.templateId, table.position)]);
+
+export const checklistSubmissions = pgTable("checklist_submissions", {
+  id: serial("id").primaryKey(),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  operatorName: text("operator_name"),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  templateId: integer("template_id").references(() => checklistTemplates.id),
+  checklistDate: text("checklist_date").notNull(),
+  meterReading: doublePrecision("meter_reading"),
+  status: text("status", { enum:["OK","PENDENCIA","BLOQUEADO"] }).notNull(),
+  failedItems: integer("failed_items").notNull().default(0),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  notes: text("notes"),
+  clientRequestId: text("client_request_id"),
+  ...timestamps,
+}, (table) => [
+  index("checklist_submissions_equipment_date_idx").on(table.equipmentId, table.checklistDate),
+  index("checklist_submissions_date_idx").on(table.checklistDate, table.status),
+  uniqueIndex("checklist_submissions_client_request_unique").on(table.clientRequestId),
+]);
+
+export const checklistAnswers = pgTable("checklist_answers", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id").notNull().references(() => checklistSubmissions.id),
+  itemId: integer("item_id").references(() => checklistTemplateItems.id),
+  label: text("label").notNull(),
+  blocking: boolean("blocking").notNull().default(false),
+  ok: boolean("ok").notNull(),
+  comment: text("comment"),
+  photoKey: text("photo_key"),
+}, (table) => [index("checklist_answers_submission_idx").on(table.submissionId)]);
+
 export const equipmentCurrentAssignments = pgTable("equipment_current_assignments", {
   userId: integer("user_id").primaryKey().references(() => users.id),
   equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
@@ -1532,3 +1644,63 @@ export const workOrderItems = pgTable("work_order_items", {
   removedBy: integer("removed_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("work_order_items_order_idx").on(table.workOrderId)]);
+
+// ---------------------------------------------------------------------------
+// Pneus e baterias (lib/components.ts). Cada item tem número próprio (número de fogo do pneu ou
+// série da bateria) e uma linha do tempo de eventos. As colunas de situação (status, equipamento,
+// posição, uso acumulado) são um resumo recalculado a partir dos eventos (lib/component-rules.ts).
+// ---------------------------------------------------------------------------
+export const components = pgTable("components", {
+  id: serial("id").primaryKey(),
+  kind: text("kind", { enum:["TIRE","BATTERY"] }).notNull(),
+  code: text("code").notNull(),
+  brand: text("brand").notNull(),
+  model: text("model"),
+  size: text("size"),
+  purchaseDate: text("purchase_date"),
+  purchaseCost: doublePrecision("purchase_cost"),
+  supplier: text("supplier"),
+  // Vida esperada: pneu em km/horas (unidade do equipamento), bateria em meses.
+  expectedLife: doublePrecision("expected_life"),
+  warrantyMonths: integer("warranty_months"),
+  status: text("status", { enum:["STOCK","MOUNTED","DISCARDED"] }).notNull().default("STOCK"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  position: text("position"),
+  mountedAt: text("mounted_at"),
+  mountedReading: doublePrecision("mounted_reading"),
+  mountedUnit: text("mounted_unit", { enum:["KM","HOURS"] }),
+  usageKm: doublePrecision("usage_km").notNull().default(0),
+  usageHours: doublePrecision("usage_hours").notNull().default(0),
+  recapCount: integer("recap_count").notNull().default(0),
+  eventsCost: doublePrecision("events_cost").notNull().default(0),
+  lastTreadDepth: doublePrecision("last_tread_depth"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  ...timestamps,
+}, (table) => [
+  index("components_equipment_idx").on(table.equipmentId),
+  index("components_kind_status_idx").on(table.kind, table.status),
+]);
+
+export const componentEvents = pgTable("component_events", {
+  id: serial("id").primaryKey(),
+  componentId: integer("component_id").notNull().references(() => components.id),
+  eventType: text("event_type", { enum:["MOUNT","ROTATE","UNMOUNT","RECAP","REPAIR","INSPECTION","DISCARD"] }).notNull(),
+  eventDate: text("event_date").notNull(),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  position: text("position"),
+  fromPosition: text("from_position"),
+  reading: doublePrecision("reading"),
+  unit: text("unit", { enum:["KM","HOURS"] }),
+  cost: doublePrecision("cost"),
+  treadDepth: doublePrecision("tread_depth"),
+  notes: text("notes"),
+  userId: integer("user_id").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("component_events_component_idx").on(table.componentId, table.eventDate),
+  index("component_events_equipment_idx").on(table.equipmentId, table.eventDate),
+]);

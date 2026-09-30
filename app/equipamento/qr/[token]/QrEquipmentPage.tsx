@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import Image from "next/image";
 import styles from "./qr-page.module.css";
 import { formatBrDate } from "../../../../lib/date-format";
+import { enqueueRequest } from "../../../../lib/offline-queue";
+import { reportNetworkFailure } from "../../../../lib/connectivity";
 
 type PlanState={configured:boolean;unit:"HOURS"|"KM";unitLabel:"h"|"km";currentValue:number;lastValue:number|null;interval:number|null;nextValue:number|null;remaining:number|null;overdue:number;health:number|null;level:"OK"|"WARNING"|"NEAR"|"OVERDUE";label:string;tone:string};
 type QrPlan={id:number;maintenanceTypeId:number;name:string;category:string;lastDate:string|null;state:PlanState};
 type QrHistory={id:string;date:string;service:string;reading:number|null;unit:"HOURS"|"KM";responsible:string;workOrder:string;kind:"MAINTENANCE"|"IMPORTED"};
-type QrData={generatedAt:string;equipment:{id:number;prefix:string;type:string;brand:string;model:string;category:string;control:"HOURS"|"KM"|"HOURS_KM";currentHours:number;currentKm:number;updatedAt:string;situation:string;tone:string};plans:QrPlan[];history:QrHistory[];lastWorkOrder?:{number:string;status:"OPEN"|"CLOSED"}|null;viewer:{authenticated:boolean;name:string|null;canUpdateReading:boolean;canRegisterMaintenance:boolean;isAdmin:boolean}};
+type QrData={generatedAt:string;equipment:{id:number;prefix:string;type:string;brand:string;model:string;category:string;control:"HOURS"|"KM"|"HOURS_KM";currentHours:number;currentKm:number;updatedAt:string;situation:string;tone:string};plans:QrPlan[];history:QrHistory[];lastWorkOrder?:{number:string;status:"OPEN"|"CLOSED"}|null;viewer:{authenticated:boolean;id:number|null;name:string|null;canUpdateReading:boolean;canRegisterMaintenance:boolean;isAdmin:boolean}};
 
 const statusLabels:Record<PlanState["level"],string>={OK:"NORMAL",WARNING:"PRÓXIMA TROCA",NEAR:"URGENTE",OVERDUE:"VENCIDA"};
 const formatNumber=(value:number|null|undefined)=>value===null||value===undefined?"—":value.toLocaleString("pt-BR",{maximumFractionDigits:1});
@@ -34,11 +36,14 @@ export default function QrEquipmentPage({token}:{token:string}){
   const historyRows=data?.history.slice(0,showAllHistory?100:6)??[];
   const flash=(message:string)=>{setNotice(message);window.setTimeout(()=>setNotice(""),3500);};
 
-  async function saveReading(event:FormEvent<HTMLFormElement>,authorized=false){
-    event.preventDefault();if(!data)return;setBusy(true);setFormError("");const form=new FormData(event.currentTarget);
-    const payload={equipmentId:data.equipment.id,readingDate:form.get("readingDate"),hours:data.equipment.control!=="KM"?form.get("reading"):undefined,km:data.equipment.control==="KM"?form.get("reading"):undefined,operator:data.viewer.name,notes:"Atualização realizada pela página do QR Code",source:"QR_CODE",authorizeRegression:authorized};
+  async function saveReading(event:FormEvent<HTMLFormElement>,authorized=false,clientRequestId:string=crypto.randomUUID(),formElement:HTMLFormElement=event.currentTarget){
+    event.preventDefault();if(!data)return;setBusy(true);setFormError("");const form=new FormData(formElement);
+    const payload={clientRequestId,equipmentId:data.equipment.id,readingDate:form.get("readingDate"),hours:data.equipment.control!=="KM"?form.get("reading"):undefined,km:data.equipment.control==="KM"?form.get("reading"):undefined,operator:data.viewer.name,notes:"Atualização realizada pela página do QR Code",source:"QR_CODE",authorizeRegression:authorized};
     try{await fetchJson("/api/readings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});await load();setAction(null);flash("Leitura atualizada e manutenções recalculadas.");}
-    catch(problem){const typed=problem as Error&{data?:{requiresConfirmation?:boolean}};if(typed.data?.requiresConfirmation&&data.viewer.isAdmin&&window.confirm(`${typed.message}\n\nConfirmar como administrador?`)){setBusy(false);return saveReading(event,true);}setFormError(typed.message);}
+    catch(problem){const typed=problem as Error&{data?:{requiresConfirmation?:boolean};status?:number};if(typed.data?.requiresConfirmation&&data.viewer.isAdmin&&window.confirm(`${typed.message}\n\nConfirmar como administrador?`)){setBusy(false);return saveReading(event,true,clientRequestId,formElement);}
+      // Sem conexão: guarda a leitura no celular e envia quando o sinal voltar.
+      if(problem instanceof TypeError&&typed.status===undefined&&data.viewer.id){reportNetworkFailure();await enqueueRequest({userId:data.viewer.id,kind:"METER",url:"/api/readings",body:JSON.stringify(payload),summary:`Leitura ${data.equipment.prefix}: ${String(form.get("reading"))} ${unit}`});setAction(null);flash("Sem conexão: leitura guardada no celular. Será enviada quando o sinal voltar.");return;}
+      setFormError(typed.message);}
     finally{setBusy(false);}
   }
 

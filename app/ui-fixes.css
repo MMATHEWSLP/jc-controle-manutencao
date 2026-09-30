@@ -127,3 +127,99 @@ html[data-theme="dark"] .pendencia-count { background: #2e2c28; color: #e7e3dc; 
 .fleet-costs-filters .fleet-costs-check { white-space: nowrap; min-height: 40px; }
 .fleet-costs-filters input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; }
 .fleet-costs-filters > button { min-height: 40px; padding: 0 18px; border-radius: 8px; font-size: 12px; font-weight: 800; }
+
+/* Combustível → Tanque (conciliação) */
+.fuel-tank-intro { margin: 10px 0; }
+.fuel-tank-form { padding: 14px 16px; }
+.fuel-tank-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.fuel-tank-grid label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fuel-tank-grid .full, .fuel-tank-grid .modal-footer { grid-column: 1 / -1; }
+.fuel-tank-grid textarea { font-family: inherit; }
+.fuel-tank-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 4px; font-size: 13px; }
+.fuel-tank-adjust { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; font-weight: 600; }
+.fuel-tank-adjust input[type="checkbox"], .fuel-tank-grid input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; }
+.fuel-tank-history-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.fuel-tank-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.fuel-tank-filters label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fuel-tanks-modal { width: min(920px, 96vw); }
+.text-negative { color: #b42318; }
+html[data-theme="dark"] .text-negative { color: #ff9b91; }
+@media (max-width: 760px) { .fuel-tank-grid { grid-template-columns: 1fr; } }
+.fuel-tank-summary > .panel-heading, .fuel-tank-history > .panel-heading { padding: 12px 16px 8px; }
+.fuel-tank-summary h2, .fuel-tank-history h2, .fuel-tank-form h2 { margin: 0; font-size: 15px; }
+.fuel-tank-filters > button { min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.fuel-tank-form .panel-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.fuel-tanks-modal .modal-body { padding: 14px 20px 18px; }
+.fuel-tanks-modal .modal-footer { padding: 12px 0 0; }
+
+/* Pneus e baterias */
+.components-metrics { margin-bottom: 14px; }
+.components-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 12px; padding: 12px 16px; }
+.components-filters label { display: grid; gap: 4px; font-weight: 700; min-width: 170px; }
+.components-filters label.grow { flex: 1 1 240px; }
+.components-table td { vertical-align: top; }
+.components-table td .status-pill { margin-top: 4px; }
+.components-table td:first-child .status-pill { display: flex; width: max-content; }
+.components-life { display: grid; grid-template-columns: 70px auto; align-items: center; gap: 6px; min-width: 110px; }
+.components-life:before { content: ""; grid-area: 1 / 1; height: 7px; border-radius: 4px; background: #e6ecef; }
+.components-life i { grid-area: 1 / 1; height: 7px; border-radius: 4px; background: #16835f; }
+.components-life i.orange { background: #d56617; } .components-life i.red { background: #c83e43; }
+.components-life span { font-size: 12px; font-weight: 700; }
+.components-actions { white-space: nowrap; }
+.components-actions .link-button { font-size: 12px; padding: 4px 6px; }
+.components-positions { display: grid; gap: 8px; margin-bottom: 12px; padding: 12px 16px; }
+.components-positions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.components-positions span { display: grid; gap: 1px; min-width: 110px; padding: 8px 10px; border: 1px solid var(--line); border-left: 4px solid #16835f; border-radius: 8px; background: var(--surface); font-size: 13px; font-weight: 700; }
+.components-positions span.alert-orange { border-left-color: #d56617; } .components-positions span.alert-red { border-left-color: #c83e43; }
+.components-positions span b { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
+.components-positions span small { color: var(--muted); font-size: 11px; font-weight: 600; }
+.components-positions em { color: var(--muted); font-size: 13px; }
+.components-modal { width: min(760px, 96vw); }
+.components-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.components-form label { display: grid; gap: 4px; font-weight: 700; }
+.components-form .full { grid-column: 1 / -1; }
+.components-form .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 0 0; }
+.components-form .modal-footer .danger-action { margin-right: auto; }
+.components-event-types { display: flex; flex-wrap: wrap; gap: 6px; }
+.components-event-types button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 800; cursor: pointer; }
+.components-event-types button.active { border-color: #16835f; background: #16835f; color: #fff; }
+.components-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.components-timeline li { display: grid; grid-template-columns: 88px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.components-timeline li > span { color: var(--muted); font-weight: 700; }
+html[data-theme="dark"] .components-life:before { background: #3a3733; }
+@media (max-width: 760px) {
+  .components-form { grid-template-columns: 1fr; }
+  .components-filters label { min-width: 0; flex: 1 1 100%; }
+  .components-timeline li { grid-template-columns: 1fr auto; } .components-timeline li > span { grid-column: 1 / -1; }
+}
+.components-modal .modal-body { padding: 14px 20px 18px; }
+.components-modal header span { display: block; margin-top: 4px; }
+
+/* Resumo semanal */
+.weekly-filters { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; padding: 12px 16px; }
+.weekly-filters label { display: grid; gap: 4px; font-weight: 700; min-width: 220px; }
+.weekly-nav { display: flex; align-items: center; gap: 10px; }
+.weekly-nav strong { min-width: 170px; text-align: center; font-size: 16px; }
+.weekly-nav .secondary, .weekly-filters .secondary { min-height: 38px; padding: 6px 12px; border-radius: 8px; font-weight: 700; }
+.weekly-note { margin: 0 0 8px; }
+.weekly-metrics { margin-bottom: 12px; }
+.weekly-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; }
+.weekly-card { padding: 14px 16px; }
+.weekly-card h2 { margin: 0 0 8px; font-size: 15px; }
+.weekly-card ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.weekly-card li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.weekly-card li:last-child { border-bottom: 0; }
+.weekly-card li span { color: var(--muted); }
+.weekly-card li b { text-align: right; }
+.weekly-card li.sub { padding-left: 14px; font-size: 12px; }
+.weekly-text pre { margin: 0; max-height: 360px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--line); font: 12.5px/1.5 var(--font-sans, system-ui); white-space: pre-wrap; }
+@media (max-width: 760px) {
+  .weekly-grid { grid-template-columns: 1fr; }
+  .weekly-nav { width: 100%; justify-content: space-between; } .weekly-nav strong { min-width: 0; font-size: 14px; }
+  .weekly-filters label { min-width: 0; flex: 1 1 100%; }
+}
+@media print {
+  .app-header, .heading-actions, .weekly-filters, .weekly-text, .app-offline-banner, .toast { display: none !important; }
+  .weekly-grid { grid-template-columns: 1fr 1fr; }
+}
+.weekly-heading .heading-actions { flex-wrap: wrap; } .weekly-heading .heading-actions button { white-space: nowrap; }

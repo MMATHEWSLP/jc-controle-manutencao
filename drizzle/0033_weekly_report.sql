@@ -1,0 +1,1 @@
+ALTER TABLE "whatsapp_recipients" ADD COLUMN "weekly_report" boolean DEFAULT false NOT NULL;

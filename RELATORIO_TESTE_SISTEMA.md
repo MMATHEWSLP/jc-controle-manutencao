@@ -561,6 +561,24 @@ As 4 falhas de envio (DAD-13) indicam que parte das variáveis do WhatsApp não 
 11. **Modo offline completo no Controle Diário:** a fila offline já existe; estender para abastecimento e leitura, pensando nas frentes sem sinal.
 12. **Relatório semanal automático por WhatsApp/e-mail para o gestor:** trocas vencidas, consumo, estoque crítico e tarefas atrasadas.
 
+### Ideias implementadas nesta rodada (4, 7, 9, 11 e 12)
+
+A ideia 10 (documentos com vencimento) ficou para depois, como combinado. Sem regras específicas informadas, usei padrões ajustáveis na própria tela.
+
+| Ideia | Onde fica | Quem usa | Padrões |
+|---|---|---|---|
+| 4. Conciliação do tanque | Combustível → Tanque (régua) | lançar: `fuel.register`; tanques, ajuste de saldo e exclusão: `fuel.manage` | tolerância 1% por tanque; ajuste de saldo opcional (lançamento oculto, desfeito ao excluir a medição) |
+| 7. Checklist pré-uso | Controle Diário → Checklist pré-uso | preencher: `daily.register` (inclusive CAMPO); painel: `daily.view_all`; modelos: `daily.manage` | modelo padrão com 9 itens (4 bloqueiam); Não OK exige descrição e foto; abre ou liga a O.S. aberta do equipamento |
+| 9. Pneus e baterias | Equipamentos → Pneus e Baterias | ver: `equipment.view`; lançar: `maintenance.create`; editar/desfazer: `maintenance.edit`; valores só ADMIN/GESTOR | alerta com vida ≥ 90%, sulco ≤ 3 mm ou bateria fora da garantia |
+| 11. Offline completo | Combustível (novo lançamento), Horímetros/KM e página do QR | quem já lança | o envio leva um id único; o servidor não duplica; pedidos de confirmação viram "Confirmar e enviar" na lista |
+| 12. Resumo semanal | Equipamentos → Resumo semanal; WhatsApp → destinatário "Recebe o resumo semanal" | tela: ADMIN/GESTOR; enviar pela tela: ADMIN | segunda 07:45 (workflow `resumo-semanal.yml`), semana anterior, todas as frentes, uma vez por destinatário |
+
+**Depois do merge (produção):**
+
+1. Rodar o workflow **db-migrate** para aplicar as migrações `0029` a `0033` (tanques, checklist com o modelo padrão, pneus/baterias, `client_request_id` em combustível e leituras, `weekly_report` nos destinatários).
+2. Resumo semanal pelo WhatsApp: precisa do secret `WHATSAPP_CRON_SECRET` (o mesmo da Hostinger, ainda pendente), da conexão com a Meta e do modo **API**. Em modo manual o agendamento não envia; o texto fica em "Copiar texto". Fora da janela de 24 h a Meta só entrega com um modelo aprovado: cadastrar na Hostinger `WHATSAPP_WEEKLY_TEMPLATE` com o nome de um modelo de 3 variáveis (período, resumo em uma linha, link).
+3. Cadastrar os tanques e a tabela da régua (Combustível → Tanque → Tanques e régua) e revisar o modelo padrão do checklist.
+
 ## Não consegui testar
 
 - **Painel da Hostinger:** não tenho acesso, então não sei quais variáveis de ambiente estão cadastradas nem se existe cron configurado lá.

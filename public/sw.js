@@ -4,8 +4,8 @@
  *   app abrir mesmo sem internet.
  * - Páginas e consultas da API (GET que devolvem JSON): sempre busca na internet primeiro; só
  *   quando não há conexão usa a última cópia salva — assim os dados nunca ficam velhos com sinal.
- * - Gravações (POST/PUT/DELETE) nunca passam pelo cache. O Controle Diário tem fila própria
- *   (lib/offline-queue.ts) para enviar depois.
+ * - Gravações (POST/PUT/DELETE) nunca passam pelo cache. Controle Diário, checklist,
+ *   abastecimento e leituras têm fila própria (lib/offline-queue.ts) para enviar depois.
  * - Ao sair do sistema ou entrar com outro usuário, a página pede para apagar os dados salvos
  *   (mensagem CLEAR_USER_DATA), para um funcionário nunca ver dados de outro no mesmo celular.
  */
