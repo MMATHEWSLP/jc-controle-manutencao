@@ -57,9 +57,23 @@ async function main() {
   const ids = [fuel.id, front.id, front.id];
   await rows(`Lançamentos do dia ${date} (não excluídos)`, `${base} AND fm.deleted_at IS NULL AND fm.movement_date=? ORDER BY fm.movement_type, who, fm.id`, [...ids, date]);
   line();
-  await rows(`Lançamentos com data ATÉ ${date} criados DEPOIS do dia (mudam o saldo anterior/consumo)`, `${base} AND fm.deleted_at IS NULL AND fm.movement_date<=? AND fm.created_at>=? ORDER BY fm.created_at`, [...ids, date, `${new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)}T03:00:00.000Z`]);
+  await rows(`Lançamentos digitados (não importados) com data ATÉ ${date} criados DEPOIS do dia (mudam o saldo anterior/consumo)`, `${base} AND fm.deleted_at IS NULL AND fm.import_source IS NULL AND fm.movement_date<=? AND fm.created_at>=? ORDER BY fm.created_at`, [...ids, date, `${new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)}T03:00:00.000Z`]);
   line();
-  await rows(`Ajustes de saldo e lançamentos excluídos entre ${date} e hoje (data do lançamento)`, `${base} AND (fm.balance_adjustment OR fm.deleted_at IS NOT NULL) AND fm.movement_date>=? ORDER BY fm.movement_date, fm.id`, [...ids, date]);
+  await rows("Todos os ajustes de saldo (qualquer data)", `${base} AND fm.balance_adjustment ORDER BY fm.movement_date, fm.id`, ids);
+  line();
+  await rows(`Lançamentos excluídos com data entre ${date} e hoje`, `${base} AND fm.deleted_at IS NOT NULL AND fm.movement_date>=? ORDER BY fm.movement_date, fm.id`, [...ids, date]);
+  line();
+  // Saldo por dia (Frente) de ${date} até hoje, para ver onde entra cada ajuste.
+  const { dailyTotals } = await import("./lib/fuel-daily-rules");
+  const movements = (await d1.prepare(`SELECT id,fuel_type_id AS "fuelTypeId",movement_type AS "movementType",movement_date AS "movementDate",quantity,service_front_id AS "serviceFrontId",stock_location AS "stockLocation",
+      destination_front_id AS "destinationFrontId",destination_location AS "destinationLocation",balance_adjustment AS "balanceAdjustment" FROM fuel_movements WHERE deleted_at IS NULL AND fuel_type_id=? AND (service_front_id=? OR destination_front_id=?)`).bind(...ids).all<never>()).results;
+  const days: string[] = [];
+  for (let day = Date.parse(`${date}T00:00:00Z`) - 2 * 86400000; day <= Date.now(); day += 86400000) days.push(new Date(day).toISOString().slice(0, 10));
+  console.log("Saldo dia a dia (estoque Frente): data | anterior | entradas | transf.+ | transf.- | ajustes | consumo | final");
+  for (const day of days) {
+    const t = dailyTotals((movements as Array<Record<string, unknown>>).map((row) => ({ ...row, quantity: Number(row.quantity), id: Number(row.id), fuelTypeId: Number(row.fuelTypeId), serviceFrontId: Number(row.serviceFrontId), destinationFrontId: row.destinationFrontId === null ? null : Number(row.destinationFrontId) })) as never, { date: day, frontId: Number(front.id), location: "FRENTE" });
+    console.log(`  ${day} | ${litersMessage(t.previous)} | ${litersMessage(t.entries)} | ${litersMessage(t.transfersIn)} | ${litersMessage(t.transfersOut)} | ${litersMessage(t.adjustments)} | ${litersMessage(t.consumption)} | ${litersMessage(t.final)}`);
+  }
   line();
   console.log("Nenhum dado foi alterado (conexão somente leitura).");
 }
