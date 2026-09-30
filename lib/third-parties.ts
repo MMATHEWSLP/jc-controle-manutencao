@@ -3,7 +3,7 @@ import { getDb } from "../db";
 import { auditLogs, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyVehicles } from "../db/schema";
 import type { SessionUser } from "./auth";
 import {
-  averageConsumption, computeConsumption, CONSUMPTION_UNITS, isOutlier, METER_LABELS, THIRD_PARTY_KIND_LABELS,
+  averageConsumption, computeConsumption, CONSUMPTION_UNITS, isOutlier, METER_LABELS, METER_PHRASES, THIRD_PARTY_KIND_LABELS,
   type Fueling, type FuelingConsumption, type MeterType, type ThirdPartyInput, type VehicleInput,
 } from "./third-party-rules";
 
@@ -243,7 +243,7 @@ export async function prepareThirdPartyFuel(db: Db, user: SessionUser, request: 
   let readingException = false;
   let consumptionOutlier = false;
   if (vehicle) {
-    if (request.reading === null || !Number.isFinite(request.reading) || request.reading < 0) throw new ThirdPartyError(`Informe a leitura atual (${METER_LABELS[vehicle.meterType]}).`);
+    if (request.reading === null || !Number.isFinite(request.reading) || request.reading < 0) throw new ThirdPartyError(`Informe a leitura atual ${METER_PHRASES[vehicle.meterType]}.`);
     if (!(request.quantity > 0)) throw new ThirdPartyError("Informe a quantidade em litros (maior que zero).");
     const all = (await vehicleFuelings(db, [vehicle.id])).get(vehicle.id) ?? [];
     const others = all.filter((row) => row.id !== request.editingId);

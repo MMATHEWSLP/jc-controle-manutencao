@@ -384,34 +384,41 @@ export function createDailyHistoryPdf(input:DailyHistoryPdfInput){
   return buildPdf(pages,{width:842,height:595});
 }
 
-export type FuelHistoryPdfItem={date:string;type:string;fuel:string;quantity:string;cost?:string;front:string;equipment:string;origin:string;meter:string;responsible:string};
-export type FuelBalancePdfItem={fuel:string;balance:string;entries:string;exits:string;split?:string};
-type FuelHistoryPdfInput={items:FuelHistoryPdfItem[];balances:FuelBalancePdfItem[];generatedAt:string;total:number;truncated:boolean;filters:{period:string;front:string;fuel:string;movement:string}};
+// Histórico de Combustível: paisagem. Cabeçalho com os filtros usados, quem gerou e quando; o mesmo
+// resumo da tela (entradas/saídas/transferências/saldo, só do que foi filtrado) e a tabela com as
+// colunas escolhidas pela rota (com empresa, placa, leitura e consumo para saídas de terceiros).
+export type FuelHistoryPdfCard={label:string;value:string;detail:string;tone:"green"|"red"|"blue"|"gray"};
+export type FuelHistoryPdfColumn={x:number;label:string;max:number;align?:"right"};
+type FuelHistoryPdfInput={generatedAt:string;generatedBy:string;filters:string[];cards:FuelHistoryPdfCard[];cardsNote:string;total:number;truncated:boolean;columns:FuelHistoryPdfColumn[];rows:string[][]};
+const toneColor:Record<FuelHistoryPdfCard["tone"],string>={green:"0.09 0.51 0.37",red:"0.78 0.24 0.26",blue:"0.12 0.42 0.61",gray:"0.42 0.51 0.58"};
 
-// Lançamento de Combustível: paisagem, cards de saldo + mesmas colunas do Histórico da tela.
 export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
-  const perPage=14;const pageCount=Math.max(1,Math.ceil(input.items.length/perPage));
+  const perPage=13;const pageCount=Math.max(1,Math.ceil(input.rows.length/perPage));
+  const filterText=input.filters.join("  ·  ");
+  const filterLines=wrap(filterText,150).slice(0,2);
   const pages=Array.from({length:pageCount},(_,pageIndex)=>{
-    const items=input.items.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    const rows=input.rows.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
     content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
-    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,"MOVIMENTAÇÃO DE COMBUSTÍVEL",true,"0.08 0.25 0.36");content+=text(130,531,7.5,`PERÍODO ${input.filters.period} · ${input.filters.front}`,false,"0.31 0.46 0.55");
-    content+=text(674,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(674,553,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");content+=text(674,536,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
-    const width=Math.min(260,Math.floor(786/Math.max(1,input.balances.length))-8);
-    input.balances.forEach((balance,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 447 ${width} 58 re f\n`;content+=text(x+10,491,7,truncate(balance.fuel.toUpperCase(),40),true,"0.34 0.47 0.56");content+=text(x+10,471,13,`Saldo ${balance.balance}`,true,"0.08 0.25 0.36");content+=text(x+10,457,6.5,truncate(`Entradas ${balance.entries} · Saídas ${balance.exits}${balance.split?` · ${balance.split}`:""}`,Math.floor(width/3.3)),false,"0.31 0.46 0.55");});
-    content+="0.91 0.97 0.95 rg 28 413 786 24 re f\n";
-    content+=text(39,422,7.5,`LANÇAMENTOS: ${input.total} · COMBUSTÍVEL: ${input.filters.fuel} · TIPO: ${input.filters.movement}`,true,"0.08 0.38 0.29");
-    if(input.truncated)content+=text(470,422,7,`Exibindo os primeiros ${input.items.length} — refine os filtros para exportar o restante.`,true,"0.64 0.40 0.05");
-    content+="0.06 0.25 0.36 rg 28 380 786 24 re f\n";
-    const columns:[number,string][]=[[35,"DATA"],[82,"TIPO"],[180,"COMBUSTÍVEL"],[240,"QTD. (L)"],[288,"CUSTO"],[346,"FRENTE"],[402,"ORIGEM (ESTOQUE)"],[490,"VEÍCULO / TERCEIRO / PRESTADOR"],[650,"HOD./HOR."],[706,"RESPONSÁVEL"]];
-    for(const [x,label] of columns)content+=text(x,389,6.5,label,true,"1 1 1");
-    if(items.length===0)content+=text(260,330,12,"Nenhum lançamento encontrado para o período e filtros selecionados.",true,"0.33 0.47 0.55");
-    items.forEach((item,index)=>{
-      const top=362-(index*22);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-8} 786 22 re f\n`;
-      const values:[number,string,number][]=[[35,item.date,10],[82,item.type,24],[180,item.fuel,11],[240,item.quantity,9],[288,item.cost??"—",11],[346,item.front,11],[402,item.origin,17],[490,item.equipment,32],[650,item.meter,10],[706,item.responsible,20]];
-      for(const [x,value,max] of values)content+=text(x,top,6.8,truncate(value,max),x===240||x===288);
-      content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,"MOVIMENTAÇÃO DE COMBUSTÍVEL",true,"0.08 0.25 0.36");content+=text(130,531,7.5,"Somente os lançamentos que atendem aos filtros abaixo",false,"0.31 0.46 0.55");
+    content+=text(640,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(640,556,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");
+    content+=text(640,542,7,"POR",true,"0.31 0.46 0.55");content+=text(662,542,8,truncate(input.generatedBy,30),false,"0.08 0.25 0.36");
+    content+=text(640,528,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+    content+="0.96 0.975 0.98 rg 28 474 786 34 re f\n";content+=text(36,497,6.8,"FILTROS",true,"0.31 0.46 0.55");
+    filterLines.forEach((line,index)=>{content+=text(76,497-index*11,7,line,false,"0.12 0.20 0.27");});
+    const width=Math.min(250,Math.floor(786/Math.max(1,input.cards.length))-8);
+    input.cards.forEach((card,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 420 ${width} 46 re f\n`;content+=`${toneColor[card.tone]} rg ${x} 420 3 46 re f\n`;
+      content+=text(x+10,454,6.8,card.label.toUpperCase(),true,"0.34 0.47 0.56");content+=text(x+10,437,12,card.value,true,toneColor[card.tone]);content+=text(x+10,425,6.5,truncate(card.detail,Math.floor(width/3.4)),false,"0.31 0.46 0.55");});
+    content+=text(28,409,6.8,truncate(`${input.total} lançamento(s)${input.cardsNote?` · ${input.cardsNote}`:""}`,170),true,"0.08 0.38 0.29");
+    if(input.truncated)content+=text(560,409,6.8,`Exibindo os primeiros ${input.rows.length} — refine os filtros.`,true,"0.64 0.40 0.05");
+    content+="0.06 0.25 0.36 rg 28 378 786 22 re f\n";
+    for(const column of input.columns)content+=text(column.x,386,6.3,column.label,true,"1 1 1");
+    if(rows.length===0)content+=text(250,330,12,"Nenhum lançamento encontrado para os filtros selecionados.",true,"0.33 0.47 0.55");
+    rows.forEach((row,index)=>{
+      const top=362-(index*24);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-9} 786 24 re f\n`;
+      input.columns.forEach((column,columnIndex)=>{content+=text(column.x,top,6.8,truncate(row[columnIndex]??"—",column.max),column.align==="right");});
+      content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-9} m 814 ${top-9} l S\n`;
     });
-    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Relatório gerado com os lançamentos atuais de combustível, respeitando os filtros ativos. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Totais e lançamentos calculados com os mesmos filtros da tela (todas as páginas). Não inclui saldo de estoque. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
     return content;
   });
   return buildPdf(pages,{width:842,height:595});

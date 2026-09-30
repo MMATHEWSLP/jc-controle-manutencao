@@ -3,10 +3,10 @@ import { getDb } from "../../../../db";
 import { fuelMovements, fuelTypes, serviceFronts } from "../../../../db/schema";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, readThirdPartyFuelFields, resolveFuelFront } from "../../../../lib/fuel";
+import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelHistorySummary, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, readThirdPartyFuelFields, resolveFuelFront } from "../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../lib/fuel-rules";
 import { isUniqueViolation, readClientRequestId } from "../../../../lib/client-request";
-import { prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../lib/third-parties";
+import { consumptionByMovement, prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../lib/third-parties";
 
 const PAGE_SIZE = 50;
 
@@ -22,8 +22,9 @@ export async function GET(request: Request) {
     const db = await getDb();
     const fronts = await fuelVisibleFronts(db, user);
     const scope = fuelScopeFronts(fronts.map((front) => front.id), frentesEmExibicao(user, request), filters.frontId);
-    const { rows, total } = await fuelHistory(db, scope, filters, PAGE_SIZE, (page - 1) * PAGE_SIZE);
-    return Response.json({ movements: rows, total, page, pageSize: PAGE_SIZE, filters });
+    // Resumo e listagem com o mesmo filtro (o resumo conta todas as páginas).
+    const [{ rows, total }, summary] = await Promise.all([fuelHistory(db, scope, filters, PAGE_SIZE, (page - 1) * PAGE_SIZE), fuelHistorySummary(db, scope, filters)]);
+    return Response.json({ movements: rows, total, page, pageSize: PAGE_SIZE, filters, summary });
   } catch (error) {
     console.error("[fuel.movements.get]", error);
     return Response.json({ error: "Não foi possível carregar o histórico de combustível agora." }, { status: 500 });
@@ -88,7 +89,16 @@ export async function POST(request: Request) {
       throw error;
     }
     await refreshVehicleLastReading(db, thirdPartyFields?.thirdPartyVehicleId);
-    return Response.json({ id: created.id, message: thirdPartyFields?.consumptionOutlier ? "Lançamento registrado (marcado como fora da média de consumo)." : "Lançamento de combustível registrado." }, { status: 201 });
+    // Resumo para a mensagem de sucesso: quem recebeu, litros e o consumo calculado (mesma conta do Histórico).
+    const vehicleId = thirdPartyFields?.thirdPartyVehicleId ?? null;
+    const consumption = vehicleId ? (await consumptionByMovement(db, [vehicleId])).get(created.id) ?? null : null;
+    const who = thirdPartyFields ? (thirdPartyFields.providerEquipment ?? thirdPartyFields.thirdPartyDescription ?? "terceiro") : equipment?.prefix ?? null;
+    const summary = [
+      input.movementType === "ENTRADA" ? "Entrada" : input.movementType === "TRANSFERENCIA" ? "Transferência" : "Saída",
+      who, `${input.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`,
+      vehicleId ? consumption ? `consumo ${consumption.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${consumption.unit}` : thirdPartyFields?.fullTank === false ? "tanque parcial (consumo no próximo tanque cheio)" : "sem consumo (primeiro tanque cheio do veículo)" : null,
+    ].filter(Boolean).join(" · ");
+    return Response.json({ id: created.id, consumption, message: `Lançamento registrado: ${summary}${thirdPartyFields?.consumptionOutlier ? " — marcado como fora da média de consumo" : ""}.` }, { status: 201 });
   } catch (error) {
     const known = thirdPartyErrorResponse(error); if (known) return known;
     console.error("[fuel.movements.post]", error);

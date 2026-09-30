@@ -1,11 +1,12 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import ThirdPartiesView, { KIND_LABELS, METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import ThirdPartiesView, { METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
 import QueuedRequests from "./QueuedRequests";
 import { enqueueRequest } from "../lib/offline-queue";
+import { METER_PHRASES as METER_PHRASE } from "../lib/third-party-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
 
 type MovementType = "ENTRADA" | "SAIDA" | "TRANSFERENCIA";
@@ -33,7 +34,12 @@ type Movement = {
   thirdPartyId: number | null; thirdPartyVehicleId: number | null; fullTank: boolean; consumptionOutlier: boolean; readingException: boolean;
   consumption: { value: number; unit: string; distance: number; liters: number } | null;
 };
-type HistoryResponse = { movements: Movement[]; total: number; page: number; pageSize: number };
+type Totals2 = { count: number; liters: number };
+type HistorySummary = {
+  show: { entries: boolean; exits: boolean; transfers: boolean }; entries: Totals2; exits: Totals2; transfers: Totals2; balance: number | null;
+  byFuel: Array<{ fuelTypeId: number; fuelName: string; entries: Totals2; exits: Totals2; transfers: Totals2 }>;
+};
+type HistoryResponse = { movements: Movement[]; total: number; page: number; pageSize: number; summary: HistorySummary };
 type EquipmentOption = {
   id: number; prefix: string; brand: string; model: string; type: string; controlType: "HOURS" | "KM" | "HOURS_KM";
   currentHours: number; currentKm: number; serviceFrontId: number | null; frontName: string | null; inActiveFront: boolean;
@@ -43,7 +49,8 @@ type User = { id: number; name: string; permissions: string[] };
 const MOVEMENT_OPTIONS: Array<[MovementType, string, string]> = [["ENTRADA", "Entrada", "↓"], ["SAIDA", "Saída", "↑"], ["TRANSFERENCIA", "Transferência", "⇄"]];
 const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"]];
 const locationLabel = (value: Location) => (value === "PORTO" ? "Porto" : "Frente");
-const liters = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`;
+// Formato brasileiro: 5.441 L e 1.234,50 L.
+const liters = (value: number) => `${value.toLocaleString("pt-BR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 })} L`;
 const brDay = (value: string) => value.split("-").reverse().join("/");
 // Início do período quando se filtra pendências da carga de histórico (planilha começa em 2025).
 const HISTORY_START = "2020-01-01";
@@ -204,6 +211,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isEntry = movementType === "ENTRADA";
   const isTransfer = movementType === "TRANSFERENCIA";
@@ -245,7 +253,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   if (legacyThirdParty && isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
   if (registered && !party) missing.push(["party", isProvider ? "Empresa" : "Terceiro"]);
   if (needsVehicle && !vehicle) missing.push(["vehicle", "Veículo/Máquina do terceiro"]);
-  if (registered && vehicle && !(partyReading.trim() && Number.isFinite(readingValue) && readingValue >= 0)) missing.push(["reading", "Leitura atual"]);
+  if (registered && vehicle && !(partyReading.trim() && Number.isFinite(readingValue) && readingValue >= 0)) missing.push(["reading", `Leitura atual ${METER_PHRASE[vehicle.meterType]}`]);
   if (!responsibleName && !historical) missing.push(["responsible", isEntry ? "Responsável (quem recebeu)" : "Responsável"]);
   const missingKeys = new Set(missing.map(([key]) => key));
   const fieldError = (key: string, message = "Campo obrigatório.") => (touched[key] && missingKeys.has(key) ? <small className="fuel-field-error">{message}</small> : null);
@@ -276,7 +284,9 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         thirdPartyDescription: legacyThirdParty && isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
         providerCompany: legacyThirdParty && isProvider ? providerCompany : "", providerEquipment: legacyThirdParty && isProvider ? providerEquipment : "",
         ...(registered ? {
-          thirdPartyId: party?.id ?? null, thirdPartyVehicleId: vehicle?.id ?? null, meterReading: vehicle ? partyReading : "", fullTank,
+          // Campo próprio: "meterReading" logo abaixo é o do equipamento da frota (vazio aqui) e, com o
+          // mesmo nome, sobrescrevia a leitura do terceiro no objeto enviado.
+          thirdPartyId: party?.id ?? null, thirdPartyVehicleId: vehicle?.id ?? null, thirdPartyReading: vehicle ? partyReading : "", fullTank,
           readingException: readingException && (lowReading || exceptionAllowed), ...confirmations,
         } : {}),
         responsibleEmployeeId: isProvider || responsible.manual ? null : responsible.employeeId,
@@ -309,10 +319,18 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         } else throw problem;
       }
       if (!editing) {
+        // Só depois de gravar (se falhar, nada é limpo). Ficam: tipo de movimentação, tipo de saída,
+        // frente, origem, data e combustível, para lançar vários em sequência.
         setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription("");
         setProviderCompany(""); setProviderEquipment(""); setProviderDriver(""); setUnitPrice(""); setTouched({});
         setParty(null); setVehicle(null); setPartyReading(""); setFullTank(true); setReadingException(false); setExceptionAllowed(false);
+        setResponsible((current) => ({ employeeId: null, name: "", manual: current.manual }));
         thirdPartyOptions.reload().catch(() => undefined);
+        // Próximo lançamento começa pela Empresa (ou pelo veículo da frota / quantidade).
+        window.setTimeout(() => {
+          const target = formRef.current?.querySelector<HTMLInputElement>(registered ? ".fuel-third-party-field input" : showEquipment ? ".fuel-equipment-picker input, .material-product-picker input" : ".fuel-quantity-input");
+          target?.focus();
+        }, 60);
       }
       await onSaved(result.message);
     } catch (problem) {
@@ -324,7 +342,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
 
   return (
     <article className="panel module-panel fuel-form-panel">
-      <form className="fuel-form" onSubmit={submit} noValidate>
+      <form ref={formRef} className="fuel-form" onSubmit={submit} noValidate>
         <div className="fuel-form-top full">
           <fieldset className="fuel-movement-type">
             <legend>Tipo de Movimentação</legend>
@@ -372,7 +390,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         </label>
         <label className={invalid("quantity")}>
           Quantidade (litros) *
-          <input inputMode="decimal" placeholder="0,00" value={quantity} onBlur={touch("quantity")} onChange={(event) => setQuantity(event.target.value)} />
+          <input className="fuel-quantity-input" inputMode="decimal" placeholder="0,00" value={quantity} onBlur={touch("quantity")} onChange={(event) => setQuantity(event.target.value)} />
           {fieldError("quantity", "Informe a quantidade em litros.")}
           {!missingKeys.has("quantity") && balanceHere !== undefined && <small className={`fuel-hint ${lowBalance ? "warning" : ""}`}>{lowBalance ? "Atenção: o saldo ficará negativo. " : ""}Saldo {locationLabel(stockLocation)} {frontName}: {liters(balanceHere)}</small>}
         </label>
@@ -429,18 +447,18 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
               {fieldError("vehicle", "Escolha o veículo do terceiro.")}
             </div>
             {vehicle && (
-              <label className={invalid("reading")}>
-                Leitura atual — {METER_LABEL[vehicle.meterType]} *
-                <input inputMode="decimal" value={partyReading} onBlur={touch("reading")} onChange={(event) => setPartyReading(event.target.value)} placeholder={vehicle.lastReading !== null ? `Última: ${vehicle.lastReading.toLocaleString("pt-BR")}` : "Leitura do painel"} />
-                <small className={`fuel-hint ${lowReading ? "warning" : ""}`}>{vehicle.lastReading !== null ? `Última leitura registrada: ${vehicle.lastReading.toLocaleString("pt-BR")} ${vehicle.meterType === "KM" ? "km" : "h"}` : "Primeiro abastecimento: esta leitura vira a base do consumo."}{lowReading ? " — a nova leitura precisa ser maior." : ""}</small>
-                {fieldError("reading", "Informe a leitura atual.")}
-              </label>
-            )}
-            {vehicle && (
-              <label className="fuel-origin-check">
-                <input type="checkbox" checked={fullTank} onChange={(event) => setFullTank(event.target.checked)} /> Tanque cheio
-                <small className="fuel-hint">{fullTank ? "O consumo é calculado desde o último tanque cheio." : "Parcial: os litros somam no próximo tanque cheio."}</small>
-              </label>
+              <div className="fuel-span-2 fuel-reading-row">
+                <label className={invalid("reading")}>
+                  Leitura atual — {METER_LABEL[vehicle.meterType]} *
+                  <input inputMode="decimal" value={partyReading} onBlur={touch("reading")} onChange={(event) => setPartyReading(event.target.value)} placeholder={vehicle.lastReading !== null ? `Última: ${vehicle.lastReading.toLocaleString("pt-BR")}` : "Leitura do painel"} />
+                  <small className={`fuel-hint ${lowReading ? "warning" : ""}`}>{vehicle.lastReading !== null ? `Última leitura registrada: ${vehicle.lastReading.toLocaleString("pt-BR")} ${vehicle.meterType === "KM" ? "km" : "h"}` : "Primeiro abastecimento: esta leitura vira a base do consumo."}{lowReading ? " — a nova leitura precisa ser maior." : ""}</small>
+                  {fieldError("reading", `Informe a leitura atual ${METER_PHRASE[vehicle.meterType]}.`)}
+                </label>
+                <div className="fuel-full-tank">
+                  <label><input type="checkbox" checked={fullTank} onChange={(event) => setFullTank(event.target.checked)} /> Tanque cheio</label>
+                  <small className="fuel-hint">{fullTank ? "O consumo é calculado desde o último tanque cheio." : "Parcial: os litros somam no próximo tanque cheio."}</small>
+                </div>
+              </div>
             )}
             {vehicle?.tankCapacityLiters && quantityValue > vehicle.tankCapacityLiters ? <p className="full fuel-hint warning">{liters(quantityValue)} passa da capacidade do tanque ({liters(vehicle.tankCapacityLiters)}): o lançamento vai pedir confirmação.</p> : null}
             {(lowReading || exceptionAllowed) && thirdPartyOptions.canManage && (
@@ -448,7 +466,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
                 <input type="checkbox" checked={readingException} onChange={(event) => setReadingException(event.target.checked)} /> Aceitar leitura menor/igual à última (exceção de ADMIN/GESTOR — justifique em Observações)
               </label>
             )}
-            {party && <p className="full fuel-hint">{KIND_LABELS[party.kind]}{party.kind === "PESSOA_FISICA" && !vehicle ? " sem veículo: veículo e leitura são opcionais." : ""}</p>}
+            {party?.kind === "PESSOA_FISICA" && !vehicle && <p className="full fuel-hint">Pessoa física sem veículo: veículo e leitura são opcionais.</p>}
           </>
         )}
         {legacyThirdParty && isExit && exitKind === "TERCEIROS" && (
@@ -643,6 +661,10 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
   const [movementType, setMovementType] = useState("");
   const [location, setLocation] = useState("");
   const [pending, setPending] = useState("");
+  const [thirdPartyFilter, setThirdPartyFilter] = useState("");
+  const [vehicleFilter, setVehicleFilter] = useState("");
+  const thirdPartyOptions = useThirdPartyOptions();
+  const filterVehicles = thirdPartyOptions.options.find((item) => String(item.id) === thirdPartyFilter)?.vehicles ?? [];
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
@@ -650,7 +672,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => { const timer = window.setTimeout(() => setDebounced(query), 300); return () => window.clearTimeout(timer); }, [query]);
-  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, location, debounced, period.from, period.to, frontFilter, pending]);
+  useEffect(() => { setPage(1); }, [fuelTypeId, movementType, location, debounced, period.from, period.to, frontFilter, pending, thirdPartyFilter, vehicleFilter]);
   const params = useMemo(() => {
     const value = new URLSearchParams({ from: period.from, to: period.to });
     if (fuelTypeId) value.set("fuelTypeId", fuelTypeId);
@@ -659,8 +681,10 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
     if (debounced) value.set("q", debounced);
     if (frontFilter) value.set("frontId", frontFilter);
     if (pending) value.set("pending", pending);
+    if (thirdPartyFilter) value.set("thirdPartyId", thirdPartyFilter);
+    if (thirdPartyFilter && vehicleFilter) value.set("vehicleId", vehicleFilter);
     return value;
-  }, [period, fuelTypeId, movementType, location, debounced, frontFilter, pending]);
+  }, [period, fuelTypeId, movementType, location, debounced, frontFilter, pending, thirdPartyFilter, vehicleFilter]);
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -702,6 +726,8 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         <label>Estoque<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">Frente e Porto</option>{LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {/* Pendências da carga de histórico: ao escolher, o período abre desde o início do histórico. */}
         <label>Pendências<select value={pending} onChange={(event) => { setPending(event.target.value); if (event.target.value && period.from > HISTORY_START) setPeriod({ ...period, from: HISTORY_START }); }}><option value="">Nenhum filtro</option><option value="VEICULO">Veículo a identificar</option><option value="ORIGEM">Origem a confirmar</option><option value="IMPORTADOS">Importados do histórico</option></select></label>
+        <label>Empresa / terceiro<select value={thirdPartyFilter} onChange={(event) => { setThirdPartyFilter(event.target.value); setVehicleFilter(""); }}><option value="">Todos</option>{thirdPartyOptions.options.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        {thirdPartyFilter && filterVehicles.length > 0 && <label>Veículo<select value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)}><option value="">Todos</option>{filterVehicles.map((item) => <option key={item.id} value={item.id}>{item.plate}{item.description ? ` · ${item.description}` : ""}</option>)}</select></label>}
         <div className="fuel-export-actions">
           <a className="secondary" href={exportUrl("pdf")} target="_blank" rel="noopener noreferrer">Exportar PDF</a>
           <a className="secondary" href={exportUrl("xlsx")}>Exportar Excel</a>
@@ -710,6 +736,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
       {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
       {loading && !data ? <div className="page-loading"><span /><p>Carregando histórico...</p></div> : (
         <>
+          {data?.summary && <HistorySummaryCards summary={data.summary} />}
           <div className="table-scroll">
             <table className="products-table fuel-history-table">
               <thead><tr><th>Data</th><th>Tipo</th><th>Combustível</th><th>Quantidade</th><th>Custo</th><th>Frente</th><th>Origem</th><th>Veículo/Máquina · Terceiro · Prestador</th><th>Hod./Horím.</th><th title="Consumo do abastecimento (veículos de terceiros): km/L ou L/h">Consumo</th><th>Responsável</th>{canManage && <th>Ações</th>}</tr></thead>
@@ -750,5 +777,21 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         </>
       )}
     </article>
+  );
+}
+
+// Cards do topo do Histórico: mesmos filtros da listagem, somando todas as páginas (servidor).
+function HistorySummaryCards({ summary }: { summary: HistorySummary }) {
+  const count = (value: number) => `${value.toLocaleString("pt-BR")} lançamento${value === 1 ? "" : "s"}`;
+  const multiFuel = summary.byFuel.length > 1;
+  const perFuel = (pick: (fuel: HistorySummary["byFuel"][number]) => Totals2) => multiFuel
+    ? <small>{summary.byFuel.filter((fuel) => pick(fuel).count > 0).map((fuel) => `${fuel.fuelName}: ${liters(pick(fuel).liters)}`).join(" · ")}</small> : null;
+  return (
+    <div className="fuel-history-summary">
+      {summary.show.entries && <div className="entrada"><span>Entradas</span><strong>{liters(summary.entries.liters)}</strong><em>{count(summary.entries.count)}</em>{perFuel((fuel) => fuel.entries)}</div>}
+      {summary.show.exits && <div className="saida"><span>Saídas</span><strong>{liters(summary.exits.liters)}</strong><em>{count(summary.exits.count)}</em>{perFuel((fuel) => fuel.exits)}</div>}
+      {summary.show.transfers && <div className="transferencia"><span>Transferências</span><strong>{liters(summary.transfers.liters)}</strong><em>{count(summary.transfers.count)}</em>{perFuel((fuel) => fuel.transfers)}</div>}
+      {summary.balance !== null && <div className={summary.balance < 0 ? "saldo negativo" : "saldo"}><span>Saldo da movimentação</span><strong>{summary.balance > 0 ? "+" : ""}{liters(summary.balance)}</strong><em>entradas − saídas no período</em></div>}
+    </div>
   );
 }

@@ -279,3 +279,24 @@ html[data-theme="dark"] .fuel-import-note{background:#2a2419;border-color:#5a4a2
 .fuel-field-label .link-button{font-size:12px}
 .stock-destination-kind{grid-column:1/-1}
 html[data-theme="dark"] .third-party-table tr.selected td{background:#1f2b33}
+/* Leitura do veículo do terceiro com "Tanque cheio" ao lado (texto de ajuda logo abaixo do checkbox). */
+.fuel-reading-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px 14px;align-items:start}
+.fuel-reading-row>label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700}
+.fuel-reading-row>label input{margin:0}
+.fuel-full-tank{display:flex;flex-direction:column;gap:4px;padding-top:24px}
+.fuel-full-tank label{display:flex;align-items:center;gap:8px;min-height:42px;font-size:13px;font-weight:700;cursor:pointer}
+.fuel-full-tank input{width:18px;height:18px;min-height:0;margin:0}
+@media(max-width:560px){.fuel-reading-row{grid-template-columns:1fr}.fuel-full-tank{padding-top:0}}
+/* Resumo do Histórico (mesmos filtros da listagem) */
+.fuel-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:0 0 12px}
+.fuel-history-summary>div{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-left:4px solid #8aa0ad;border-radius:10px;background:var(--surface)}
+.fuel-history-summary span{color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.fuel-history-summary strong{font-size:22px;line-height:1.2}
+.fuel-history-summary em{color:var(--muted);font-size:12px;font-style:normal}
+.fuel-history-summary small{color:var(--muted);font-size:11px}
+.fuel-history-summary .entrada{border-left-color:#16835f}.fuel-history-summary .saida{border-left-color:#c83e43}
+.fuel-history-summary .transferencia{border-left-color:#1f6b9c}.fuel-history-summary .saldo{border-left-color:#16835f}
+.fuel-history-summary .saldo.negativo{border-left-color:#c83e43}.fuel-history-summary .saldo.negativo strong{color:#b42318}
+html[data-theme="dark"] .fuel-history-summary .saldo.negativo strong{color:#ff9b91}
+.fuel-history-panel>.fuel-history-summary{margin:12px 16px}
+.fuel-export-actions{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.fuel-export-actions a{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:8px;white-space:nowrap;font-size:12px;font-weight:700;text-decoration:none}
