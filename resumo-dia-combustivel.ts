@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Conferência SOMENTE LEITURA do "Resumo do dia" do Combustível, com a MESMA função da tela
-// (lib/fuel-daily.ts). Toda conexão abre em modo somente leitura (default_transaction_read_only):
+// (lib/fuel-daily.ts). Toda conexão abre em modo somente leitura (DATABASE_READ_ONLY, db/index.ts):
 // o Postgres recusa qualquer gravação.
 //
 // Uso: npx tsx resumo-dia-combustivel.ts --data=2026-09-28 --frente=Arapiuns [--combustivel="Diesel S10"]
 //      [--esperado=87033;3859;83174]   (saldo anterior; consumo; saldo final, para comparar)
 // ---------------------------------------------------------------------------
-process.env.PGOPTIONS = `${process.env.PGOPTIONS ?? ""} -c default_transaction_read_only=on`.trim();
+process.env.DATABASE_READ_ONLY = "1";
 
 const arg = (name: string) => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3).trim() ?? "";
 const toIso = (value: string) => { const br = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return br ? `${br[3]}-${br[2]}-${br[1]}` : value; };

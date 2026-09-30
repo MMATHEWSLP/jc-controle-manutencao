@@ -48,6 +48,9 @@ function getPool():Pool {
     connectionTimeoutMillis:15_000,
     statement_timeout:Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS)||30_000,
   });
+  // Scripts de conferência (ex.: resumo-dia-combustivel.ts): toda conexão fica somente leitura e o
+  // Postgres recusa qualquer gravação. O pooler do Supabase ignora PGOPTIONS, por isso o SET aqui.
+  if (process.env.DATABASE_READ_ONLY==="1") pool.on("connect",(client)=>{void client.query("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY");});
   return pool;
 }
 
