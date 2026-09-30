@@ -253,6 +253,13 @@
       "when": 1790791629456,
       "tag": "0035_assistant_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790795295496,
+      "tag": "0036_fuel_daily_settings",
+      "breakpoints": true
     }
   ]
 }

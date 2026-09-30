@@ -331,3 +331,37 @@ html[data-theme="dark"] .fuel-history-summary .saldo.negativo strong{color:#ff9b
 .fuel-import-help p{margin:0 0 6px}
 .fuel-import-result{display:grid;gap:12px}
 .fuel-import-balances{width:100%;border-collapse:collapse;font-size:13px}.fuel-import-balances th,.fuel-import-balances td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+/* Resumo do dia (Histórico do Combustível) */
+.fuel-daily-button{min-height:40px;padding:0 14px;border-radius:8px;font-size:12px;font-weight:800;white-space:nowrap}
+.fuel-daily-modal{width:min(1080px,96vw);max-height:94vh;display:flex;flex-direction:column}
+.fuel-daily-body{display:grid;gap:14px;padding:16px 20px 20px;overflow:auto}
+.fuel-daily-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.fuel-daily-filters label{display:grid;gap:4px;font-size:12px;font-weight:700}
+.fuel-daily-filters input,.fuel-daily-filters select{margin:0}
+.fuel-daily-cards{display:flex;flex-wrap:wrap;gap:8px}
+.fuel-daily-cards.loading{opacity:.55}
+.fuel-daily-cards article{flex:1 1 140px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid #8a9aa6;border-radius:9px;background:var(--surface)}
+.fuel-daily-cards article span{display:block;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.fuel-daily-cards article strong{display:block;margin-top:4px;font-size:21px}
+.fuel-daily-cards .green{border-left-color:#16835f}.fuel-daily-cards .green strong{color:#16835f}
+.fuel-daily-cards .red{border-left-color:#c83e43}.fuel-daily-cards .red strong{color:#c83e43}
+.fuel-daily-cards .blue{border-left-color:#1f6b9c}.fuel-daily-cards .blue strong{color:#1f6b9c}
+.fuel-daily-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;align-items:start}
+.fuel-daily-message{display:grid;gap:8px}
+.fuel-daily-message>label{display:grid;gap:4px;font-size:12px;font-weight:700}
+.fuel-daily-message textarea{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.45;resize:vertical}
+.fuel-daily-actions{display:flex;flex-wrap:wrap;gap:8px}
+.fuel-daily-actions>*{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none}
+.fuel-daily-whatsapp{border-color:#25a35a!important;color:#1b7f45!important}
+.fuel-daily-settings{display:grid;gap:8px;padding:12px;border:1px dashed var(--line);border-radius:10px}
+.fuel-daily-settings label{display:grid;gap:3px;font-size:12px;font-weight:700}.fuel-daily-settings input{margin:0}
+.fuel-daily-settings small{color:var(--muted);font-size:11.5px}
+.fuel-daily-exits{display:grid;gap:8px;min-width:0}
+.fuel-daily-exits .table-scroll{max-height:380px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.fuel-daily-exits table{width:100%;border-collapse:collapse;font-size:12.5px}
+.fuel-daily-exits th{position:sticky;top:0;background:var(--surface);padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:11px}
+.fuel-daily-exits td{padding:6px 8px;border-bottom:1px solid var(--line)}
+.fuel-daily-exits .num{text-align:right;white-space:nowrap}
+.fuel-daily-exits small{color:var(--muted)}
+.link-button{justify-self:start;padding:0;border:0;background:none;color:#1f6b9c;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:underline}
+@media (max-width:760px){.fuel-daily-filters{grid-template-columns:1fr 1fr}.fuel-daily-grid{grid-template-columns:1fr}}

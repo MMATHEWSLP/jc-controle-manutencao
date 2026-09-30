@@ -448,3 +448,46 @@ export function createEmployeeHistoryPdf(input:EmployeeHistoryPdfInput){
   });
   return buildPdf(pages,{width:842,height:595});
 }
+
+// Resumo do dia do Combustível (Histórico → "Resumo do dia"): cabeçalho com frente/data/combustível,
+// o mesmo resumo da mensagem do WhatsApp e TODAS as saídas do dia, com total no fim.
+export type FuelDailyPdfInput={frontName:string;date:string;fuelName:string;locationLabel:string;generatedAt:string;generatedBy:string;
+  cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray"}>;rows:string[][];totalLiters:string;count:number};
+export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
+  const columns=[{x:34,label:"EQUIPAMENTO",max:18},{x:128,label:"PLACA",max:10},{x:184,label:"TIPO",max:10},{x:236,label:"EMPRESA",max:22},{x:388,label:"LITROS",max:11,align:"right" as const},
+    {x:432,label:"LEITURA",max:14},{x:508,label:"RESPONSÁVEL",max:24},{x:634,label:"OBSERVAÇÃO",max:36}];
+  const firstPage=14;const perPage=19;
+  const pageCount=Math.max(1,1+Math.ceil(Math.max(0,input.rows.length-firstPage)/perPage));
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const start=pageIndex===0?0:firstPage+(pageIndex-1)*perPage;const rows=input.rows.slice(start,start+(pageIndex===0?firstPage:perPage));let content="";
+    content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · CONTROLE DE COMBUSTÍVEL",true,"0.08 0.49 0.35");content+=text(130,548,16,"RESUMO DO DIA — SAÍDAS DE COMBUSTÍVEL",true,"0.08 0.25 0.36");
+    content+=text(130,531,8.5,truncate(`${input.frontName}  ·  ${input.date}  ·  ${input.fuelName}  ·  Estoque: ${input.locationLabel}`,95),true,"0.16 0.48 0.66");
+    content+=text(640,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(640,556,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");
+    content+=text(640,542,7,"POR",true,"0.31 0.46 0.55");content+=text(662,542,8,truncate(input.generatedBy,30),false,"0.08 0.25 0.36");
+    content+=text(640,528,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+    let headerY=470;
+    if(pageIndex===0){
+      const width=Math.min(190,Math.floor(786/Math.max(1,input.cards.length))-8);
+      input.cards.forEach((card,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 452 ${width} 50 re f\n`;content+=`${toneColor[card.tone]} rg ${x} 452 3 50 re f\n`;
+        content+=text(x+11,487,7,card.label.toUpperCase(),true,"0.34 0.47 0.56");content+=text(x+11,463,15,card.value,true,toneColor[card.tone]);});
+      headerY=410;
+    }
+    content+=`0.06 0.25 0.36 rg 28 ${headerY} 786 22 re f\n`;
+    for(const column of columns)content+=text(column.align==="right"?column.x-4:column.x,headerY+8,6.5,column.label,true,"1 1 1");
+    if(input.rows.length===0&&pageIndex===0)content+=text(300,headerY-40,12,"Nenhuma saída de combustível neste dia.",true,"0.33 0.47 0.55");
+    rows.forEach((row,index)=>{
+      const top=headerY-16-(index*22);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-8} 786 22 re f\n`;
+      columns.forEach((column,columnIndex)=>{content+=text(column.x,top,7.2,truncate(row[columnIndex]??"—",column.max),columnIndex===0||column.align==="right");});
+      content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-8} m 814 ${top-8} l S\n`;
+    });
+    if(pageIndex===pageCount-1){
+      const y=headerY-16-(rows.length*22)-10;
+      content+=`0.90 0.95 0.93 rg 28 ${y-8} 786 24 re f\n`;
+      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(388,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
+    }
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Resumo e saídas calculados pela mesma consulta da mensagem do WhatsApp. Saídas = frota + terceiros + prestadores do estoque escolhido. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages,{width:842,height:595});
+}

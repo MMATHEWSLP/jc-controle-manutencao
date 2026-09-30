@@ -31,13 +31,14 @@ on:
           - corrigir-km-restaurando-excluidas
           - corrigir-km-mantendo-excluidas
           - auditoria-banco-somente-leitura
+          - resumo-dia-somente-leitura
       vinculos:
         description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
         required: false
         default: ""
         type: string
       empresa:
-        description: "vincular-terceiros: prestador onde cadastrar os caminhões novos; relatorio-terceiro: nome do terceiro"
+        description: "vincular-terceiros: prestador onde cadastrar os caminhões novos; relatorio-terceiro: nome do terceiro; resumo-dia: frente (vazio = Arapiuns)"
         required: false
         default: ""
         type: string
@@ -47,7 +48,7 @@ on:
         default: ""
         type: string
       lote:
-        description: "Identificador do lote (vazio = historico_planilha_2026-09-29; no ajuste de saldo = ajuste_saldo_<data>)"
+        description: "Identificador do lote (vazio = historico_planilha_2026-09-29; no ajuste de saldo = ajuste_saldo_<data>; no resumo-dia = a data, ex. 2026-09-28)"
         required: false
         default: ""
         type: string
@@ -103,6 +104,11 @@ jobs:
           EMPRESA: ${{ github.event.inputs.empresa }}
           IDS: ${{ github.event.inputs.ids }}
         run: |
+          if [ "$MODO" = "resumo-dia-somente-leitura" ]; then
+            # Conferência do "Resumo do dia" com a mesma função da tela. lote = data (AAAA-MM-DD ou DD/MM/AAAA), empresa = frente.
+            npx tsx resumo-dia-combustivel.ts "--data=${LOTE:-2026-09-28}" "--frente=${EMPRESA:-Arapiuns}"
+            exit 0
+          fi
           if [ "$MODO" = "auditoria-banco-somente-leitura" ]; then
             node auditoria-banco.mjs
             exit $?
