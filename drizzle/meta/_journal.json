@@ -232,6 +232,13 @@
       "when": 1790732894899,
       "tag": "0032_offline_client_request",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790733478147,
+      "tag": "0033_weekly_report",
+      "breakpoints": true
     }
   ]
 }

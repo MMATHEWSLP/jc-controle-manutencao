@@ -48,7 +48,8 @@
     "test:fleet-costs": "esbuild tests/fleet-costs.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-fleet-costs.mjs && node --test tests/.tmp-fleet-costs.mjs",
     "test:fuel-tank-rules": "esbuild tests/fuel-tank-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-tank-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-tank-rules.mjs",
     "test:checklist-rules": "esbuild tests/checklist-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-checklist-rules.mjs && node --test /tmp/manutencao-preventiva-checklist-rules.mjs",
-    "test:component-rules": "esbuild tests/component-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-component-rules.mjs && node --test /tmp/manutencao-preventiva-component-rules.mjs"
+    "test:component-rules": "esbuild tests/component-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-component-rules.mjs && node --test /tmp/manutencao-preventiva-component-rules.mjs",
+    "test:weekly-report-rules": "esbuild tests/weekly-report-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-weekly-report-rules.mjs && node --test /tmp/manutencao-preventiva-weekly-report-rules.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",

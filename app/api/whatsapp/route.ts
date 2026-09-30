@@ -18,7 +18,7 @@ function recipientPayload(body:Record<string,unknown>){
   if(!name)return {error:"Informe o nome do destinatário."};
   if(!validBrazilWhatsappPhone(phone))return {error:"Informe o número no formato 55 + DDD + número, somente dígitos."};
   if(selectedCategories.length===0||alertTypes.length===0)return {error:"Selecione pelo menos uma categoria e um tipo de alerta."};
-  return {name,phone,active,categories:selectedCategories.includes("ALL")?["ALL"]:selectedCategories,alertTypes};
+  return {name,phone,active,weeklyReport:body.weeklyReport===true,categories:selectedCategories.includes("ALL")?["ALL"]:selectedCategories,alertTypes};
 }
 
 async function audit(d1:Awaited<ReturnType<typeof getD1>>,userId:number,entityType:string,entityId:string,action:string,previousValue:unknown,newValue:unknown){
@@ -38,8 +38,8 @@ export async function POST(request:Request){
     const body=await request.json() as Record<string,unknown>;const action=clean(body.action);const d1=await getD1();
     if(action==="CREATE_RECIPIENT"){
       const auth=await authorize(request,"whatsapp.manage");if(auth.response)return auth.response;const payload=recipientPayload(body);if("error" in payload)return Response.json({error:payload.error},{status:400});const now=new Date().toISOString();
-      await d1.prepare(`INSERT INTO whatsapp_recipients (name,phone,active,categories,alert_types,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`)
-        .bind(payload.name,payload.phone,payload.active?1:0,JSON.stringify(payload.categories),JSON.stringify(payload.alertTypes),auth.user!.id,now,now).run();
+      await d1.prepare(`INSERT INTO whatsapp_recipients (name,phone,active,categories,alert_types,weekly_report,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .bind(payload.name,payload.phone,payload.active?1:0,JSON.stringify(payload.categories),JSON.stringify(payload.alertTypes),payload.weeklyReport,auth.user!.id,now,now).run();
       const saved=await d1.prepare(`SELECT id FROM whatsapp_recipients WHERE phone=?`).bind(payload.phone).first<Row>();await audit(d1,auth.user!.id,"WHATSAPP_RECIPIENT",String(saved?.id??payload.phone),"DESTINATÁRIO CRIADO",undefined,payload);
       return Response.json({ok:true,message:"Destinatário cadastrado com sucesso."},{status:201});
     }
@@ -95,7 +95,7 @@ export async function PUT(request:Request){
     }
     if(action==="UPDATE_RECIPIENT"){
       const id=Number(body.id);if(!Number.isInteger(id)||id<=0)return Response.json({error:"Destinatário inválido."},{status:400});const payload=recipientPayload(body);if("error" in payload)return Response.json({error:payload.error},{status:400});const previous=await d1.prepare(`SELECT * FROM whatsapp_recipients WHERE id=?`).bind(id).first<Row>();if(!previous)return Response.json({error:"Destinatário não encontrado."},{status:404});
-      await d1.prepare(`UPDATE whatsapp_recipients SET name=?,phone=?,active=?,categories=?,alert_types=?,updated_at=? WHERE id=?`).bind(payload.name,payload.phone,payload.active?1:0,JSON.stringify(payload.categories),JSON.stringify(payload.alertTypes),now,id).run();await audit(d1,auth.user!.id,"WHATSAPP_RECIPIENT",String(id),"DESTINATÁRIO EDITADO",previous,payload);return Response.json({ok:true,message:"Destinatário atualizado."});
+      await d1.prepare(`UPDATE whatsapp_recipients SET name=?,phone=?,active=?,categories=?,alert_types=?,weekly_report=?,updated_at=? WHERE id=?`).bind(payload.name,payload.phone,payload.active?1:0,JSON.stringify(payload.categories),JSON.stringify(payload.alertTypes),payload.weeklyReport,now,id).run();await audit(d1,auth.user!.id,"WHATSAPP_RECIPIENT",String(id),"DESTINATÁRIO EDITADO",previous,payload);return Response.json({ok:true,message:"Destinatário atualizado."});
     }
     return Response.json({error:"Ação de WhatsApp inválida."},{status:400});
   }catch(error){const message=error instanceof Error?error.message:"";console.error("[whatsapp.put]",error);if(message.includes("UNIQUE constraint"))return Response.json({error:"Este número já está cadastrado."},{status:409});return Response.json({error:"Não foi possível salvar as configurações do WhatsApp."},{status:500});}

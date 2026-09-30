@@ -573,6 +573,8 @@ export const whatsappRecipients = pgTable("whatsapp_recipients", {
   active: boolean("active").notNull().default(true),
   categories: text("categories").notNull().default('["ALL"]'),
   alertTypes: text("alert_types").notNull().default('["WARNING","NEAR","OVERDUE"]'),
+  // Recebe o resumo semanal da operação (segunda-feira, lib/weekly-report.ts).
+  weeklyReport: boolean("weekly_report").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
@@ -601,7 +603,7 @@ export const whatsappDeliveries = pgTable("whatsapp_deliveries", {
   result: text("result", { enum:["SENT","DELIVERED","PENDING","FAILED"] }).notNull().default("PENDING"),
   providerMessageId: text("provider_message_id"),
   errorReason: text("error_reason"),
-  triggerType: text("trigger_type", { enum:["AUTOMATIC","MANUAL","TEST","OVERDUE_REPEAT"] }).notNull(),
+  triggerType: text("trigger_type", { enum:["AUTOMATIC","MANUAL","TEST","OVERDUE_REPEAT","WEEKLY_REPORT"] }).notNull(),
   dedupeKey: text("dedupe_key"),
   sentAt: text("sent_at"),
   deliveredAt: text("delivered_at"),

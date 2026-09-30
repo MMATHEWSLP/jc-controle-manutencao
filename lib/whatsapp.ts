@@ -3,10 +3,10 @@ import { siteUrl } from "./site";
 
 type Row=Record<string,unknown>;
 export type WhatsappLevel="WARNING"|"NEAR"|"OVERDUE";
-export type WhatsappTrigger="AUTOMATIC"|"MANUAL"|"TEST"|"OVERDUE_REPEAT";
+export type WhatsappTrigger="AUTOMATIC"|"MANUAL"|"TEST"|"OVERDUE_REPEAT"|"WEEKLY_REPORT";
 export type WhatsappConnectionStatus="NOT_CONFIGURED"|"CONNECTED"|"ERROR";
 export type WhatsappSendMode="MANUAL"|"API";
-export type WhatsappRecipient={id:number;name:string;phone:string;active:boolean;categories:string[];alertTypes:WhatsappLevel[];createdAt:string;updatedAt:string};
+export type WhatsappRecipient={id:number;name:string;phone:string;active:boolean;categories:string[];alertTypes:WhatsappLevel[];weeklyReport:boolean;createdAt:string;updatedAt:string};
 export type WhatsappAlertSnapshot={alertId:number;planId:number;equipmentId:number;prefix:string;category:string;brand:string;model:string;front:string;maintenanceName:string;level:WhatsappLevel;currentValue:number;lastValue:number|null;nextValue:number;remainingValue:number;unit:"HOURS"|"KM";qrToken:string|null};
 export type WhatsappSettings={sendMode:WhatsappSendMode;automaticEnabled:boolean;overdueRepeatDays:number;templateName:string;templateLanguage:string};
 type RuntimeEnvironment={accessToken:string;phoneNumberId:string;apiVersion:string;publicBaseUrl:string;cronSecret:string;webhookVerifyToken:string;appSecret:string;encryptionKey:string};
@@ -95,8 +95,8 @@ export async function testWhatsappConnection(d1:D1DatabaseLike){
 }
 
 export async function listWhatsappRecipients(d1:D1DatabaseLike):Promise<WhatsappRecipient[]>{
-  const result=await d1.prepare(`SELECT id,name,phone,active,categories,alert_types,created_at,updated_at FROM whatsapp_recipients ORDER BY active DESC,name`).all<Row>();
-  return result.results.map((row)=>({id:Number(row.id),name:String(row.name),phone:String(row.phone),active:Number(row.active)===1,categories:parseList(row.categories,["ALL"]),alertTypes:parseList(row.alert_types,allowedLevels).filter((item):item is WhatsappLevel=>allowedLevels.includes(item as WhatsappLevel)),createdAt:String(row.created_at),updatedAt:String(row.updated_at)}));
+  const result=await d1.prepare(`SELECT id,name,phone,active,categories,alert_types,weekly_report,created_at,updated_at FROM whatsapp_recipients ORDER BY active DESC,name`).all<Row>();
+  return result.results.map((row)=>({id:Number(row.id),name:String(row.name),phone:String(row.phone),active:Number(row.active)===1,weeklyReport:row.weekly_report===true||Number(row.weekly_report)===1,categories:parseList(row.categories,["ALL"]),alertTypes:parseList(row.alert_types,allowedLevels).filter((item):item is WhatsappLevel=>allowedLevels.includes(item as WhatsappLevel)),createdAt:String(row.created_at),updatedAt:String(row.updated_at)}));
 }
 export async function loadWhatsappAlerts(d1:D1DatabaseLike,options:{equipmentId?:number;planIds?:number[]}={}):Promise<WhatsappAlertSnapshot[]>{
   const where=[`a.status='OPEN'`,`a.level IN ('WARNING','NEAR','OVERDUE')`,`p.active=1`,`emt.applicable=1`,`e.oil_change_enabled=1`,`e.sold_at IS NULL`];const bindings:unknown[]=[];
@@ -155,3 +155,33 @@ export async function sendWhatsappTest(d1:D1DatabaseLike,recipient:WhatsappRecip
 export async function listWhatsappDeliveries(d1:D1DatabaseLike,limit=300){const result=await d1.prepare(`SELECT id,alert_id,plan_id,equipment_id,equipment_prefix,category,maintenance_name,alert_status,current_value,last_value,next_value,remaining_value,unit,recipient_name,recipient_phone,message,result,provider_message_id,error_reason,trigger_type,sent_at,delivered_at,created_at FROM whatsapp_deliveries ORDER BY created_at DESC,id DESC LIMIT ?`).bind(Math.max(1,Math.min(1000,limit))).all<Row>();return result.results.map((row)=>({...row,id:Number(row.id),alertId:row.alert_id===null?null:Number(row.alert_id),planId:row.plan_id===null?null:Number(row.plan_id),equipmentId:row.equipment_id===null?null:Number(row.equipment_id),equipmentPrefix:String(row.equipment_prefix),maintenanceName:String(row.maintenance_name),alertStatus:String(row.alert_status),recipientName:String(row.recipient_name),recipientPhone:String(row.recipient_phone),providerMessageId:row.provider_message_id===null?null:String(row.provider_message_id),errorReason:row.error_reason===null?null:String(row.error_reason),triggerType:String(row.trigger_type),result:String(row.result),resultLabel:resultLabel(String(row.result)),createdAt:String(row.created_at)}));}
 export async function getWhatsappCronSecret(){return (await runtimeEnvironment()).cronSecret;}
 export async function getWhatsappWebhookEnvironment(){const runtime=await runtimeEnvironment();return {verifyToken:runtime.webhookVerifyToken,appSecret:runtime.appSecret};}
+
+// Resumo semanal (lib/weekly-report.ts) para os destinatários marcados em "Recebe o resumo semanal".
+// A Meta só aceita texto livre dentro da janela de 24 h da última mensagem do destinatário; fora dela
+// é preciso um modelo aprovado: WHATSAPP_WEEKLY_TEMPLATE = nome do modelo com 3 variáveis no corpo
+// ({{1}} período, {{2}} resumo em uma linha, {{3}} link). Sem o modelo, envia como texto livre.
+// dedupeKey (envio agendado) impede mandar a mesma semana duas vezes para a mesma pessoa; um envio
+// que falhou libera a chave, para rodar o workflow de novo e tentar outra vez.
+export async function sendWhatsappWeeklyReport(d1:D1DatabaseLike,input:{text:string;summaryLine:string;periodLabel:string;link:string;weekKey:string|null;createdBy:number|null}){
+  if(!(await getWhatsappConfiguration(d1)).connected)throw new Error("Envio não realizado: integração WhatsApp não configurada.");
+  const [recipients,settings,credentials]=await Promise.all([listWhatsappRecipients(d1),getWhatsappSettings(d1),providerCredentials(d1)]);
+  const template=clean((process.env as Record<string,unknown>).WHATSAPP_WEEKLY_TEMPLATE);
+  const targets=recipients.filter((recipient)=>recipient.active&&recipient.weeklyReport);const results:Array<{recipient:string;result:"SENT"|"FAILED"|"SKIPPED";error?:string}>=[];
+  for(const recipient of targets){
+    const now=new Date().toISOString();const dedupeKey=input.weekKey?`WEEKLY:${input.weekKey}:RECIPIENT:${recipient.id}`:null;
+    await d1.prepare(`INSERT INTO whatsapp_deliveries (recipient_id,equipment_prefix,category,maintenance_name,alert_status,recipient_name,recipient_phone,message,result,trigger_type,dedupe_key,created_by,created_at,updated_at) VALUES (?,'SISTEMA','SISTEMA','Resumo semanal','RELATORIO',?,?,?,'PENDING','WEEKLY_REPORT',?,?,?,?) ON CONFLICT (dedupe_key) DO NOTHING`)
+      .bind(recipient.id,recipient.name,recipient.phone,input.text,dedupeKey,input.createdBy,now,now).run();
+    const row=await d1.prepare(`SELECT id,created_at FROM whatsapp_deliveries WHERE recipient_id=? AND trigger_type='WEEKLY_REPORT' AND created_at=? ORDER BY id DESC LIMIT 1`).bind(recipient.id,now).first<Row>();
+    if(!row){results.push({recipient:recipient.name,result:"SKIPPED"});continue;}
+    const id=Number(row.id);
+    try{
+      const body=template?{messaging_product:"whatsapp",to:recipient.phone,type:"template",template:{name:template,language:{code:settings.templateLanguage},components:[{type:"body",parameters:[input.periodLabel,input.summaryLine,input.link].map((text)=>({type:"text",text}))}]}}
+        :{messaging_product:"whatsapp",recipient_type:"individual",to:recipient.phone,type:"text",text:{preview_url:false,body:input.text}};
+      const response=await fetch(`https://graph.facebook.com/${credentials.apiVersion}/${credentials.phoneNumberId}/messages`,{method:"POST",headers:{Authorization:`Bearer ${credentials.accessToken}`,"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const data=await response.json().catch(()=>({})) as {messages?:Array<{id?:string}>;error?:{message?:string;error_user_msg?:string;code?:number}};
+      if(!response.ok)throw new Error(`${data.error?.error_user_msg||data.error?.message||`A Meta recusou o envio (${response.status}).`}${data.error?.code?` [código ${data.error.code}]`:""}`);
+      await completeDelivery(d1,id,"SENT",data.messages?.[0]?.id??null,null);results.push({recipient:recipient.name,result:"SENT"});
+    }catch(error){const reason=error instanceof Error?error.message:"Falha desconhecida na integração.";await completeDelivery(d1,id,"FAILED",null,reason);if(dedupeKey)await d1.prepare(`UPDATE whatsapp_deliveries SET dedupe_key=NULL WHERE id=?`).bind(id).run();results.push({recipient:recipient.name,result:"FAILED",error:reason});}
+  }
+  return {recipients:targets.length,sent:results.filter((item)=>item.result==="SENT").length,failed:results.filter((item)=>item.result==="FAILED").length,skipped:results.filter((item)=>item.result==="SKIPPED").length,results,usedTemplate:Boolean(template)};
+}
