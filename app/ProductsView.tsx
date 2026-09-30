@@ -667,7 +667,7 @@ function ProductModal({
             <h2>{readOnly ? "Detalhes do produto" : item ? "Editar produto" : "Cadastrar produto"}</h2>
             <span>TAG única no sistema inteiro, gerada em sequência. Nome e referências sempre em maiúsculas.</span>
           </div>
-          <button onClick={close}>×</button>
+          <button onClick={close} aria-label="Fechar">×</button>
         </header>
         {item && (
           <div className="main-tabs secondary-module-nav product-modal-tabs" role="tablist">
@@ -914,7 +914,7 @@ function ImportCsvModal({ close, imported }: { close: () => void; imported: (mes
             <h2>Importar CSV</h2>
             <span>Cabeçalho esperado: tag;nome;referencia;preco;fornecedor;marca;aplicacao. Upsert por TAG — importar de novo não duplica.</span>
           </div>
-          <button onClick={close}>×</button>
+          <button onClick={close} aria-label="Fechar">×</button>
         </header>
         {!summary ? (
           <div className="modal-form">

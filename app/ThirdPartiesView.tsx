@@ -41,17 +41,18 @@ const searchKey = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, 
 export function useThirdPartyOptions() {
   const [options, setOptions] = useState<ThirdPartyOption[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [error, setError] = useState("");
   const reload = useCallback(async () => {
     const result = await api<{ thirdParties: ThirdPartyOption[]; canManage: boolean }>("/api/third-parties?opcoes=1");
     setOptions(result.thirdParties); setCanManage(result.canManage);
     return result.thirdParties;
   }, []);
-  useEffect(() => { reload().catch(() => undefined); }, [reload]);
-  return { options, canManage, reload };
+  useEffect(() => { reload().then(() => setError("")).catch(() => setError("Não foi possível carregar a lista de terceiros. Recarregue a página.")); }, [reload]);
+  return { options, canManage, reload, error };
 }
 
 // Select com busca de empresa/pessoa (filtrado pelos tipos permitidos).
-export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder }: { options: ThirdPartyOption[]; kinds?: Kind[]; value: ThirdPartyOption | null; onPick: (item: ThirdPartyOption | null) => void; placeholder?: string }) {
+export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder, loadError }: { options: ThirdPartyOption[]; kinds?: Kind[]; value: ThirdPartyOption | null; onPick: (item: ThirdPartyOption | null) => void; placeholder?: string; loadError?: string }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const results = useMemo(() => {
@@ -68,7 +69,7 @@ export function ThirdPartyPicker({ options, kinds, value, onPick, placeholder }:
         {results.map((item) => (
           <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(item); setQuery(""); setOpen(false); }}><b>{item.name}</b><small> · {KIND_LABELS[item.kind]}{item.vehicles.length ? ` · ${item.vehicles.length} veículo(s)` : ""}</small></button></li>
         ))}
-        {results.length === 0 && <li className="muted"><small>Nenhum terceiro ativo encontrado.</small></li>}
+        {results.length === 0 && <li className="muted"><small>{loadError || "Nenhum terceiro ativo encontrado."}</small></li>}
       </ul>}
     </div>
   );
@@ -117,7 +118,7 @@ export function ThirdPartyFormModal({ item, fronts, defaultKind, close, saved }:
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="modal">
-        <header><div><p className="eyebrow">TERCEIROS</p><h2>{item ? `Editar ${item.name}` : "Novo terceiro"}</h2><span>Empresa prestadora, terceirizada ou pessoa que não é da JC.</span></div><button type="button" onClick={close}>×</button></header>
+        <header><div><p className="eyebrow">TERCEIROS</p><h2>{item ? `Editar ${item.name}` : "Novo terceiro"}</h2><span>Empresa prestadora, terceirizada ou pessoa que não é da JC.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
           <label className="full">Nome / razão social *<input name="name" required defaultValue={item?.name ?? ""} autoFocus /></label>
           <label>Tipo *<select name="kind" required defaultValue={item?.kind ?? defaultKind ?? "PRESTADOR"}>{(Object.keys(KIND_LABELS) as Kind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}</select></label>
@@ -151,7 +152,7 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="modal">
-        <header><div><p className="eyebrow">VEÍCULO / MÁQUINA DE TERCEIRO</p><h2>{item ? `Editar ${item.plate}` : "Novo veículo"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close}>×</button></header>
+        <header><div><p className="eyebrow">VEÍCULO / MÁQUINA DE TERCEIRO</p><h2>{item ? `Editar ${item.plate}` : "Novo veículo"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
           <label>Placa / identificação *<input name="plate" required defaultValue={item?.plate ?? ""} autoFocus /></label>
           <label>Modelo / descrição<input name="description" defaultValue={item?.description ?? ""} /></label>
@@ -312,7 +313,7 @@ export function ThirdPartyConsumptionReport() {
         <label>De<input type="date" value={from} max={to} onChange={(event) => event.target.value && setFrom(event.target.value)} /></label>
         <label>Até<input type="date" value={to} min={from} onChange={(event) => event.target.value && setTo(event.target.value)} /></label>
         {data && data.fronts.length > 1 && <label>Frente<select value={front} onChange={(event) => setFront(event.target.value)}><option value="">Todas em exibição</option>{data.fronts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        <label className="stock-filter-wide">Empresa<ThirdPartyPicker options={options.options} value={party} onPick={(item) => { setParty(item); setVehicle(null); }} /></label>
+        <label className="stock-filter-wide">Empresa<ThirdPartyPicker options={options.options} loadError={options.error} value={party} onPick={(item) => { setParty(item); setVehicle(null); }} /></label>
         <label className="stock-filter-wide">Veículo<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} onPick={setVehicle} disabled={!party} /></label>
         <div className="fuel-export-actions"><a className="secondary" href={`/api/third-parties/consumption?${params}&formato=xlsx`}>Exportar Excel</a></div>
       </div>

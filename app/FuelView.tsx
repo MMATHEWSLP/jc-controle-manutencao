@@ -402,7 +402,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
             <div className={`fuel-span-2 fuel-third-party-field ${invalid("party")}`} onBlur={touch("party")}>
               <span className="fuel-field-label">{isProvider ? "Empresa (prestador / terceirizada) *" : "Terceiro (empresa ou pessoa) *"}
                 {thirdPartyOptions.canManage && <button type="button" className="link-button" onClick={() => setQuickCreate("party")}>＋ Novo</button>}</span>
-              <ThirdPartyPicker options={thirdPartyOptions.options} kinds={partyKinds} value={party} onPick={(item) => { setParty(item); setVehicle(null); setPartyReading(""); setReadingException(false); setExceptionAllowed(false); }} />
+              <ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} kinds={partyKinds} value={party} onPick={(item) => { setParty(item); setVehicle(null); setPartyReading(""); setReadingException(false); setExceptionAllowed(false); }} />
               {fieldError("party", "Escolha no cadastro de terceiros.")}
             </div>
             <div className={`fuel-third-party-field ${invalid("vehicle")}`} onBlur={touch("vehicle")}>

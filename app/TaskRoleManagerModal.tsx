@@ -136,7 +136,7 @@ export default function TaskRoleManagerModal({ close, onSaved }: { close: () => 
     <section className="modal task-role-manager-modal">
       <header>
         <div><p className="eyebrow">TAREFAS · ADMINISTRAÇÃO</p><h2>Gestor de Cargos de Tarefas</h2><span>Defina quem pode enviar, visualizar e gerenciar tarefas de quem. Nada é concedido automaticamente por posição no mapa — só pelas conexões abaixo.</span></div>
-        <button onClick={requestClose}>×</button>
+        <button onClick={requestClose} aria-label="Fechar">×</button>
       </header>
       {loading ? <div className="page-loading"><span/><p>Carregando mapa de cargos...</p></div> : <>
         {error && <div className="equipment-form-error" style={{ margin: "0 20px 12px" }}><span>!</span><strong>{error}</strong></div>}
@@ -241,7 +241,7 @@ function ConnectionEditModal({ sourceRole, targetRole, connection, close, apply,
 
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="modal connection-edit-modal">
-      <header><div><p className="eyebrow">CONEXÃO ENTRE CARGOS</p><h2>{sourceRole.name} → {targetRole.name}</h2><span>{sameRole ? "Envio de tarefas entre usuários deste mesmo cargo." : "O que usuários de “" + sourceRole.name + "” podem fazer com tarefas de “" + targetRole.name + "”."}</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">CONEXÃO ENTRE CARGOS</p><h2>{sourceRole.name} → {targetRole.name}</h2><span>{sameRole ? "Envio de tarefas entre usuários deste mesmo cargo." : "O que usuários de “" + sourceRole.name + "” podem fazer com tarefas de “" + targetRole.name + "”."}</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form connection-edit-form" onSubmit={submit}>
         <label className={`connection-toggle ${canSend ? "checked" : ""}`}><input type="checkbox" checked={canSend} onChange={(event) => setCanSend(event.target.checked)}/><span><b>{sameRole ? "Permitir envio de tarefas entre usuários deste mesmo cargo" : "Enviar tarefas para"}</b><small>{sourceRole.name} pode criar tarefas com responsáveis do cargo {targetRole.name}.</small></span></label>
         {!sameRole && <>

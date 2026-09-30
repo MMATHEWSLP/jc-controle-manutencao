@@ -339,7 +339,7 @@ function CancelRequestModal({ item, close, saved }:{ item:MaterialRequest; close
   }
   return <div className="modal-backdrop" onMouseDown={(event)=>{ if(event.target===event.currentTarget) close(); }}>
     <section className="modal">
-      <header><div><p className="eyebrow">CANCELAR SOLICITAÇÃO</p><h2>{item.requestNumber}</h2><span>A solicitação irá para o Histórico. Informe o motivo.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">CANCELAR SOLICITAÇÃO</p><h2>{item.requestNumber}</h2><span>A solicitação irá para o Histórico. Informe o motivo.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Motivo do cancelamento *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)}/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}

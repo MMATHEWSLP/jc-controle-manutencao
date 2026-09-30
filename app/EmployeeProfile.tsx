@@ -60,7 +60,7 @@ export default function EmployeeProfile({ id, canManage: canManageModule, canSee
         {!detail ? <div className="page-loading"><span /><p>{error || "Carregando perfil..."}</p></div> : <>
           <header className="sheet-header">
             <div className="sheet-identity"><span className="equipment-avatar sheet-avatar">{initials(detail.name)}</span><div><p>{detail.jobTitle.toUpperCase()}{detail.registration ? ` · MATRÍCULA ${detail.registration}` : ""}</p><h2>{detail.name}</h2><span>{detail.company} · {detail.frontName}{dismissed ? "" : ` · há ${dayCount(detail.daysInFront)} nesta frente`}</span></div></div>
-            <button className="sheet-close" onClick={close}>×</button>
+            <button className="sheet-close" onClick={close} aria-label="Fechar">×</button>
           </header>
           {canTransfer && (
             <div className="sheet-actions employee-profile-actions">

@@ -5,7 +5,7 @@
 .app-install-hint{position:fixed;z-index:1150;left:50%;bottom:14px;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 14px 40px rgba(8,27,40,.2)}
 .app-install-hint img{flex:none;border-radius:9px;border:1px solid var(--line)}
 .app-install-hint div{flex:1;display:grid;gap:2px}
-.app-install-hint strong{color:var(--ink);font-size:12px}.app-install-hint span{color:var(--muted);font-size:10px}
+.app-install-hint strong{color:var(--ink);font-size:12px}.app-install-hint span{color:var(--muted);font-size:11px}
 .app-install-hint .primary{min-height:36px;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:900}
 .app-install-close{border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
 .app-offline-banner~.app-install-hint{display:none}

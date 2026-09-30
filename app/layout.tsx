@@ -11,6 +11,7 @@ import "./products-fuel.css";
 import "./app-runtime.css";
 import "./stock-modules.css";
 import "./compact-tables.css";
+import "./ui-fixes.css";
 import AppRuntime from "./AppRuntime";
 
 const geistSans = Geist({
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Controle de Manutenção Preventiva",
     description: "Equipamentos, horímetros/KM, planos, alertas e histórico interligados.",
-    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "Controle de Manutenção Preventiva" }],
+    images: [{ url: "/og.png", width: 1200, height: 800, alt: "Controle de Manutenção Preventiva" }],
   },
   twitter: {
     card: "summary_large_image",

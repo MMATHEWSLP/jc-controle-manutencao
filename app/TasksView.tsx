@@ -249,6 +249,7 @@ function TaskSummaryPanel({ authUser, users }:{ authUser:AuthUser; users:Assigna
   const [userId,setUserId]=useState("");
   const [roleId,setRoleId]=useState("");
   const [taskRoles,setTaskRoles]=useState<TaskRoleOption[]>([]);
+  const [rolesError,setRolesError]=useState("");
   const load=useCallback(async()=>{
     const params=new URLSearchParams();
     if(isAdmin && roleId) params.set("roleId",roleId);
@@ -256,9 +257,9 @@ function TaskSummaryPanel({ authUser, users }:{ authUser:AuthUser; users:Assigna
     try{ const result=await api<{ summary:SummaryData }>(`/api/tasks/summary?${params.toString()}`); setSummary(result.summary); }catch{ /* silencioso: painel é só um resumo */ }
   },[isAdmin,userId,roleId]);
   useEffect(()=>{ load(); },[load]);
-  useEffect(()=>{ if(isAdmin) api<{ roles:TaskRoleOption[] }>("/api/task-roles").then((result)=>setTaskRoles(result.roles)).catch(()=>undefined); },[isAdmin]);
+  useEffect(()=>{ if(isAdmin) api<{ roles:TaskRoleOption[] }>("/api/task-roles").then((result)=>setTaskRoles(result.roles)).catch(()=>setRolesError("Não foi possível carregar os cargos para o filtro.")); },[isAdmin]);
   if(!summary) return null;
-  return <article className="panel module-panel task-summary-panel">
+  return <article className="panel module-panel task-summary-panel">{rolesError&&<p className="table-sub" role="alert">{rolesError}</p>}
     <div className="task-summary-head">
       <h2>Painel resumido</h2>
       {isAdmin && <div className="task-summary-filters">
@@ -431,7 +432,7 @@ function TaskModal({ item, presetParentId, assignableUsers, flatTasks, close, sa
 
   return <div className="modal-backdrop">
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
-      <header><div><p className="eyebrow">TAREFAS</p><h2>{item?"Editar tarefa":"Nova tarefa"}</h2><span>O criador é definido automaticamente pelo sistema e não pode ser alterado.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">TAREFAS</p><h2>{item?"Editar tarefa":"Nova tarefa"}</h2><span>O criador é definido automaticamente pelo sistema e não pode ser alterado.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Título da tarefa *<input required value={title} onChange={(event)=>setTitle(event.target.value)}/></label>
         <label className="full">Descrição<textarea value={description} onChange={(event)=>setDescription(event.target.value)}/></label>
@@ -465,7 +466,7 @@ function RequestCompletionModal({ node, close, saved }:{ node:TaskNode; close:()
   }
   return <div className="modal-backdrop">
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
-      <header><div><p className="eyebrow">SOLICITAR CONCLUSÃO</p><h2>{node.title}</h2><span>Descreva o que foi feito. A tarefa só será concluída após a aprovação de quem a criou.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">SOLICITAR CONCLUSÃO</p><h2>{node.title}</h2><span>Descreva o que foi feito. A tarefa só será concluída após a aprovação de quem a criou.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Observação da conclusão *<textarea required value={note} onChange={(event)=>setNote(event.target.value)} placeholder="Descreva como a tarefa foi concluída."/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
@@ -492,7 +493,7 @@ function RequestNotDoneModal({ node, close, saved }:{ node:TaskNode; close:()=>v
   }
   return <div className="modal-backdrop">
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
-      <header><div><p className="eyebrow">SOLICITAR NÃO REALIZAÇÃO</p><h2>{node.title}</h2><span>Justifique por que a tarefa não será realizada. A decisão final é de quem a criou.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">SOLICITAR NÃO REALIZAÇÃO</p><h2>{node.title}</h2><span>Justifique por que a tarefa não será realizada. A decisão final é de quem a criou.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Justificativa *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explique o motivo."/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
@@ -530,7 +531,7 @@ function DecisionModal({ node, kind, close, saved }:{ node:TaskNode; kind:"COMPL
 
   return <div className="modal-backdrop">
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
-      <header><div><p className="eyebrow">{isCompletion?"DECIDIR CONCLUSÃO":"DECIDIR NÃO REALIZAÇÃO"}</p><h2>{node.title}</h2><span>Responsável: {node.assigneeName??"—"}</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">{isCompletion?"DECIDIR CONCLUSÃO":"DECIDIR NÃO REALIZAÇÃO"}</p><h2>{node.title}</h2><span>Responsável: {node.assigneeName??"—"}</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <div className="modal-form">
         <div className="full"><span>{isCompletion?"Observação enviada":"Justificativa enviada"}</span><p>{(isCompletion?node.completionNote:node.notDoneReason) || "—"}</p></div>
       </div>
@@ -563,7 +564,7 @@ function CancelTaskModal({ node, close, saved }:{ node:TaskNode; close:()=>void;
   }
   return <div className="modal-backdrop">
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true">
-      <header><div><p className="eyebrow">CANCELAR TAREFA</p><h2>{node.title}</h2><span>Cancelar preserva a tarefa no histórico — diferente de excluir. Informe o motivo.</span></div><button onClick={close}>×</button></header>
+      <header><div><p className="eyebrow">CANCELAR TAREFA</p><h2>{node.title}</h2><span>Cancelar preserva a tarefa no histórico — diferente de excluir. Informe o motivo.</span></div><button onClick={close} aria-label="Fechar">×</button></header>
       <form className="modal-form" onSubmit={submit}>
         <label className="full">Motivo do cancelamento *<textarea required value={reason} onChange={(event)=>setReason(event.target.value)} placeholder="Explique por que esta tarefa está sendo cancelada."/></label>
         {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}

@@ -8,6 +8,7 @@ import {
   api, ApiError, brDay, CatalogPicker, EmployeePicker, EquipmentPicker, jsonBody, localToday, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat, ShortageNotice,
   type CatalogOption, type EmployeeOption, type EquipmentOption, type ProductOption, type Shortage, type StockOptions,
 } from "./stock-client";
+import LoadWarning from "./LoadWarning";
 
 type User = { name: string; permissions: string[] };
 type ExitDoc = {
@@ -27,10 +28,12 @@ export default function StockExitsView({ authUser, flash }: { authUser: User; fl
   const [options, setOptions] = useState<StockOptions>({ fronts: [], defaultFrontId: null, equipment: [] });
   const departments = useDepartments();
   const [managing, setManaging] = useState(false);
-  useEffect(() => { api<StockOptions>("/api/stock/options").then(setOptions).catch(() => undefined); }, []);
+  const [optionsError, setOptionsError] = useState("");
+  useEffect(() => { api<StockOptions>("/api/stock/options").then(setOptions).catch(() => setOptionsError("Não foi possível carregar as frentes e os equipamentos. Recarregue a página ou verifique a conexão.")); }, []);
 
   return (
     <>
+      <LoadWarning message={optionsError} />
       <div className="page-heading module-heading">
         <div><p className="eyebrow">ESTOQUE · SAÍDAS</p><h1>Movimentação</h1><span>Saída de produtos do estoque para um veículo, um funcionário e/ou um departamento — ou para um terceiro / prestador. Cada lançamento recebe um número (SAI-000123) e aparece no histórico do produto.</span></div>
         {departments.canManage && <div className="heading-actions"><button className="secondary" onClick={() => setManaging(true)}>Departamentos</button></div>}
@@ -109,7 +112,7 @@ function MovementForm({ options, departments, createDepartment, flash }: {
             <button type="button" className={destination === "TERCEIRO" ? "active" : ""} aria-pressed={destination === "TERCEIRO"} onClick={() => setDestination("TERCEIRO")}>Terceiro / Prestador</button>
           </fieldset>
           {toThirdParty ? <>
-            <label>Empresa / pessoa *<ThirdPartyPicker options={thirdPartyOptions.options} value={party} onPick={(item) => { setParty(item); setPartyVehicle(null); }} /></label>
+            <label>Empresa / pessoa *<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={party} onPick={(item) => { setParty(item); setPartyVehicle(null); }} /></label>
             <label>Veículo do terceiro<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={partyVehicle} onPick={setPartyVehicle} disabled={!party} /></label>
             <label>Recebido por *<input required value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} placeholder="Nome de quem recebeu os produtos" /></label>
           </> : <>
@@ -185,7 +188,7 @@ function HistoryPanel({ options, departments, flash }: { options: StockOptions; 
         <label className="stock-filter-wide">Funcionário<EmployeePicker value={employeeFilter} frontId={null} onPick={setEmployeeFilter} /></label>
         <label>Departamento<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">Todos</option>{departments.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
         <label className="stock-filter-wide stock-filter-product">Peça / produto<ProductPicker value={productFilter} frontId={null} onPick={setProductFilter} /></label>
-        <label className="stock-filter-wide">Terceiro / prestador<ThirdPartyPicker options={thirdPartyOptions.options} value={partyFilter} onPick={(item) => { setPartyFilter(item); setPartyVehicleFilter(null); }} /></label>
+        <label className="stock-filter-wide">Terceiro / prestador<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={partyFilter} onPick={(item) => { setPartyFilter(item); setPartyVehicleFilter(null); }} /></label>
         {partyFilter && <label className="stock-filter-wide">Veículo do terceiro<ThirdPartyVehiclePicker vehicles={partyFilter.vehicles} value={partyVehicleFilter} onPick={setPartyVehicleFilter} /></label>}
         <label>De<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>Até<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
