@@ -2,13 +2,17 @@ import ExcelJS from "exceljs";
 import { getDb } from "../../../../db";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { authorize } from "../../../../lib/auth";
-import { activeFuelTypes, fuelBalances, fuelHistory, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters } from "../../../../lib/fuel";
+import { eq } from "drizzle-orm";
+import { thirdParties, thirdPartyVehicles } from "../../../../db/schema";
+import { activeFuelTypes, fuelBalances, fuelHistory, fuelHistorySummary, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters } from "../../../../lib/fuel";
 import { FUEL_LOCATION_LABELS, FUEL_MOVEMENT_LABELS, PROVIDER_LABEL, THIRD_PARTY_LABEL } from "../../../../lib/fuel-rules";
 import { createFuelHistoryPdf, formatPdfDate } from "../../../../lib/pdf";
 
 // Exporta exatamente o Histórico exibido (mesma query string): ?formato=pdf | ?formato=xlsx.
 const EXPORT_LIMIT = 5000;
 const liters = (value: number) => value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+// Formato brasileiro com unidade: 5.441 L, 1.234,50 L.
+const litersBr = (value: number) => `${value.toLocaleString("pt-BR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 })} L`;
 const brDay = (value: string) => value.split("-").reverse().join("/");
 
 export async function GET(request: Request) {
@@ -45,20 +49,50 @@ export async function GET(request: Request) {
     const stamp = now.toISOString().slice(0, 10);
 
     if (format === "pdf") {
+      // Mesmas funções da tela (fuelHistory + fuelHistorySummary) com o mesmo filtro: o PDF nunca diverge.
+      const summary = await fuelHistorySummary(db, scope, filters);
+      const [party, vehicle] = await Promise.all([
+        filters.thirdPartyId ? db.select({ name: thirdParties.name }).from(thirdParties).where(eq(thirdParties.id, filters.thirdPartyId)).limit(1).then((found) => found[0]?.name ?? null) : null,
+        filters.vehicleId ? db.select({ plate: thirdPartyVehicles.plate, description: thirdPartyVehicles.description }).from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, filters.vehicleId)).limit(1).then((found) => found[0] ? [found[0].plate, found[0].description].filter(Boolean).join(" ") : null) : null,
+      ]);
+      const pendingLabels = { VEICULO: "Veículo a identificar", ORIGEM: "Origem a confirmar", IMPORTADOS: "Importados do histórico" } as const;
+      const filterLines = [
+        `Período: ${brDay(filters.from)} a ${brDay(filters.to)}`, `Frente: ${frontLabel}`, `Combustível: ${fuelLabel}`, `Movimentação: ${movementLabel}`,
+        ...(party ? [`Empresa/terceiro: ${party}`] : []), ...(vehicle ? [`Veículo: ${vehicle}`] : []),
+        ...(filters.q ? [`Busca: "${filters.q}"`] : []), ...(filters.pending ? [`Pendência: ${pendingLabels[filters.pending]}`] : []),
+      ];
+      const multiFuel = summary.byFuel.length > 1;
+      const detail = (count: number, pick: (fuel: (typeof summary.byFuel)[number]) => { count: number; liters: number }) =>
+        `${count} lançamento(s)${multiFuel ? ` · ${summary.byFuel.filter((fuel) => pick(fuel).count > 0).map((fuel) => `${fuel.fuelName} ${litersBr(pick(fuel).liters)}`).join(" · ")}` : ""}`;
+      const cards = [
+        ...(summary.show.entries ? [{ label: "Entradas", value: litersBr(summary.entries.liters), detail: detail(summary.entries.count, (fuel) => fuel.entries), tone: "green" as const }] : []),
+        ...(summary.show.exits ? [{ label: "Saídas", value: litersBr(summary.exits.liters), detail: detail(summary.exits.count, (fuel) => fuel.exits), tone: "red" as const }] : []),
+        ...(summary.show.transfers ? [{ label: "Transferências", value: litersBr(summary.transfers.liters), detail: detail(summary.transfers.count, (fuel) => fuel.transfers), tone: "blue" as const }] : []),
+        ...(summary.balance !== null ? [{ label: "Saldo da movimentação", value: `${summary.balance > 0 ? "+" : ""}${litersBr(summary.balance)}`, detail: "entradas menos saídas no período", tone: summary.balance < 0 ? "red" as const : "green" as const }] : []),
+      ];
+      const company = (row: Row) => row.thirdPartyName ?? row.providerCompany ?? (row.thirdParty ? row.thirdPartyDescription : null) ?? "—";
+      const plate = (row: Row) => row.vehiclePlate ?? row.providerEquipment ?? "—";
+      const consumptionText = (row: Row) => row.consumption ? `${row.consumption.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${row.consumption.unit}${row.consumptionOutlier ? " (fora)" : ""}`
+        : row.thirdPartyVehicleId ? (row.fullTank === false ? "parcial" : "—") : "—";
+      // Saídas de terceiros (filtro de prestadores/terceiros ou de empresa): colunas próprias.
+      const thirdPartyLayout = filters.movementType === "PRESTADORES" || filters.movementType === "TERCEIROS" || filters.thirdPartyId !== null;
+      const columns = thirdPartyLayout
+        ? [{ x: 35, label: "DATA", max: 10 }, { x: 82, label: "TIPO", max: 21 }, { x: 170, label: "COMBUSTÍVEL", max: 12 }, { x: 232, label: "QTD. (L)", max: 10, align: "right" as const },
+          { x: 280, label: "FRENTE", max: 12 }, { x: 345, label: "EMPRESA", max: 22 }, { x: 455, label: "VEÍCULO (PLACA)", max: 16 }, { x: 540, label: "LEITURA", max: 13 },
+          { x: 610, label: "CONSUMO", max: 14 }, { x: 690, label: "RESPONSÁVEL", max: 22 }]
+        : [{ x: 35, label: "DATA", max: 10 }, { x: 80, label: "TIPO", max: 20 }, { x: 160, label: "COMBUSTÍVEL", max: 11 }, { x: 220, label: "QTD. (L)", max: 9, align: "right" as const },
+          { x: 266, label: "CUSTO", max: 11 }, { x: 320, label: "FRENTE", max: 11 }, { x: 376, label: "ORIGEM", max: 15 }, { x: 450, label: "VEÍCULO / EMPRESA · PLACA", max: 27 },
+          { x: 590, label: "LEITURA", max: 11 }, { x: 648, label: "CONSUMO", max: 11 }, { x: 706, label: "RESPONSÁVEL", max: 18 }];
+      // Rótulo curto para caber na coluna (o filtro no cabeçalho já diz o tipo por extenso).
+      const typeText = (row: Row) => row.thirdParty ? (row.thirdPartyKind === "PRESTADOR" ? "Saída prestador" : "Saída terceiros") : row.movementLabel;
+      const receiverText = (row: Row) => row.thirdParty ? `${company(row)} · ${plate(row)}` : receiver(row);
+      const tableRows = rows.map((row) => thirdPartyLayout
+        ? [brDay(row.movementDate), typeText(row), row.fuelName, litersBr(row.quantity), row.frontName, company(row), plate(row), meter(row) || "—", consumptionText(row), row.responsible ?? "—"]
+        : [brDay(row.movementDate), typeText(row), row.fuelName, litersBr(row.quantity), costText(row), row.frontName, originText(row), receiverText(row), meter(row) || "—", consumptionText(row), row.responsible ?? "—"]);
       const pdf = createFuelHistoryPdf({
-        generatedAt: formatPdfDate(now.toISOString()), total, truncated: total > rows.length,
-        filters: { period: `${brDay(filters.from)} a ${brDay(filters.to)}`, front: frontLabel, fuel: fuelLabel, movement: movementLabel },
-        balances: types.map((type) => {
-          const balance = balances.get(type.id);
-          return {
-            fuel: type.name, balance: `${liters(balance?.balance ?? 0)} L`, entries: `${liters(balance?.entries ?? 0)} L`, exits: `${liters(balance?.exits ?? 0)} L`,
-            split: `Frente ${liters(balance?.byLocation.FRENTE.balance ?? 0)} L · Porto ${liters(balance?.byLocation.PORTO.balance ?? 0)} L`,
-          };
-        }),
-        items: rows.map((row) => ({
-          date: brDay(row.movementDate), type: row.movementLabel, fuel: row.fuelName, quantity: liters(row.quantity), cost: costText(row), front: row.frontName,
-          equipment: receiver(row), origin: originText(row), meter: meter(row) || "—", responsible: row.responsible ?? "—",
-        })),
+        generatedAt: formatPdfDate(now.toISOString()), generatedBy: user.name, filters: filterLines, cards,
+        cardsNote: multiFuel ? `${summary.byFuel.length} combustíveis no filtro` : summary.byFuel[0]?.fuelName ?? "",
+        total, truncated: total > rows.length, columns, rows: tableRows,
       });
       return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="combustivel-${stamp}.pdf"`, "Cache-Control": "private, no-store" } });
     }

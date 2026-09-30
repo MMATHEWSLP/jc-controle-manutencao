@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema";
+import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, thirdParties, thirdPartyVehicles, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { consumptionByMovement } from "./third-parties";
@@ -23,7 +23,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // pending = pendências da carga de histórico: VEICULO (veículo a identificar), ORIGEM (Frente/Porto
 // a confirmar) ou IMPORTADOS (todo lançamento vindo de importação).
 export type FuelPendingFilter = "VEICULO" | "ORIGEM" | "IMPORTADOS";
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null };
+// thirdPartyId / vehicleId = empresa e veículo do cadastro de Terceiros.
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null; thirdPartyId: number | null; vehicleId: number | null };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -37,7 +38,10 @@ export function parseFuelFilters(params: URLSearchParams): FuelFilters {
   const frontId = Number(params.get("frontId")) || null;
   const rawPending = params.get("pending");
   const pending = rawPending === "VEICULO" || rawPending === "ORIGEM" || rawPending === "IMPORTADOS" ? rawPending : null;
-  return { from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim(), pending };
+  return {
+    from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim(), pending,
+    thirdPartyId: Number(params.get("thirdPartyId")) || null, vehicleId: Number(params.get("vehicleId")) || null,
+  };
 }
 
 export async function activeFuelTypes(db: Db) {
@@ -83,6 +87,8 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
     lte(fuelMovements.movementDate, filters.to),
   ];
   if (filters.fuelTypeId) conditions.push(eq(fuelMovements.fuelTypeId, filters.fuelTypeId));
+  if (filters.thirdPartyId) conditions.push(eq(fuelMovements.thirdPartyId, filters.thirdPartyId));
+  if (filters.vehicleId) conditions.push(eq(fuelMovements.thirdPartyVehicleId, filters.vehicleId));
   // TERCEIROS = saída para terceiros geral; PRESTADORES = prestadores de serviço.
   if (filters.movementType === "TERCEIROS") conditions.push(and(eq(fuelMovements.thirdParty, true), sql`coalesce(${fuelMovements.thirdPartyKind}, 'GERAL') <> 'PRESTADOR'`));
   else if (filters.movementType === "PRESTADORES") conditions.push(and(eq(fuelMovements.thirdParty, true), eq(fuelMovements.thirdPartyKind, "PRESTADOR")));
@@ -116,12 +122,15 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       importSource: fuelMovements.importSource, originConfirmed: fuelMovements.originConfirmed, vehiclePending: fuelMovements.vehiclePending, importedVehicle: fuelMovements.importedVehicle,
       thirdPartyId: fuelMovements.thirdPartyId, thirdPartyVehicleId: fuelMovements.thirdPartyVehicleId, fullTank: fuelMovements.fullTank,
       consumptionOutlier: fuelMovements.consumptionOutlier, readingException: fuelMovements.readingException,
+      thirdPartyName: thirdParties.name, vehiclePlate: thirdPartyVehicles.plate,
     }).from(fuelMovements)
       .innerJoin(serviceFronts, eq(fuelMovements.serviceFrontId, serviceFronts.id))
       .innerJoin(fuelTypes, eq(fuelMovements.fuelTypeId, fuelTypes.id))
       .leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id))
       .leftJoin(destinationFront, eq(fuelMovements.destinationFrontId, destinationFront.id))
       .leftJoin(creator, eq(fuelMovements.createdBy, creator.id))
+      .leftJoin(thirdParties, eq(fuelMovements.thirdPartyId, thirdParties.id))
+      .leftJoin(thirdPartyVehicles, eq(fuelMovements.thirdPartyVehicleId, thirdPartyVehicles.id))
       .where(where).orderBy(desc(fuelMovements.movementDate), desc(fuelMovements.id)).limit(limit).offset(offset),
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
@@ -138,6 +147,51 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       destinationLocationLabel: row.destinationLocation ? FUEL_LOCATION_LABELS[row.destinationLocation] : null,
     })),
     total,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Resumo do Histórico (cards da tela e início do PDF): contagem e litros por tipo de movimentação,
+// calculados no banco com o MESMO filtro da listagem (historyWhere), sobre todas as páginas.
+// Saldo da movimentação = entradas − saídas (transferência só muda de estoque, fica à parte).
+// ---------------------------------------------------------------------------
+export type FuelTotals = { count: number; liters: number };
+export type FuelHistorySummary = {
+  show: { entries: boolean; exits: boolean; transfers: boolean };
+  entries: FuelTotals; exits: FuelTotals; transfers: FuelTotals; balance: number | null;
+  byFuel: Array<{ fuelTypeId: number; fuelName: string; entries: FuelTotals; exits: FuelTotals; transfers: FuelTotals }>;
+};
+
+export async function fuelHistorySummary(db: Db, scopeFronts: number[], filters: FuelFilters): Promise<FuelHistorySummary> {
+  const rows = await db.select({
+    fuelTypeId: fuelMovements.fuelTypeId, fuelName: fuelTypes.name, movementType: fuelMovements.movementType,
+    count: sql<number>`count(*)::int`, liters: sql<number>`coalesce(sum(${fuelMovements.quantity}),0)::float8`,
+  }).from(fuelMovements)
+    .innerJoin(fuelTypes, eq(fuelMovements.fuelTypeId, fuelTypes.id))
+    .leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id))
+    .where(historyWhere(scopeFronts, filters))
+    .groupBy(fuelMovements.fuelTypeId, fuelTypes.name, fuelMovements.movementType);
+  const empty = (): FuelTotals => ({ count: 0, liters: 0 });
+  const add = (target: FuelTotals, row: { count: number; liters: number }) => { target.count += Number(row.count); target.liters = Math.round((target.liters + Number(row.liters)) * 100) / 100; };
+  const entries = empty(), exits = empty(), transfers = empty();
+  const byFuel = new Map<number, FuelHistorySummary["byFuel"][number]>();
+  for (const row of rows) {
+    const fuel = byFuel.get(row.fuelTypeId) ?? { fuelTypeId: row.fuelTypeId, fuelName: row.fuelName, entries: empty(), exits: empty(), transfers: empty() };
+    const [total, perFuel] = row.movementType === "ENTRADA" ? [entries, fuel.entries] : row.movementType === "SAIDA" ? [exits, fuel.exits] : [transfers, fuel.transfers];
+    add(total, row); add(perFuel, row);
+    byFuel.set(row.fuelTypeId, fuel);
+  }
+  // Filtro de um tipo só mostra só o card daquele tipo (terceiros/prestadores e empresa/veículo são saídas).
+  const type = filters.movementType;
+  const show = type === "ENTRADA" ? { entries: true, exits: false, transfers: false }
+    // Empresa/veículo de terceiro só existem em saídas.
+    : type === "SAIDA" || type === "TERCEIROS" || type === "PRESTADORES" || filters.thirdPartyId || filters.vehicleId ? { entries: false, exits: true, transfers: false }
+    : type === "TRANSFERENCIA" ? { entries: false, exits: false, transfers: true }
+    : { entries: true, exits: true, transfers: transfers.count > 0 };
+  return {
+    show, entries, exits, transfers,
+    balance: show.entries && show.exits ? Math.round((entries.liters - exits.liters) * 100) / 100 : null,
+    byFuel: [...byFuel.values()].sort((a, b) => a.fuelName.localeCompare(b.fuelName, "pt-BR")),
   };
 }
 
@@ -162,8 +216,10 @@ export async function resolveResponsible(db: Db, employeeId: number | null, type
 }
 
 // Campos da saída para terceiro do cadastro (empresa, veículo, leitura, tanque cheio e confirmações).
+// A leitura do veículo do terceiro vem em "thirdPartyReading" ("meterReading" é a do equipamento da
+// frota); "meterReading" ainda é aceito para envios antigos guardados na fila offline.
 export function readThirdPartyFuelFields(body: Record<string, unknown>) {
-  const reading = numberOrNull(body.meterReading);
+  const reading = numberOrNull(body.thirdPartyReading !== undefined ? body.thirdPartyReading : body.meterReading);
   return {
     thirdPartyId: Number(body.thirdPartyId) || null, vehicleId: Number(body.thirdPartyVehicleId) || null,
     reading: reading === null || Number.isNaN(reading) ? null : reading, fullTank: body.fullTank !== false,
@@ -195,7 +251,8 @@ export function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return value;
   const text = String(value).trim().replace(/\s/g, "");
-  const normalized = text.includes(",") ? text.replaceAll(".", "").replace(",", ".") : text;
+  // Formato brasileiro: "1.234,50" e também "411.208" (ponto de milhar sem vírgula). "347.5" continua decimal.
+  const normalized = text.includes(",") ? text.replaceAll(".", "").replace(",", ".") : /^-?\d{1,3}(\.\d{3})+$/.test(text) ? text.replaceAll(".", "") : text;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
 }

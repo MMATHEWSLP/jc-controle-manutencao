@@ -12,6 +12,8 @@ export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = { CAMINHAO: "Cam
 export const METER_TYPES = ["KM", "HORIMETRO"] as const;
 export type MeterType = typeof METER_TYPES[number];
 export const METER_LABELS: Record<MeterType, string> = { KM: "Hodômetro (km)", HORIMETRO: "Horímetro (h)" };
+// Para frases: "Informe a leitura atual do hodômetro (km)."
+export const METER_PHRASES: Record<MeterType, string> = { KM: "do hodômetro (km)", HORIMETRO: "do horímetro (h)" };
 // Consumo: km/L para quem mede KM; L/h para horímetro.
 export const CONSUMPTION_UNITS: Record<MeterType, string> = { KM: "km/L", HORIMETRO: "L/h" };
 // Desvio a partir do qual o abastecimento é "fora da média" (pede confirmação e fica marcado).
