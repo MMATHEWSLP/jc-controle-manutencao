@@ -1727,3 +1727,25 @@ export const fuelImportBatches = pgTable("fuel_import_batches", {
   revertedBy: integer("reverted_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("fuel_import_batches_created_idx").on(table.createdAt)]);
+
+// Assistente JC (painel flutuante): uma linha por pergunta ou por envio de ficha (fotos). Guarda o
+// texto perguntado (ou os nomes das fotos, nunca a imagem), as ferramentas de consulta chamadas, a
+// resposta e os tokens — serve de auditoria e de contagem do limite diário por usuário.
+export const assistantLogs = pgTable("assistant_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  kind: text("kind", { enum:["CHAT","FICHA"] }).notNull(),
+  question: text("question").notNull().default(""),
+  imageCount: integer("image_count").notNull().default(0),
+  imageNames: text("image_names"),
+  // JSON: [{ name, input, ok }]
+  tools: text("tools"),
+  answer: text("answer"),
+  status: text("status", { enum:["OK","ERRO","RECUSADO"] }).notNull().default("OK"),
+  error: text("error"),
+  model: text("model"),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  durationMs: integer("duration_ms"),
+  createdAt: text("created_at").notNull().default(isoNow),
+}, (table) => [index("assistant_logs_user_created_idx").on(table.userId, table.createdAt)]);

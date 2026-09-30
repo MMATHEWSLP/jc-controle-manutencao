@@ -90,6 +90,12 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
     }
   }, []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
+  // Importação aberta pelo Assistente JC (leitor de fichas): recarrega saldos e Histórico.
+  useEffect(() => {
+    const reload = () => { void loadSummary(); setHistoryVersion((value) => value + 1); };
+    window.addEventListener("jc:fuel-changed", reload);
+    return () => window.removeEventListener("jc:fuel-changed", reload);
+  }, [loadSummary]);
 
   if (error && !summary) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o módulo de combustível</strong><p>{error}</p></div><button onClick={loadSummary}>Tentar novamente</button></div>;
   if (!summary) return <div className="page-loading"><span /><p>Carregando saldos de combustível...</p></div>;

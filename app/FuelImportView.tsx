@@ -45,7 +45,11 @@ async function downloadRows(rows: Array<{ rowNumber: number; values: Values; err
   link.href = URL.createObjectURL(await response.blob()); link.download = fileName; link.click(); URL.revokeObjectURL(link.href);
 }
 
-export default function FuelImportModal({ close, imported, flash }: { close: () => void; imported: (message: string) => Promise<void>; flash: (message: string) => void }) {
+// initialRows: linhas já prontas (ex.: lidas de uma ficha pelo Assistente JC) — a prévia abre direto.
+export default function FuelImportModal({ close, imported, flash, initialRows, initialFileName }: {
+  close: () => void; imported: (message: string) => Promise<void>; flash: (message: string) => void;
+  initialRows?: Array<{ rowNumber: number; values: Values }>; initialFileName?: string;
+}) {
   const [view, setView] = useState<"import" | "batches">("import");
   const [fileName, setFileName] = useState("");
   const [rows, setRows] = useState<PreviewRow[] | null>(null);
@@ -69,6 +73,15 @@ export default function FuelImportModal({ close, imported, flash }: { close: () 
     } catch (problem) { setError(problem instanceof Error ? problem.message : "Não foi possível analisar."); }
     finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (!initialRows?.length) return;
+    const name = initialFileName || "ficha-assistente.xlsx";
+    setFileName(name);
+    void analyze(initialRows, name);
+    // Só na abertura: as linhas iniciais não mudam depois.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function pick(file: File | undefined) {
     if (!file) return;

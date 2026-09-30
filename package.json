@@ -50,9 +50,11 @@
     "test:checklist-rules": "esbuild tests/checklist-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-checklist-rules.mjs && node --test /tmp/manutencao-preventiva-checklist-rules.mjs",
     "test:component-rules": "esbuild tests/component-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-component-rules.mjs && node --test /tmp/manutencao-preventiva-component-rules.mjs",
     "test:weekly-report-rules": "esbuild tests/weekly-report-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-weekly-report-rules.mjs && node --test /tmp/manutencao-preventiva-weekly-report-rules.mjs",
-    "test:fuel-import-rules": "esbuild tests/fuel-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-import-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-import-rules.mjs"
+    "test:fuel-import-rules": "esbuild tests/fuel-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-import-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-import-rules.mjs",
+    "test:assistant-rules": "esbuild tests/assistant-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistant-rules.mjs && node --test /tmp/manutencao-preventiva-assistant-rules.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
     "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
     "fflate": "^0.8.3",

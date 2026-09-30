@@ -1,5 +1,6 @@
 import { getDb } from "../../../../../db";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
+import { canUseAssistant } from "../../../../../lib/assistant-config";
 import { canImportFuel } from "../../../../../lib/fuel-import";
 import { buildFuelImportWorkbook } from "../../../../../lib/fuel-import-model";
 import { readRawRows } from "../../../../../lib/fuel-import-rules";
@@ -16,12 +17,13 @@ export async function GET(request: Request) {
   catch (error) { console.error("[fuel.import.model]", error); return Response.json({ error: "Não foi possível gerar o modelo." }, { status: 500 }); }
 }
 
-// Mesmo modelo já com linhas (ex.: só as linhas com erro, com a coluna "erro").
+// Mesmo modelo já com linhas (ex.: só as linhas com erro, com a coluna "erro", ou as linhas lidas
+// de uma ficha pelo Assistente JC — por isso quem usa o assistente também pode gerar).
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   const auth = await authorize(request, "fuel.view");
   if (auth.response) return auth.response;
-  if (!canImportFuel(auth.user!)) return Response.json({ error: "Somente administrador ou gestor importa abastecimentos." }, { status: 403 });
+  if (!canImportFuel(auth.user!) && !canUseAssistant(auth.user!)) return Response.json({ error: "Somente administrador ou gestor importa abastecimentos." }, { status: 403 });
   try {
     const body = await request.json() as { rows?: unknown; fileName?: unknown };
     const input = Array.isArray(body.rows) ? body.rows.slice(0, 1000) : [];

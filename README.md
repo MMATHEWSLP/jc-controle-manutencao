@@ -34,6 +34,13 @@ código (`cloudflare:workers`, D1, R2, `vinext`, `wrangler` foram removidos).
 | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | Só se usar WhatsApp | Usado na verificação do webhook da Meta |
 | `WHATSAPP_APP_SECRET` | Só se usar WhatsApp | Segredo do app da Meta |
 | `WHATSAPP_CREDENTIALS_ENCRYPTION_KEY` | Só se usar WhatsApp | Chave para criptografar o token salvo no banco |
+| `ANTHROPIC_API_KEY` | Só se usar o Assistente JC | Chave da API da Anthropic (só no servidor; sem ela o botão aparece com o aviso "não configurado") |
+| `ASSISTANT_MODEL` | Não | Modelo do assistente. Padrão `claude-sonnet-5-5` |
+| `ASSISTANT_PROFILES` | Não | Perfis que veem o Assistente JC. Padrão `ADMIN,GESTOR` (ex.: `ADMIN,GESTOR,OFICINA,OPERADOR,ALMOXARIFADO` libera para os usuários) |
+| `ASSISTANT_DAILY_MESSAGES` | Não | Perguntas por usuário por dia. Padrão `40` |
+| `ASSISTANT_DAILY_PHOTOS` | Não | Fotos de ficha por usuário por dia. Padrão `20` |
+| `ASSISTANT_MAX_TOKENS` | Não | Teto de tokens de saída por resposta do chat. Padrão `4000` |
+| `ASSISTANT_TIMEOUT_SECONDS` | Não | Tempo máximo de cada chamada à API. Padrão `60` (leitura de ficha: o dobro) |
 
 ## Como rodar pela primeira vez
 
