@@ -1636,3 +1636,63 @@ export const workOrderItems = pgTable("work_order_items", {
   removedBy: integer("removed_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("work_order_items_order_idx").on(table.workOrderId)]);
+
+// ---------------------------------------------------------------------------
+// Pneus e baterias (lib/components.ts). Cada item tem número próprio (número de fogo do pneu ou
+// série da bateria) e uma linha do tempo de eventos. As colunas de situação (status, equipamento,
+// posição, uso acumulado) são um resumo recalculado a partir dos eventos (lib/component-rules.ts).
+// ---------------------------------------------------------------------------
+export const components = pgTable("components", {
+  id: serial("id").primaryKey(),
+  kind: text("kind", { enum:["TIRE","BATTERY"] }).notNull(),
+  code: text("code").notNull(),
+  brand: text("brand").notNull(),
+  model: text("model"),
+  size: text("size"),
+  purchaseDate: text("purchase_date"),
+  purchaseCost: doublePrecision("purchase_cost"),
+  supplier: text("supplier"),
+  // Vida esperada: pneu em km/horas (unidade do equipamento), bateria em meses.
+  expectedLife: doublePrecision("expected_life"),
+  warrantyMonths: integer("warranty_months"),
+  status: text("status", { enum:["STOCK","MOUNTED","DISCARDED"] }).notNull().default("STOCK"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  position: text("position"),
+  mountedAt: text("mounted_at"),
+  mountedReading: doublePrecision("mounted_reading"),
+  mountedUnit: text("mounted_unit", { enum:["KM","HOURS"] }),
+  usageKm: doublePrecision("usage_km").notNull().default(0),
+  usageHours: doublePrecision("usage_hours").notNull().default(0),
+  recapCount: integer("recap_count").notNull().default(0),
+  eventsCost: doublePrecision("events_cost").notNull().default(0),
+  lastTreadDepth: doublePrecision("last_tread_depth"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  ...timestamps,
+}, (table) => [
+  index("components_equipment_idx").on(table.equipmentId),
+  index("components_kind_status_idx").on(table.kind, table.status),
+]);
+
+export const componentEvents = pgTable("component_events", {
+  id: serial("id").primaryKey(),
+  componentId: integer("component_id").notNull().references(() => components.id),
+  eventType: text("event_type", { enum:["MOUNT","ROTATE","UNMOUNT","RECAP","REPAIR","INSPECTION","DISCARD"] }).notNull(),
+  eventDate: text("event_date").notNull(),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  position: text("position"),
+  fromPosition: text("from_position"),
+  reading: doublePrecision("reading"),
+  unit: text("unit", { enum:["KM","HOURS"] }),
+  cost: doublePrecision("cost"),
+  treadDepth: doublePrecision("tread_depth"),
+  notes: text("notes"),
+  userId: integer("user_id").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("component_events_component_idx").on(table.componentId, table.eventDate),
+  index("component_events_equipment_idx").on(table.equipmentId, table.eventDate),
+]);
