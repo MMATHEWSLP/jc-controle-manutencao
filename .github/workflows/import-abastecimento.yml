@@ -32,6 +32,8 @@ on:
           - corrigir-km-mantendo-excluidas
           - auditoria-banco-somente-leitura
           - resumo-dia-somente-leitura
+          - redatar-ajuste-saldo-simulacao
+          - redatar-ajuste-saldo
       vinculos:
         description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
         required: false
@@ -104,6 +106,13 @@ jobs:
           EMPRESA: ${{ github.event.inputs.empresa }}
           IDS: ${{ github.event.inputs.ids }}
         run: |
+          if [ "$MODO" = "redatar-ajuste-saldo-simulacao" ] || [ "$MODO" = "redatar-ajuste-saldo" ]; then
+            # Muda só a DATA de ajustes de saldo. ids = lançamentos de ajuste; lote = nova data (AAAA-MM-DD).
+            ARGS=("--ids=$IDS" "--data=$LOTE")
+            if [ "$MODO" = "redatar-ajuste-saldo" ]; then ARGS+=("--confirmar"); fi
+            node redatar-ajuste-saldo.mjs "${ARGS[@]}"
+            exit 0
+          fi
           if [ "$MODO" = "resumo-dia-somente-leitura" ]; then
             # Conferência do "Resumo do dia" com a mesma função da tela. lote = data (AAAA-MM-DD ou DD/MM/AAAA), empresa = frente.
             npx tsx resumo-dia-combustivel.ts "--data=${LOTE:-2026-09-28}" "--frente=${EMPRESA:-Arapiuns}"
