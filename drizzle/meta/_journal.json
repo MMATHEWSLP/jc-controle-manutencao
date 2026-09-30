@@ -239,6 +239,13 @@
       "when": 1790733478147,
       "tag": "0033_weekly_report",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790790309379,
+      "tag": "0034_fuel_import_batches",
+      "breakpoints": true
     }
   ]
 }
