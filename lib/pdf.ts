@@ -484,7 +484,7 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
     if(pageIndex===pageCount-1){
       const y=headerY-16-(rows.length*22)-10;
       content+=`0.90 0.95 0.93 rg 28 ${y-8} 786 24 re f\n`;
-      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(300,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
+      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(388,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
     }
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Resumo e saídas calculados pela mesma consulta da mensagem do WhatsApp. Saídas = frota + terceiros + prestadores do estoque escolhido. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
     return content;
