@@ -5,6 +5,7 @@ import { frentesEmExibicao } from "../../../../lib/active-front";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { fuelEquipmentContext, resolveResponsible, fuelHistory, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, parseFuelFilters, readFuelMovementBody, readThirdPartyFuelFields, resolveFuelFront } from "../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../lib/fuel-rules";
+import { isUniqueViolation, readClientRequestId } from "../../../../lib/client-request";
 import { prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../lib/third-parties";
 
 const PAGE_SIZE = 50;
@@ -36,6 +37,11 @@ export async function POST(request: Request) {
   try {
     const user = auth.user!;
     const body = (await request.json()) as Record<string, unknown>;
+    const clientRequestId = readClientRequestId(body.clientRequestId);
+    const alreadySent = async () => clientRequestId ? (await (await getDb()).select({ id: fuelMovements.id }).from(fuelMovements).where(eq(fuelMovements.clientRequestId, clientRequestId)).limit(1))[0] ?? null : null;
+    const duplicate = (id: number) => Response.json({ id, duplicate: true, message: "Este lançamento já tinha sido registrado." });
+    const previous = await alreadySent();
+    if (previous) return duplicate(previous.id);
     const parsed = readFuelMovementBody(body);
     let input: typeof parsed;
     try { input = { ...parsed, ...(await resolveResponsible(await getDb(), parsed.responsibleEmployeeId, parsed.responsible)) }; }
@@ -66,14 +72,21 @@ export async function POST(request: Request) {
     }
     const problem = validateFuelMovement({ ...input, serviceFrontId }, equipment, fuelLocalDay());
     if (problem) return Response.json({ error: problem }, { status: 400 });
-    const [created] = await db.insert(fuelMovements).values({
-      ...input, serviceFrontId,
-      // Frente ↔ Porto da mesma frente: o destino é a própria frente.
-      destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
-      meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,
-      ...(thirdPartyFields ?? {}),
-      createdBy: user.id,
-    }).returning({ id: fuelMovements.id });
+    let created: { id: number };
+    try {
+      [created] = await db.insert(fuelMovements).values({
+        ...input, serviceFrontId, clientRequestId,
+        // Frente ↔ Porto da mesma frente: o destino é a própria frente.
+        destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
+        meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,
+        ...(thirdPartyFields ?? {}),
+        createdBy: user.id,
+      }).returning({ id: fuelMovements.id });
+    } catch (error) {
+      const again = isUniqueViolation(error) ? await alreadySent() : null;
+      if (again) return duplicate(again.id);
+      throw error;
+    }
     await refreshVehicleLastReading(db, thirdPartyFields?.thirdPartyVehicleId);
     return Response.json({ id: created.id, message: thirdPartyFields?.consumptionOutlier ? "Lançamento registrado (marcado como fora da média de consumo)." : "Lançamento de combustível registrado." }, { status: 201 });
   } catch (error) {

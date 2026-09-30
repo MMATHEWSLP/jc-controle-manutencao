@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import ThirdPartiesView, { KIND_LABELS, METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
+import QueuedRequests from "./QueuedRequests";
+import { enqueueRequest } from "../lib/offline-queue";
+import { reportNetworkFailure } from "../lib/connectivity";
 
 type MovementType = "ENTRADA" | "SAIDA" | "TRANSFERENCIA";
 type Location = "FRENTE" | "PORTO";
@@ -35,7 +38,7 @@ type EquipmentOption = {
   id: number; prefix: string; brand: string; model: string; type: string; controlType: "HOURS" | "KM" | "HOURS_KM";
   currentHours: number; currentKm: number; serviceFrontId: number | null; frontName: string | null; inActiveFront: boolean;
 };
-type User = { name: string; permissions: string[] };
+type User = { id: number; name: string; permissions: string[] };
 
 const MOVEMENT_OPTIONS: Array<[MovementType, string, string]> = [["ENTRADA", "Entrada", "↓"], ["SAIDA", "Saída", "↑"], ["TRANSFERENCIA", "Transferência", "⇄"]];
 const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"]];
@@ -133,6 +136,7 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
         <button className={tab === "tank" ? "active" : ""} onClick={() => setTab("tank")}>Tanque (régua)</button>
       </div>
+      {canRegister && <QueuedRequests userId={authUser.id} kind="FUEL" title="Lançamentos guardados no celular" />}
       {tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
         : tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
@@ -255,7 +259,9 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
     if (isTransfer && !destinationFrontId && destinationLocation === value) setDestinationLocation(value === "FRENTE" ? "PORTO" : "FRENTE");
   }
 
-  async function submit(event: FormEvent | null, confirmations: { confirmTank?: boolean; confirmOutlier?: boolean } = {}) {
+  // clientRequestId: o mesmo em todas as tentativas deste envio (confirmações e fila offline), para o
+  // servidor nunca gravar duas vezes.
+  async function submit(event: FormEvent | null, confirmations: { confirmTank?: boolean; confirmOutlier?: boolean } = {}, clientRequestId: string = crypto.randomUUID()) {
     event?.preventDefault();
     if (missing.length) { setTouched(Object.fromEntries(missing.map(([key]) => [key, true]))); return; }
     if (wrongFront) { setError(`O equipamento ${equipment!.prefix} está em ${equipment!.frontName ?? "outra frente"}. Não é possível lançar combustível para ele em ${frontName ?? "esta frente"}.`); return; }
@@ -278,6 +284,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         equipmentId: showEquipment ? equipment?.id ?? null : null, meterReading: showEquipment ? meterReading : "",
         destinationFrontId: isTransfer && destinationFrontId ? Number(destinationFrontId) : null,
         destinationLocation: isTransfer ? destinationLocation : null,
+        ...(editing ? {} : { clientRequestId }),
       };
       let result: { message: string };
       try {
@@ -289,10 +296,17 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         if (problem instanceof ApiError && (problem.data.confirm === "TANK" || problem.data.confirm === "OUTLIER")) {
           if (!window.confirm(`${problem.message}\n\nLançar mesmo assim?`)) { setBusy(false); return; }
           setBusy(false);
-          return await submit(null, { ...confirmations, ...(problem.data.confirm === "TANK" ? { confirmTank: true } : { confirmOutlier: true }) });
+          return await submit(null, { ...confirmations, ...(problem.data.confirm === "TANK" ? { confirmTank: true } : { confirmOutlier: true }) }, clientRequestId);
         }
         if (problem instanceof ApiError && problem.data.exception === true) setExceptionAllowed(true);
-        throw problem;
+        // Sem conexão: um lançamento novo fica guardado no celular e é enviado quando o sinal voltar.
+        if (!(problem instanceof ApiError) && !editing) {
+          reportNetworkFailure();
+          const what = movementType === "ENTRADA" ? "Entrada" : movementType === "TRANSFERENCIA" ? "Transferência" : "Saída";
+          await enqueueRequest({ userId: authUser.id, kind: "FUEL", url: "/api/fuel/movements", body: JSON.stringify(payload),
+            summary: `${what} de ${quantity} L${equipment ? ` · ${equipment.prefix}` : ""} · ${movementDate.split("-").reverse().join("/")}` });
+          result = { message: "Sem conexão: lançamento guardado no celular. Será enviado sozinho quando o sinal voltar." };
+        } else throw problem;
       }
       if (!editing) {
         setQuantity(""); setMeterReading(""); setNotes(""); setEquipment(null); setThirdPartyDescription("");

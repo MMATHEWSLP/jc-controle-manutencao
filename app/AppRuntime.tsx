@@ -64,7 +64,7 @@ export default function AppRuntime() {
   async function install() { if (!installPrompt) return; await installPrompt.prompt(); await installPrompt.userChoice.catch(() => undefined); setInstallPrompt(null); dismiss(); }
 
   return <>
-    {!online && <div className="app-offline-banner" role="status"><strong>Sem internet</strong><span>Mostrando os últimos dados salvos no celular. Controle Diário e checklist podem ser preenchidos e serão enviados quando o sinal voltar.{pending > 0 ? ` ${pending} registro(s) aguardando envio.` : ""}</span></div>}
+    {!online && <div className="app-offline-banner" role="status"><strong>Sem internet</strong><span>Mostrando os últimos dados salvos no celular. Controle Diário, checklist, abastecimento e leituras podem ser lançados e serão enviados quando o sinal voltar.{pending > 0 ? ` ${pending} registro(s) aguardando envio.` : ""}</span></div>}
     {online && pending > 0 && <div className="app-offline-banner syncing" role="status"><strong>Enviando</strong><span>{pending} registro(s) guardado(s) no celular aguardando envio...</span></div>}
     {online && pending === 0 && sentNotice > 0 && <div className="app-offline-banner syncing" role="status"><strong>✓ Enviado</strong><span>{sentNotice} registro(s) guardado(s) no celular foram enviados.</span></div>}
     {!dismissed && (installPrompt || iosHint) && <div className="app-install-hint" role="dialog" aria-label="Instalar app">

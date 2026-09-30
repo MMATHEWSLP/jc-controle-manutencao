@@ -5,6 +5,7 @@ import { recalculateMaintenanceCycles } from "../../../lib/maintenance-recalcula
 import { ReadingOperationError,saveReading,type ReadingSource } from "../../../lib/readings";
 import { equipmentAccessResponse,requireEquipmentAccess } from "../../../lib/front-scope";
 import { toLocalWallTime } from "../../../lib/local-datetime";
+import { readClientRequestId } from "../../../lib/client-request";
 
 type Row=Record<string,unknown>;
 
@@ -23,8 +24,11 @@ export async function POST(request:Request){
     const body=await request.json() as Record<string,unknown>;
     const equipmentId=Number(body.equipmentId);const readingDate=clean(body.readingDate);const hours=numeric(body.hours);const km=numeric(body.km);
     const d1=await getD1();const access=await requireEquipmentAccess(d1,auth.user!,equipmentId,"OIL");
+    // Mesmo envio chegando de novo (fila offline / resposta perdida): não grava outra leitura.
+    const clientRequestId=readClientRequestId(body.clientRequestId);
+    if(clientRequestId){const previous=await d1.prepare(`SELECT id FROM meter_readings WHERE client_request_id=?`).bind(clientRequestId).first<Row>();if(previous)return Response.json({ok:true,duplicate:true,equipmentId,hoursUsed:0,kmUsed:0,message:"Esta leitura já tinha sido registrada."});}
     const requestedSource=clean(body.source).toUpperCase();const source:ReadingSource=requestedSource==="QR_CODE"?"QR_CODE":"MANUAL";
-    const result=await saveReading(d1,{equipmentId,readingDate,hours,km,operator:clean(body.operator),notes:clean(body.notes)||null,serviceFrontId:access.serviceFrontId,authorizeRegression:body.authorizeRegression===true,actor:{id:auth.user!.id,name:auth.user!.name,profile:auth.user!.profile},source});
+    const result=await saveReading(d1,{equipmentId,readingDate,hours,km,operator:clean(body.operator),notes:clean(body.notes)||null,serviceFrontId:access.serviceFrontId,authorizeRegression:body.authorizeRegression===true,clientRequestId,actor:{id:auth.user!.id,name:auth.user!.name,profile:auth.user!.profile},source});
     return Response.json({ok:true,...result});
   }catch(error){
     const access=equipmentAccessResponse(error);if(access)return access;

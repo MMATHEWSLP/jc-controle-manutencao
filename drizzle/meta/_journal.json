@@ -225,6 +225,13 @@
       "when": 1790732264239,
       "tag": "0031_tires_batteries",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790732894899,
+      "tag": "0032_offline_client_request",
+      "breakpoints": true
     }
   ]
 }

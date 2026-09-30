@@ -333,3 +333,5 @@ html[data-theme="dark"] .checklist-items li.failed,html[data-theme="dark"] .chec
 html[data-theme="dark"] .checklist-card.orange{border-left-color:#fbbf24}
 html[data-theme="dark"] .checklist-card a{color:#9fd8c4}
 .checklist-form .secondary,.checklist-panel .secondary{min-height:36px;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px;font-weight:800;cursor:pointer}
+.daily-queue header .secondary,.daily-queue li .secondary{min-height:34px;padding:6px 12px;border:1px solid #e4c98f;border-radius:8px;background:#fff;color:#7a4b06;font-size:12px;font-weight:800;cursor:pointer}
+html[data-theme="dark"] .daily-queue header .secondary,html[data-theme="dark"] .daily-queue li .secondary{background:#25231f;border-color:#6b5320;color:#fbbf24}

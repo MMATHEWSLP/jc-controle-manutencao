@@ -330,9 +330,12 @@ export const meterReadings = pgTable("meter_readings", {
   source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE"] }).notNull().default("MANUAL"),
   authorizedRegression: boolean("authorized_regression").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
+  // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
+  clientRequestId: text("client_request_id"),
   ...timestamps,
 }, (table) => [
   index("meter_equipment_date_idx").on(table.equipmentId, table.readingDate), index("meter_front_idx").on(table.serviceFrontId),
+  uniqueIndex("meter_readings_client_request_unique").on(table.clientRequestId),
 ]);
 
 export const readingImports = pgTable("reading_imports", {
@@ -1060,6 +1063,8 @@ export const fuelMovements = pgTable("fuel_movements", {
   // Lançamentos importados não passam pelas validações obrigatórias dos lançamentos novos.
   importSource: text("import_source"),
   importHash: text("import_hash"),
+  // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
+  clientRequestId: text("client_request_id"),
   // FALSE = origem (Frente/Porto) assumida na importação, ainda não conferida por alguém.
   originConfirmed: boolean("origin_confirmed").notNull().default(true),
   // TRUE = abastecimento real sem o veículo identificado (corrigir no Histórico). importedVehicle
@@ -1084,6 +1089,7 @@ export const fuelMovements = pgTable("fuel_movements", {
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
   uniqueIndex("fuel_movements_import_hash_unique").on(table.importHash),
+  uniqueIndex("fuel_movements_client_request_unique").on(table.clientRequestId),
   index("fuel_movements_import_source_idx").on(table.importSource),
   index("fuel_movements_destination_idx").on(table.destinationFrontId),
   index("fuel_movements_equipment_idx").on(table.equipmentId, table.movementDate),

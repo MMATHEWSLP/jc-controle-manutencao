@@ -45,6 +45,9 @@ export type QueuedRequest = {
   summary: string;
   status: "PENDING" | "ERROR";
   error: string | null;
+  // O servidor pediu confirmação (ex.: litros acima do tanque, leitura menor que a atual): a tela
+  // mostra "Confirmar e enviar", que junta este complemento ao envio.
+  confirm?: Record<string, unknown> | null;
 };
 
 function openDb(): Promise<IDBDatabase> {
@@ -138,6 +141,25 @@ export async function countPending(userId?: number) {
   return daily.filter((item) => item.status === "PENDING").length + requests.filter((item) => item.status === "PENDING").length;
 }
 
+// Recusas que só precisam de um "sim" de quem lançou (as mesmas perguntas que a tela faz online).
+function confirmationFor(kind: QueuedRequestKind, body: Record<string, unknown>): Record<string, unknown> | null {
+  if (kind === "FUEL" && body.confirm === "TANK") return { confirmTank: true };
+  if (kind === "FUEL" && body.confirm === "OUTLIER") return { confirmOutlier: true };
+  if (kind === "METER" && body.requiresConfirmation === true) return { authorizeRegression: true };
+  return null;
+}
+
+// "Confirmar e enviar": junta a confirmação pedida pelo servidor e volta para a fila.
+export async function confirmQueuedRequest(id: string) {
+  const item = (await listQueuedRequests()).find((entry) => entry.id === id);
+  if (!item?.confirm) return;
+  const body = { ...(JSON.parse(item.body) as Record<string, unknown>), ...item.confirm };
+  const record: QueuedRequest = { ...item, body: JSON.stringify(body), status: "PENDING", error: null, confirm: null };
+  await withStore("readwrite", (store) => store.put(record), REQUESTS);
+  notify();
+  return syncQueue();
+}
+
 function requestInit(item: QueuedRequest): RequestInit {
   if (!item.formField) return { method: item.method, headers: { "Content-Type": "application/json" }, body: item.body };
   const form = new FormData();
@@ -187,8 +209,9 @@ export function syncQueue(): Promise<number> {
       catch { break; }
       if (response.ok) { await withStore("readwrite", (store) => store.delete(item.id), REQUESTS); sent++; continue; }
       if (response.status >= 500 || response.status === 401 || response.headers.get("X-Offline")) break;
-      const body = await response.json().catch(() => ({})) as { error?: string };
-      await withStore("readwrite", (store) => store.put({ ...item, status: "ERROR", error: body.error ?? "O servidor recusou este envio." }), REQUESTS);
+      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const record: QueuedRequest = { ...item, status: "ERROR", error: String(body.error ?? "O servidor recusou este envio."), confirm: confirmationFor(item.kind, body) };
+      await withStore("readwrite", (store) => store.put(record), REQUESTS);
     }
     return sent;
   })().finally(() => {
