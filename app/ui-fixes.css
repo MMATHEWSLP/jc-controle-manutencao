@@ -117,3 +117,13 @@ html[data-theme="dark"] .pendencia-count { background: #2e2c28; color: #e7e3dc; 
 .pendencia-where { margin: 4px 0 0; font-size: 12px; }
 .pendencia-card .table-scroll { margin-top: 10px; max-height: 420px; overflow: auto; }
 .pendencias-ok { margin-top: 12px; }
+
+/* Custos e consumo */
+.fleet-costs-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 12px 16px; }
+.fleet-costs-filters label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.fleet-costs-filters .fleet-costs-check { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.fleet-costs-metrics { margin: 10px 0; }
+.fleet-costs-metrics .metric-card span { display: block; font-weight: 700; }
+.fleet-costs-filters .fleet-costs-check { white-space: nowrap; min-height: 40px; }
+.fleet-costs-filters input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; }
+.fleet-costs-filters > button { min-height: 40px; padding: 0 18px; border-radius: 8px; font-size: 12px; font-weight: 800; }
