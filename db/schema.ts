@@ -1749,3 +1749,14 @@ export const assistantLogs = pgTable("assistant_logs", {
   durationMs: integer("duration_ms"),
   createdAt: text("created_at").notNull().default(isoNow),
 }, (table) => [index("assistant_logs_user_created_idx").on(table.userId, table.createdAt)]);
+
+// Resumo do dia do Combustível: textos da mensagem do WhatsApp por frente (o ADMIN edita no modal).
+// Aceitam {frente}, {combustivel} e {ano}. Frente sem linha aqui usa o padrão de lib/fuel-daily-rules.ts.
+export const fuelDailySettings = pgTable("fuel_daily_settings", {
+  serviceFrontId: integer("service_front_id").primaryKey().references(() => serviceFronts.id),
+  greeting: text("greeting").notNull().default("Bom dia a todos!"),
+  title: text("title").notNull(),
+  balanceLabel: text("balance_label").notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+});
