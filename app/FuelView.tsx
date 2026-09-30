@@ -5,6 +5,7 @@ import ThirdPartiesView, { METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyF
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
 import FuelImportModal from "./FuelImportView";
+import FuelDailySummaryModal from "./FuelDailySummary";
 import QueuedRequests from "./QueuedRequests";
 import { enqueueRequest } from "../lib/offline-queue";
 import { METER_PHRASES as METER_PHRASE } from "../lib/third-party-rules";
@@ -678,6 +679,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
   const thirdPartyOptions = useThirdPartyOptions();
   const filterVehicles = thirdPartyOptions.options.find((item) => String(item.id) === thirdPartyFilter)?.vehicles ?? [];
   const [query, setQuery] = useState("");
+  const [dailyOpen, setDailyOpen] = useState(false);
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<HistoryResponse | null>(null);
@@ -741,10 +743,13 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
         <label>Empresa / terceiro<select value={thirdPartyFilter} onChange={(event) => { setThirdPartyFilter(event.target.value); setVehicleFilter(""); }}><option value="">Todos</option>{thirdPartyOptions.options.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         {thirdPartyFilter && filterVehicles.length > 0 && <label>Veículo<select value={vehicleFilter} onChange={(event) => setVehicleFilter(event.target.value)}><option value="">Todos</option>{filterVehicles.map((item) => <option key={item.id} value={item.id}>{item.plate}{item.description ? ` · ${item.description}` : ""}</option>)}</select></label>}
         <div className="fuel-export-actions">
+          <button type="button" className="primary fuel-daily-button" onClick={() => setDailyOpen(true)}>Resumo do dia</button>
           <a className="secondary" href={exportUrl("pdf")} target="_blank" rel="noopener noreferrer">Exportar PDF</a>
           <a className="secondary" href={exportUrl("xlsx")}>Exportar Excel</a>
         </div>
       </div>
+      {dailyOpen && <FuelDailySummaryModal today={summary.today} fronts={summary.fronts} fuelTypes={summary.fuelTypes} close={() => setDailyOpen(false)} flash={flash}
+        defaultFrontId={summary.scopeFrontIds.length === 1 ? summary.scopeFrontIds[0] : summary.defaultFrontId} />}
       {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div><button onClick={load}>Tentar novamente</button></div>}
       {loading && !data ? <div className="page-loading"><span /><p>Carregando histórico...</p></div> : (
         <>
