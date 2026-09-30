@@ -10,14 +10,17 @@ import pg from "pg";
 // data + litros. Também acerta caminhão, motorista e observação do lançamento.
 // Parte A (padrão): só mostra a conferência. Com --confirmar grava, mas só se TODAS as correções
 // casarem com exatamente 1 lançamento (senão nada muda). Lançamento excluído só conta com
-// --restaurar-excluidas (volta a valer). Numa transação, com registro em audit_logs.
+// --restaurar-excluidas (volta a valer); com --manter-excluidas essas correções são puladas e o
+// lançamento continua excluído. Numa transação, com registro em audit_logs.
 //
-// Uso: node corrigir-km-terceiros.mjs --arquivo=lista.json --empresa=GREGOLETO [--confirmar] [--restaurar-excluidas]
+// Uso: node corrigir-km-terceiros.mjs --arquivo=lista.json --empresa=GREGOLETO [--confirmar] [--restaurar-excluidas | --manter-excluidas]
 // lista.json = [{ "n": 1, "plate": "QEH4C88", "driver": "Reginaldo", "date": null | "AAAA-MM-DD", "liters": 359, "current": 216934, "correct": 216934 }]
 // ---------------------------------------------------------------------------
 
 const CONFIRMAR = process.argv.includes("--confirmar");
 const RESTAURAR = process.argv.includes("--restaurar-excluidas");
+const MANTER = process.argv.includes("--manter-excluidas");
+if (RESTAURAR && MANTER) { console.error("Use só um: --restaurar-excluidas ou --manter-excluidas."); process.exit(1); }
 const arg = (name, fallback = "") => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
 const url = process.env.DATABASE_URL;
 if (!url) { console.error("DATABASE_URL não encontrada no ambiente."); process.exit(1); }
@@ -95,10 +98,12 @@ try {
   else {
     if (problems.length) throw new Error(`Nada foi alterado. Correções sem correspondência única: ${problems.map(({ item }) => item.n).join(", ")}.`);
     if (repeated.length) throw new Error(`Nada foi alterado. Um mesmo lançamento casou com duas correções: ${[...new Set(repeated)].join(", ")}.`);
-    if (deleted.length && !RESTAURAR) throw new Error(`Nada foi alterado. Correções em lançamentos excluídos: ${deleted.map(({ item, matches }) => `${item.n} (#${matches[0].id})`).join(", ")}. Use o modo que restaura os excluídos se eles devem voltar a valer.`);
+    if (deleted.length && !RESTAURAR && !MANTER) throw new Error(`Nada foi alterado. Correções em lançamentos excluídos: ${deleted.map(({ item, matches }) => `${item.n} (#${matches[0].id})`).join(", ")}. Use o modo que restaura os excluídos se eles devem voltar a valer.`);
+    const toWrite = MANTER ? results.filter(({ matches }) => !matches[0].deleted_at) : results;
+    if (MANTER && deleted.length) console.log(`Mantidas excluídas (não mudam): ${deleted.map(({ item, matches }) => `correção ${item.n} → #${matches[0].id}`).join("; ")}`);
     await client.query("BEGIN");
     const now = new Date().toISOString();
-    for (const { item, matches, vehicle } of results) {
+    for (const { item, matches, vehicle } of toWrite) {
       const row = matches[0];
       await client.query(`UPDATE fuel_movements SET meter_reading=$1, meter_unit='KM', third_party=true, third_party_kind='PRESTADOR', third_party_id=$2, third_party_vehicle_id=$3,
           provider_company=$4, provider_equipment=$5, third_party_description=NULL, equipment_id=NULL, vehicle_pending=false, reading_exception=false,
@@ -112,7 +117,7 @@ try {
           ORDER BY movement_date DESC,id DESC LIMIT 1),last_reading), updated_at=$2 WHERE id=$1`, [vehicle.id, now]);
     }
     await client.query("COMMIT");
-    console.log(`Lançamentos atualizados: ${results.length}${deleted.length ? ` (restaurados: ${deleted.length})` : ""}`);
+    console.log(`Lançamentos atualizados: ${toWrite.length}${deleted.length ? (MANTER ? ` (mantidos excluídos: ${deleted.length})` : ` (restaurados: ${deleted.length})`) : ""}`);
     linha();
   }
 } catch (error) {
