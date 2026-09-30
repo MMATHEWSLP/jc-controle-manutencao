@@ -29,6 +29,7 @@ on:
           - corrigir-km-simulacao
           - corrigir-km
           - corrigir-km-restaurando-excluidas
+          - corrigir-km-mantendo-excluidas
           - auditoria-banco-somente-leitura
       vinculos:
         description: "Só em vincular-terceiros: PLACA=RESPONSÁVEL separados por ; (ex.: QEH4C88=REGINALDO; NTA0B14=ANDRE)"
@@ -106,12 +107,13 @@ jobs:
             node auditoria-banco.mjs
             exit $?
           fi
-          if [ "$MODO" = "corrigir-km-simulacao" ] || [ "$MODO" = "corrigir-km" ] || [ "$MODO" = "corrigir-km-restaurando-excluidas" ]; then
+          if [ "$MODO" = "corrigir-km-simulacao" ] || [ "$MODO" = "corrigir-km" ] || [ "$MODO" = "corrigir-km-restaurando-excluidas" ] || [ "$MODO" = "corrigir-km-mantendo-excluidas" ]; then
             ARGS=()
             if [ -n "$ARQUIVO" ]; then ARGS+=("--arquivo=$ARQUIVO"); fi
             if [ -n "$EMPRESA" ]; then ARGS+=("--empresa=$EMPRESA"); fi
             if [ "$MODO" != "corrigir-km-simulacao" ]; then ARGS+=("--confirmar"); fi
             if [ "$MODO" = "corrigir-km-restaurando-excluidas" ]; then ARGS+=("--restaurar-excluidas"); fi
+            if [ "$MODO" = "corrigir-km-mantendo-excluidas" ]; then ARGS+=("--manter-excluidas"); fi
             node corrigir-km-terceiros.mjs "${ARGS[@]}"
             exit $?
           fi
