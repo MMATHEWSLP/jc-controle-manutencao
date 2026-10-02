@@ -1,6 +1,7 @@
 "use client";
 
 import { unzipSync } from "fflate";
+import { HISTORY_IMPORT_SHEET, HISTORY_MAX_ROWS, historyRowsFromMatrix, type HistoryRawRow } from "./stock-history-import-rules";
 
 export type SpreadsheetReadingRow={rowNumber:number;equipment:string;reading:number|null;readingRaw:string;responsible:string;readingDate:string|null;notes:string;front:string};
 
@@ -152,5 +153,18 @@ export async function readFuelImportFile(file:File):Promise<FuelImportFileRow[]>
     .filter((row)=>Object.values(row.values).some((value)=>value));
   if(!rows.length)throw new Error("A planilha não tem linhas preenchidas na aba Lançamentos.");
   if(rows.length>1000)throw new Error("Importe no máximo 1.000 linhas por arquivo.");
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Produtos → Importar movimentações (histórico do almoxarifado antigo): aba "Importar" no formato de
+// lib/stock-history-import-rules.ts. As células vão cruas (número de série da data, números) e o
+// servidor converte e valida tudo.
+// ---------------------------------------------------------------------------
+export async function readStockHistoryFile(file:File):Promise<HistoryRawRow[]>{
+  const matrix=await readSpreadsheetMatrix(file,HISTORY_IMPORT_SHEET);
+  const rows=historyRowsFromMatrix(matrix);
+  if(!rows.length)throw new Error("A planilha não tem linhas preenchidas na aba Importar.");
+  if(rows.length>HISTORY_MAX_ROWS)throw new Error(`Importe no máximo ${HISTORY_MAX_ROWS.toLocaleString("pt-BR")} linhas por arquivo.`);
   return rows;
 }

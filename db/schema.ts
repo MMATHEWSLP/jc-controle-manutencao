@@ -889,7 +889,8 @@ export const productStockMovements = pgTable("product_stock_movements", {
   delta: doublePrecision("delta").notNull(),
   reason: text("reason").notNull(),
   // Origem do lançamento (o número exibido vem da tabela de origem: SOL-/PED-/SAI-/OS-).
-  source: text("source", { enum:["MATERIAL_REQUEST","PURCHASE","STOCK_EXIT","WORK_ORDER","ADJUSTMENT"] }).notNull().default("MATERIAL_REQUEST"),
+  // HISTORY_IMPORT = histórico importado do almoxarifado antigo (Produtos → Importar movimentações).
+  source: text("source", { enum:["MATERIAL_REQUEST","PURCHASE","STOCK_EXIT","WORK_ORDER","ADJUSTMENT","HISTORY_IMPORT"] }).notNull().default("MATERIAL_REQUEST"),
   // Data do lançamento (AAAA-MM-DD) quando difere do registro (ex.: peça de uma O.S. aberta há dias).
   movementDate: text("movement_date"),
   // Valor unitário no momento do movimento (R$), para o histórico e o custo da O.S.
@@ -908,9 +909,29 @@ export const productStockMovements = pgTable("product_stock_movements", {
   workOrderItemId: integer("work_order_item_id").references((): AnyPgColumn => workOrderItems.id),
   reversedAt: text("reversed_at"),
   createdBy: integer("created_by").references(() => users.id),
+  // --- Histórico importado do sistema antigo (lib/stock-history-import.ts) ---
+  // FALSE = só histórico: a linha NÃO entrou no saldo de product_front_stock (o saldo de 07/09/2026 já
+  // refletia essas saídas). Nunca some delta para reconstruir saldo sem filtrar affects_balance.
+  affectsBalance: boolean("affects_balance").notNull().default(true),
+  // 'IMPORTACAO_SISTEMA_ANTIGO' nas linhas importadas; NULL nos lançamentos do sistema.
+  origin: text("origin"),
+  importBatchId: integer("import_batch_id").references((): AnyPgColumn => stockImportBatches.id),
+  // SAIDA = consumo; AJUSTE = Correção de Estoque (fica fora dos relatórios de consumo).
+  historyKind: text("history_kind", { enum:["SAIDA","AJUSTE"] }),
+  importRowNumber: integer("import_row_number"),
+  // Textos como vieram da planilha (guardados mesmo quando o cadastro casou, para conferência).
+  productNameText: text("product_name_text"),
+  equipmentText: text("equipment_text"),
+  chassisText: text("chassis_text"),
+  ownerText: text("owner_text"),
+  equipmentDescriptionText: text("equipment_description_text"),
+  destinationText: text("destination_text"),
+  employeeText: text("employee_text"),
+  departmentText: text("department_text"),
   ...timestamps,
 }, (table) => [
   index("product_stock_movements_product_idx").on(table.productId, table.serviceFrontId),
+  index("product_stock_movements_import_batch_idx").on(table.importBatchId),
   index("product_stock_movements_request_idx").on(table.materialRequestId),
   index("product_stock_movements_source_idx").on(table.source, table.createdAt),
   index("product_stock_movements_equipment_idx").on(table.equipmentId),
@@ -1760,3 +1781,27 @@ export const fuelDailySettings = pgTable("fuel_daily_settings", {
   updatedBy: integer("updated_by").references(() => users.id),
   ...timestamps,
 });
+
+// Lotes da importação de movimentações do almoxarifado antigo (Produtos → Importar movimentações).
+// Um lote por confirmação: as linhas ficam em product_stock_movements com import_batch_id, e
+// "Desfazer importação" apaga as linhas, devolve ao saldo as que baixaram estoque e remove os
+// produtos cadastrados pelo lote que não foram usados em outro lugar.
+export const stockImportBatches = pgTable("stock_import_batches", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  fileName: text("file_name").notNull(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  rowCount: integer("row_count").notNull().default(0),
+  exitCount: integer("exit_count").notNull().default(0),
+  adjustmentCount: integer("adjustment_count").notNull().default(0),
+  // Linhas que também baixaram o saldo (saídas posteriores ao corte, só se o ADMIN marcou).
+  balanceRowCount: integer("balance_row_count").notNull().default(0),
+  totalValue: doublePrecision("total_value").notNull().default(0),
+  // PROCESSING enquanto os blocos são gravados; FAILED = falhou e o que foi gravado já foi removido.
+  status: text("status", { enum:["PROCESSING","ACTIVE","REVERTED","FAILED"] }).notNull().default("PROCESSING"),
+  // JSON: opções da confirmação, produtos criados (ids) e relatório (não encontrados, duplicados, erros).
+  details: text("details"),
+  revertedAt: text("reverted_at"),
+  revertedBy: integer("reverted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("stock_import_batches_created_idx").on(table.createdAt)]);

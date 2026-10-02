@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- fotos vêm de rota própria (já otimizadas em WebP no navegador), como a foto do equipamento */
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
+import StockHistoryImportModal from "./StockHistoryImportView";
 import { optimizePhoto } from "../lib/photo-client";
 import { CatalogPicker, type CatalogOption } from "./stock-client";
 
@@ -88,6 +89,7 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Product | null | "new">(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [historyImportOpen, setHistoryImportOpen] = useState(false);
   const [activating, setActivating] = useState<number | null>(null);
 
   useEffect(() => {
@@ -195,6 +197,11 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
           {can(authUser, "products.import") && (
             <button className="secondary" onClick={() => setImportOpen(true)}>
               Importar CSV
+            </button>
+          )}
+          {authUser.profile === "ADMIN" && (
+            <button className="secondary" onClick={() => setHistoryImportOpen(true)} title="Histórico de movimentações do almoxarifado antigo (planilha .xlsx)">
+              Importar movimentações
             </button>
           )}
           <a className="secondary" href={exportUrl("csv")}>
@@ -390,6 +397,16 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
           brands={brands}
           onSupplierCreated={(supplier) => setSuppliers((current) => current.some((row) => row.id === supplier.id) ? current.map((row) => row.id === supplier.id ? { ...row, active: true } : row) : [...current, supplier].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")))}
           onBrandCreated={(brand) => setBrands((current) => current.some((row) => row.name === brand.name) ? current : [...current, brand].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")))}
+        />
+      )}
+      {historyImportOpen && (
+        <StockHistoryImportModal
+          close={() => setHistoryImportOpen(false)}
+          flash={flash}
+          imported={async (message) => {
+            await load();
+            flash(message);
+          }}
         />
       )}
       {importOpen && (
@@ -860,10 +877,11 @@ function ProductHistory({ productId, close }: { productId: number; close: () => 
     fetchJson<{ movements: StockMovementRow[] }>(`/api/products/${productId}/movements`).then((result) => setRows(result.movements)).catch((problem) => setError(problem instanceof Error ? problem.message : "Não foi possível carregar o histórico."));
   }, [productId]);
   const entries = rows?.filter((row) => row.type === "ENTRADA" && !row.reversed).reduce((total, row) => total + row.quantity, 0) ?? 0;
-  const exits = rows?.filter((row) => row.type === "SAIDA" && !row.reversed).reduce((total, row) => total + row.quantity, 0) ?? 0;
+  const exits = rows?.filter((row) => row.type === "SAIDA" && !row.reversed && !row.correction).reduce((total, row) => total + row.quantity, 0) ?? 0;
+  const corrections = rows?.filter((row) => row.correction && !row.reversed).reduce((total, row) => total + row.quantity, 0) ?? 0;
   return (
     <div className="modal-form product-history-panel">
-      <p className="full product-history-summary">Entradas: <strong>{entries.toLocaleString("pt-BR")}</strong> · Saídas: <strong>{exits.toLocaleString("pt-BR")}</strong> · {rows?.length ?? 0} lançamento(s) nas frentes que você enxerga.</p>
+      <p className="full product-history-summary">Entradas: <strong>{entries.toLocaleString("pt-BR")}</strong> · Saídas: <strong>{exits.toLocaleString("pt-BR")}</strong>{corrections > 0 && <> · Correções de estoque: <strong>{corrections.toLocaleString("pt-BR")}</strong></>} · {rows?.length ?? 0} lançamento(s) nas frentes que você enxerga.</p>
       {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
       <div className="full">{rows === null && !error ? <div className="page-loading"><span /><p>Carregando histórico...</p></div> : <StockMovementsTable rows={rows ?? []} showProduct={false} empty="Nenhuma movimentação registrada para este produto." />}</div>
       <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Fechar</button></div>

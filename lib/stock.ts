@@ -16,10 +16,10 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type StockDb = Db | Tx;
 
-export type StockSource = "MATERIAL_REQUEST" | "PURCHASE" | "STOCK_EXIT" | "WORK_ORDER" | "ADJUSTMENT";
+export type StockSource = "MATERIAL_REQUEST" | "PURCHASE" | "STOCK_EXIT" | "WORK_ORDER" | "ADJUSTMENT" | "HISTORY_IMPORT";
 export const STOCK_SOURCE_LABELS: Record<StockSource, string> = {
   MATERIAL_REQUEST: "Solicitação de Materiais", PURCHASE: "Pedido de compra", STOCK_EXIT: "Movimentação (saída)",
-  WORK_ORDER: "Ordem de Serviço", ADJUSTMENT: "Ajuste manual",
+  WORK_ORDER: "Ordem de Serviço", ADJUSTMENT: "Ajuste manual", HISTORY_IMPORT: "Sistema antigo (importado)",
 };
 
 // Documento de origem do movimento (uma chave só por movimento, conforme a origem).
