@@ -153,6 +153,18 @@ async function main() {
   const usersView = await runAssistantTool(singleCtx, "consultar_dados", { view: "v_usuarios" });
   console.log(usersView.ok ? (failures++, "✗ v_usuarios liberada para não ADMIN!") : `✓ v_usuarios para não ADMIN: recusado ("${usersView.content}")`);
 
+  // Papel somente leitura: existe e não enxerga as tabelas do sistema.
+  const papel = await db.execute(sql`SELECT r.rolcanlogin AS login,
+      has_table_privilege('assistente_leitura', 'assistente.v_equipamentos', 'SELECT') AS views,
+      has_table_privilege('assistente_leitura', 'public.users', 'SELECT') AS usuarios,
+      has_table_privilege('assistente_leitura', 'public.equipment', 'INSERT') AS grava
+    FROM pg_roles r WHERE r.rolname = 'assistente_leitura'`);
+  const role = papel.rows[0] as { login: boolean; views: boolean; usuarios: boolean; grava: boolean } | undefined;
+  if (!role) { failures++; console.log("✗ Papel assistente_leitura não existe no banco."); }
+  else if (!role.views || role.usuarios || role.grava) { failures++; console.log(`✗ Papel assistente_leitura com permissões erradas: ${JSON.stringify(role)}`); }
+  else console.log(`✓ Papel assistente_leitura: lê as views, não lê public.users, não grava · login ${role.login ? "ATIVO" : "ainda desativado (definir senha: docs/assistente-banco.md)"}`);
+  console.log(`  Conexão usada nas consultas: ${process.env.ASSISTANT_DATABASE_URL?.trim() ? "ASSISTANT_DATABASE_URL (assistente_leitura)" : "DATABASE_URL em transação somente leitura"}.`);
+
   // 3) Respostas completas do assistente.
   if (process.env.ANTHROPIC_API_KEY && !process.argv.includes("--sem-ia")) {
     for (const { pergunta } of PERGUNTAS) {
