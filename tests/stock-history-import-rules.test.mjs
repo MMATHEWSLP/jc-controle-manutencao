@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  analyzeHistory, chunk, historyNameKey, historyRowsFromMatrix, parseDecisions, parseHistoryDate, parseHistoryKind, parseHistoryNumber, readHistoryRawRows,
+  analyzeHistory, autoDecisions, chunk, historyNameKey, historyRowsFromMatrix, parseDecisions, parseHistoryDate, parseHistoryKind, parseHistoryNumber, readHistoryRawRows,
 } from "../lib/stock-history-import-rules.ts";
 
 const HEADER = ["Data", "Tipo", "Produto", "Quantidade", "Valor Unitário", "Valor Total", "Equipamento", "Chassi/Série", "Proprietário", "Descrição equipamento", "Local/Destino", "Colaborador", "Departamento"];
@@ -173,4 +173,22 @@ test("erros por linha não importam", () => {
 
 test("blocos de 500 linhas", () => {
   assert.deepEqual(chunk(Array.from({ length: 1201 }, (_, index) => index)).map((block) => block.length), [500, 500, 201]);
+});
+
+test("decisões automáticas: nome repetido → menor TAG ativa; ≥ 90% → vincula; resto → cadastra", () => {
+  const rows = [
+    row(2, ["2026-01-08", "SAIDA", "CAT ANEL 140GC", 1, 1, 1]),
+    row(3, ["2026-01-08", "SAIDA", "CAT ÓLEO SAE 15W40  20 L", 1, 1, 1]),
+    row(4, ["2026-01-08", "SAIDA", "PECA TOTALMENTE NOVA XPTO", 1, 7, 7]),
+  ];
+  const ctx = context();
+  const first = analyzeHistory(rows, ctx, options());
+  const { decisions, log } = autoDecisions(first.unmatchedProducts, ctx.products, 0.9);
+  assert.deepEqual(decisions["CAT ANEL 140GC"], { action: "LINK", productId: 3 });
+  assert.deepEqual(decisions["CAT OLEO SAE 15W40 20 L"], { action: "LINK", productId: 1 });
+  assert.deepEqual(decisions["PECA TOTALMENTE NOVA XPTO"], { action: "CREATE" });
+  assert.equal(log.length, 3);
+  const second = analyzeHistory(rows, ctx, options({ decisions }));
+  assert.equal(second.summary.productsPending, 0);
+  assert.equal(second.summary.toImport, 3);
 });

@@ -1,9 +1,14 @@
-// Simulação (SEM GRAVAR) da importação do histórico de movimentações do almoxarifado antigo, com as
-// MESMAS regras da tela Produtos → Importar movimentações (lib/stock-history-import-rules.ts).
-// A importação real é feita só pela tela, depois de decidir os produtos não encontrados.
+// Importação do histórico de movimentações do almoxarifado antigo, com as MESMAS regras e o MESMO
+// serviço da tela Produtos → Importar movimentações (lib/stock-history-import*.ts). Sem --confirmar
+// é só simulação (conexão somente leitura). Com --confirmar grava um lote (desfazível na tela) com:
+//   - saldo NUNCA alterado (só histórico, applyBalance = false);
+//   - produto não encontrado: nome repetido no cadastro → menor TAG ativa; 1ª sugestão ≥ 90% →
+//     vincula; resto → cadastra como novo (nome + preço, para revisão) — lib autoDecisions;
+//   - lote em nome do administrador principal (ou --usuario=login).
 //
 // Uso:
-//   npx tsx scripts/import-movimentacoes-estoque.ts                      -> banco (conexão somente leitura)
+//   npx tsx scripts/import-movimentacoes-estoque.ts                      -> simulação no banco (somente leitura)
+//   npx tsx scripts/import-movimentacoes-estoque.ts --confirmar          -> grava o lote
 //   npx tsx scripts/import-movimentacoes-estoque.ts --offline            -> sem banco: usa as bases do repositório
 //        (produtos_import.csv, frota-fonte-2026-09.tsv, funcionários de Arapiuns/Mamuru) — aproximação
 //   --arquivo=importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx   (padrão)
@@ -12,12 +17,14 @@ import "dotenv/config";
 import { readFileSync, writeFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import {
-  analyzeHistory, DEFAULT_CUTOFF_DATE, HISTORY_IMPORT_SHEET, historyNameKey, historyRowsFromMatrix,
+  analyzeHistory, autoDecisions, DEFAULT_CUTOFF_DATE, HISTORY_IMPORT_SHEET, historyNameKey, historyRowsFromMatrix,
   type HistoryContext, type HistoryRawRow,
 } from "../lib/stock-history-import-rules";
 
 const arg = (name: string) => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3);
 const offline = process.argv.includes("--offline");
+const confirm = process.argv.includes("--confirmar");
+const username = arg("usuario");
 const file = arg("arquivo") ?? "importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx";
 const cutoffDate = arg("corte") ?? DEFAULT_CUTOFF_DATE;
 const reportPath = arg("relatorio");
@@ -60,57 +67,82 @@ function offlineContext(): HistoryContext {
 }
 
 async function main() {
+  if (confirm && offline) throw new Error("--confirmar não funciona com --offline.");
   const rows = await readRows();
   let context: HistoryContext, frontId = 1, frontName = "Arapiuns (offline)";
+  let db: Awaited<ReturnType<typeof import("../db")["getDb"]>> | null = null;
   if (offline) context = offlineContext();
   else {
-    process.env.DATABASE_READ_ONLY = "1";
+    if (!confirm) process.env.DATABASE_READ_ONLY = "1";
     const { getDb } = await import("../db");
     const { historyFronts, loadHistoryContext } = await import("../lib/stock-history-import");
-    const db = await getDb();
+    db = await getDb();
     const fronts = await historyFronts(db);
     if (!fronts.defaultFrontId) throw new Error("Nenhuma frente ativa encontrada.");
     frontId = fronts.defaultFrontId;
     frontName = fronts.fronts.find((front) => front.id === frontId)?.name ?? String(frontId);
     context = await loadHistoryContext(db, rows, frontId);
   }
-  const analysis = analyzeHistory(rows, context, { frontId, cutoffDate, applyBalance: false, decisions: {}, today });
+  const options = { frontId, cutoffDate, applyBalance: false, decisions: {}, today };
+  const first = analyzeHistory(rows, context, options);
+  const auto = autoDecisions(first.unmatchedProducts, context.products, 0.9);
+  const analysis = analyzeHistory(rows, context, { ...options, decisions: auto.decisions });
   const { summary } = analysis;
   const pendingValue = analysis.unmatchedProducts.reduce((total, item) => total + item.value, 0);
 
-  console.log(`\n=== SIMULAÇÃO (nada foi gravado) — ${offline ? "OFFLINE: bases do repositório, não o banco" : "banco de dados (somente leitura)"} ===`);
+  console.log(`\n=== ${confirm ? "IMPORTAÇÃO (grava)" : "SIMULAÇÃO (nada foi gravado)"} — ${offline ? "OFFLINE: bases do repositório, não o banco" : "banco de dados"} · saldo do estoque NÃO é alterado ===`);
   console.log(`Arquivo: ${file} · frente: ${frontName} · corte do saldo: ${cutoffDate}`);
   console.log(`Linhas lidas: ${summary.totalRows} (${summary.dateFrom} a ${summary.dateTo}) · válidas: ${summary.validRows} · com erro: ${summary.errors}`);
   console.log(`Saídas: ${summary.exits} (${brl(summary.exitsValue)}) · Ajustes/Correção de Estoque: ${summary.adjustments} (${brl(summary.adjustmentsValue)})`);
   console.log(`VALOR TOTAL: ${brl(summary.totalValue)}`);
   console.log(`Duplicados (já no sistema ou em lote anterior): ${summary.duplicates}`);
-  console.log(`Importariam já (produto casado): ${summary.toImport} (${brl(summary.toImportValue)}) · aguardando decisão de produto: ${summary.pendingProductRows} linha(s) (${brl(pendingValue)})`);
-  console.log(`Se todos os produtos pendentes forem vinculados ou cadastrados: ${summary.toImport + summary.pendingProductRows} linhas`);
-  console.log(`Produtos: ${summary.productsMatched} casados · ${summary.productsUnmatched} NÃO encontrados`);
+  const linked = auto.log.filter((item) => item.action === "LINK"), created = auto.log.filter((item) => item.action === "CREATE");
+  console.log(`A IMPORTAR: ${summary.toImport} linhas (${brl(summary.toImportValue)}) — ${summary.toImportExits} saídas e ${summary.toImportAdjustments} correções · pendentes: ${summary.pendingProductRows}`);
+  console.log(`Produtos: ${summary.productsMatched} casados pelo nome · ${summary.productsUnmatched} NÃO encontrados (${brl(pendingValue)}): ${linked.length} vinculados automaticamente, ${created.length} cadastrados como novos`);
   console.log(`Equipamento casado em ${summary.equipmentMatchedRows} linhas · ${analysis.unmatchedEquipment.length} códigos não encontrados (${analysis.unmatchedEquipment.reduce((t, i) => t + i.rows, 0)} linhas)`);
   console.log(`Colaborador casado em ${summary.employeeMatchedRows} linhas · ${analysis.unmatchedEmployees.length} nomes ficam como texto`);
   console.log(`Departamento casado em ${summary.departmentMatchedRows} linhas · ${analysis.unmatchedDepartments.length} departamentos ficam como texto${offline ? " (offline: lista de departamentos do banco indisponível)" : ""}`);
   console.log(`Avisos (importam normalmente): ${summary.warnings}`);
 
   const after = analysis.afterCutoff;
-  console.log(`\n--- Saídas posteriores a ${cutoffDate} que não estão no sistema novo: ${after.rows} linhas · ${after.quantity} un. · ${brl(after.value)} · ${after.products.length} produtos`);
-  for (const item of after.products.slice(0, 15)) console.log(`  ${(item.tag ?? "(sem cadastro)").padEnd(8)} ${item.name.slice(0, 50).padEnd(50)} qtd ${String(item.quantity).padStart(7)}  ${brl(item.value).padStart(14)}  saldo ${item.balance} -> ${item.after}`);
+  console.log(`\n--- Saídas posteriores a ${cutoffDate} que não estão no sistema novo (entram SÓ como histórico): ${after.rows} linhas · ${after.quantity} un. · ${brl(after.value)} · ${after.products.length} produtos`);
+  for (const item of after.products.slice(0, 15)) console.log(`  ${(item.tag ?? "(sem cadastro)").padEnd(8)} ${item.name.slice(0, 50).padEnd(50)} qtd ${String(item.quantity).padStart(7)}  ${brl(item.value).padStart(14)}  saldo atual ${item.balance} (não será baixado)`);
   if (after.products.length > 15) console.log(`  ... mais ${after.products.length - 15} produto(s) (ver relatório JSON)`);
 
-  console.log(`\n--- Produtos não encontrados (${analysis.unmatchedProducts.length}) — nome · linhas · valor · 3 sugestões`);
-  for (const item of analysis.unmatchedProducts) {
-    console.log(`  ${item.name} · ${item.rows}x · ${brl(item.value)}${item.ambiguous ? " · NOME REPETIDO NO CADASTRO" : ""}`);
-    console.log(`      sugestões: ${item.suggestions.map((s) => `[${s.tag}] ${s.name} (${Math.round(s.score * 100)}%)`).join(" | ")}`);
+  console.log(`\n--- Produtos VINCULADOS automaticamente (${linked.length}) — planilha => cadastro`);
+  for (const item of linked) console.log(`  ${item.name} (${item.rows}x) => [${item.product!.tag}] ${item.product!.name} · ${item.reason}`);
+  console.log(`\n--- Produtos CADASTRADOS como novos (${created.length}) — nome (linhas) · melhor sugestão`);
+  for (const item of created) {
+    const info = analysis.unmatchedProducts.find((product) => product.name === item.name);
+    const best = info?.suggestions[0];
+    console.log(`  ${item.name} (${item.rows}x, ${brl(info?.unitPrice ?? 0)})${best ? ` · ${item.reason}: [${best.tag}] ${best.name}` : ""}`);
   }
   console.log(`\n--- Equipamentos não encontrados (${analysis.unmatchedEquipment.length}): ${analysis.unmatchedEquipment.map((item) => `${item.text} (${item.rows})`).join(", ")}`);
   console.log(`\n--- Departamentos não encontrados (${analysis.unmatchedDepartments.length}): ${analysis.unmatchedDepartments.map((item) => `${item.text} (${item.rows})`).join(", ")}`);
   console.log(`\n--- Colaboradores guardados como texto (${analysis.unmatchedEmployees.length}, 30 primeiros): ${analysis.unmatchedEmployees.slice(0, 30).map((item) => `${item.text} (${item.rows})`).join(", ")}`);
   if (analysis.errors.length) console.log(`\n--- Erros por linha (${analysis.errors.length}): ${analysis.errors.slice(0, 30).map((row) => `L${row.rowNumber}: ${row.messages.join(" ")}`).join(" · ")}`);
 
+  if (confirm && db) {
+    if (summary.errors > 0) throw new Error(`${summary.errors} linha(s) com erro: corrija a planilha antes de importar.`);
+    const { users } = await import("../db/schema");
+    const { and, asc, desc, eq } = await import("drizzle-orm");
+    const { confirmHistoryImport } = await import("../lib/stock-history-import");
+    const admin = (await db.select({ id: users.id, name: users.name, username: users.username }).from(users)
+      .where(and(eq(users.role, "ADMIN"), eq(users.status, "ACTIVE"), username ? eq(users.username, username) : undefined))
+      .orderBy(desc(users.isPrimaryAdmin), asc(users.id)).limit(1))[0];
+    if (!admin) throw new Error("Nenhum administrador ativo encontrado para registrar o lote.");
+    console.log(`\nGravando em blocos de 500 linhas, lote em nome de ${admin.name}...`);
+    const fileName = file.split("/").pop() ?? file;
+    const result = await confirmHistoryImport(db, { id: admin.id, profile: "ADMIN" } as Parameters<typeof confirmHistoryImport>[1], fileName, rows, { ...options, decisions: auto.decisions });
+    console.log(`\n✔ IMPORTAÇÃO CONCLUÍDA — lote #${result.batchId}: ${result.imported} linhas (${result.exits} saídas, ${result.adjustments} correções), ${brl(result.totalValue)}`);
+    console.log(`  produtos cadastrados: ${result.createdProducts} · baixaram estoque: ${result.balanceRows} · duplicados ignorados: ${result.duplicates} · com erro: ${result.errors}`);
+    console.log("  Para desfazer: Produtos → Importar movimentações → Importações anteriores → Desfazer importação.");
+  }
+
   if (reportPath) {
     const { rows: _rows, ...rest } = analysis;
     void _rows;
-    writeFileSync(reportPath, JSON.stringify({ file, offline, frontName, cutoffDate, ...rest, unmatchedProductKeys: analysis.unmatchedProducts.map((item) => historyNameKey(item.name)) }, null, 2));
+    writeFileSync(reportPath, JSON.stringify({ file, offline, confirm, frontName, cutoffDate, autoDecisions: auto.log, ...rest, unmatchedProductKeys: analysis.unmatchedProducts.map((item) => historyNameKey(item.name)) }, null, 2));
     console.log(`\nRelatório completo: ${reportPath}`);
   }
   process.exit(0);
