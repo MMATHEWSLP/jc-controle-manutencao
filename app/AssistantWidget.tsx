@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import FuelImportModal from "./FuelImportView";
+import PendentesPainel from "./AssistantPendentes";
 import { navegarParaTela, type NavegacaoAssistente } from "../lib/assistente-nav";
+import { lerConfigVoz, salvarConfigVoz, telaDeToque, useDitado, useLeitura } from "../lib/assistente-voz";
+import type { ListaPendentes } from "../lib/assistente/pendentes";
 
 // ---------------------------------------------------------------------------
 // Assistente JC: botão flutuante com painel de conversa. Perguntas de consulta (combustível,
@@ -15,13 +18,13 @@ type Values = Record<Column, string>;
 type FichaRow = { values: Values; doubts: Partial<Record<Column, string[]>> };
 type Ficha = { header: { data: string; frente: string; combustivel: string; origem: string }; rows: FichaRow[]; warnings: string[] };
 type Usage = { messagesLeft: number; photosLeft: number; dailyMessages: number; dailyPhotos: number };
-type Status = { allowed: boolean; configured?: boolean; usage?: Usage; canReadSheet?: boolean; canImport?: boolean; error?: string; dbMode?: "DEDICADA" | "PRINCIPAL_SOMENTE_LEITURA" };
+type Status = { allowed: boolean; configured?: boolean; usage?: Usage; canReadSheet?: boolean; canImport?: boolean; canLaunch?: boolean; error?: string; dbMode?: "DEDICADA" | "PRINCIPAL_SOMENTE_LEITURA" };
 // Tabela de uma consulta (consultar_dados): valores crus (datas AAAA-MM-DD, números) para a tela e o Excel.
 type Tabela = {
   titulo: string; view: string; tela: string | null; periodo: string | null; frentes: string; filtros: string[]; limitado: boolean;
   colunas: Array<{ nome: string; rotulo: string; tipo: string }>; linhas: Array<Array<string | number | boolean | null>>; navegacao: NavegacaoAssistente | null;
 };
-type NewMessage = { role: "user" | "assistant"; text: string; error?: boolean; tabelas?: Tabela[] } | { role: "ficha"; ficha: Ficha; photos: number };
+type NewMessage = { role: "user" | "assistant"; text: string; error?: boolean; tabelas?: Tabela[]; voz?: boolean } | { role: "ficha"; ficha: Ficha; photos: number };
 type Message = NewMessage & { id: number };
 
 const WIDTH: Record<Column, number> = { data: 88, tipo: 118, frente: 90, origem: 110, combustivel: 90, equipamento: 92, empresa: 96, litros: 62, leitura: 76, tanque_cheio: 52, motorista: 124, observacao: 190 };
@@ -194,11 +197,29 @@ export default function AssistantWidget() {
   const [busy, setBusy] = useState<"" | "chat" | "ficha">("");
   const [importing, setImporting] = useState<Ficha | null>(null);
   const [notice, setNotice] = useState("");
+  const [pendentes, setPendentes] = useState<ListaPendentes | null>(null);
+  const [pendOpen, setPendOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [voz, setVoz] = useState(lerConfigVoz);
   const fileInput = useRef<HTMLInputElement>(null);
   const listEnd = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
+  // Ditado: texto que já estava no campo quando o microfone ligou, e se a pergunta atual veio (em parte) por voz.
+  const baseText = useRef("");
+  const dictated = useRef(false);
+  const askRef = useRef<(text: string) => void>(() => {});
+  const leitura = useLeitura();
+  const ditado = useDitado({
+    aoTexto: (texto) => { dictated.current = true; setQuestion(`${baseText.current}${baseText.current && texto ? " " : ""}${texto}`.slice(0, 1500)); },
+    aoTerminar: (texto) => {
+      const completo = `${baseText.current}${baseText.current && texto ? " " : ""}${texto}`.trim();
+      if (texto && lerConfigVoz().enviarAoTerminar && completo) askRef.current(completo);
+    },
+    aoErro: (mensagem) => flash(mensagem),
+  });
 
   useEffect(() => { api<Status>("/api/assistente").then(setStatus).catch(() => setStatus({ allowed: false })); }, []);
+  useEffect(() => { if (status?.allowed && status.configured !== false) api<ListaPendentes>("/api/assistente/pendentes").then(setPendentes).catch(() => {}); }, [status?.allowed, status?.configured]);
   useEffect(() => { listEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, busy]);
 
   if (!status?.allowed) return null;
@@ -210,12 +231,16 @@ export default function AssistantWidget() {
   async function ask(text: string) {
     const clean = text.trim();
     if (!clean || busy) return;
+    if (ditado.ouvindo) ditado.parar();
+    const viaVoz = dictated.current;
+    dictated.current = false; baseText.current = "";
     const history = messages.flatMap((message) => (message.role === "user" || (message.role === "assistant" && !message.error) ? [{ role: message.role, text: message.text }] : [])).slice(-10);
-    push({ role: "user", text: clean });
+    push({ role: "user", text: clean, voz: viaVoz });
     setQuestion(""); setBusy("chat");
     try {
-      const data = await api<{ answer: string; remaining: number; tabelas?: Tabela[] }>("/api/assistente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: clean, history }) });
+      const data = await api<{ answer: string; remaining: number; tabelas?: Tabela[]; pendentes?: ListaPendentes }>("/api/assistente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: clean, history, voz: viaVoz }) });
       push({ role: "assistant", text: data.answer, tabelas: data.tabelas });
+      if (data.pendentes) setPendentes(data.pendentes);
       if (data.tabelas?.length) setWide(true);
       updateUsage({ messagesLeft: data.remaining });
     } catch (problem) { push({ role: "assistant", text: problem instanceof Error ? problem.message : "Não foi possível responder agora.", error: true }); }
@@ -238,28 +263,53 @@ export default function AssistantWidget() {
     finally { setBusy(""); if (fileInput.current) fileInput.current.value = ""; }
   }
 
+  // "Enviar ao terminar de falar": o fim do ditado chama a versão atual de ask (ref "mais recente").
+  // eslint-disable-next-line react-hooks/refs
+  askRef.current = (text: string) => { void ask(text); };
+  // Microfone: no celular segura para falar; no computador clica para ligar/desligar.
+  const toque = telaDeToque();
+  const ligarMicrofone = () => { if (busy || ditado.ouvindo) return; leitura.parar(); baseText.current = question.trim(); ditado.iniciar(); };
+  const microfone = ditado.suportado && status.configured ? <button type="button" className={`assistant-mic ${ditado.ouvindo ? "on" : ""}`} disabled={Boolean(busy)}
+    aria-label={ditado.ouvindo ? "Parar de ouvir" : toque ? "Segure para falar" : "Falar a pergunta"} title={ditado.ouvindo ? "Ouvindo… (clique para parar)" : toque ? "Segure para falar" : "Clique para falar"}
+    onContextMenu={(event) => event.preventDefault()}
+    onPointerDown={toque ? (event) => { event.preventDefault(); ligarMicrofone(); } : undefined}
+    onPointerUp={toque ? () => ditado.parar() : undefined} onPointerCancel={toque ? () => ditado.parar() : undefined} onPointerLeave={toque ? () => ditado.parar() : undefined}
+    onClick={toque ? undefined : () => (ditado.ouvindo ? ditado.parar() : ligarMicrofone())}>
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" /></svg>
+  </button> : null;
+
   const setFicha = (id: number, ficha: Ficha) => setMessages((current) => current.map((message) => (message.id === id && message.role === "ficha" ? { ...message, ficha } : message)));
 
   return (
     <>
-      {!open && <button type="button" className="assistant-fab" onClick={() => setOpen(true)} aria-label="Abrir o Assistente JC"><span>✦</span>Assistente JC</button>}
+      {!open && <button type="button" className="assistant-fab" onClick={() => setOpen(true)} aria-label="Abrir o Assistente JC"><span>✦</span>Assistente JC{pendentes?.resumo.total ? <b className="assistant-fab-count" title="Lançamentos pendentes">{pendentes.resumo.total}</b> : null}</button>}
       {open && <section className={`assistant-panel ${wide ? "wide" : ""}`} aria-label="Assistente JC">
         <header>
           <div><strong>✦ Assistente JC</strong><small>{usage ? `${usage.messagesLeft} pergunta(s) · ${usage.photosLeft} foto(s) restantes hoje` : "Consultas do sistema"}</small></div>
+          {ditado.suportado && <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} title="Configurações de voz" aria-label="Configurações de voz" aria-expanded={settingsOpen}>⚙</button>}
           <button type="button" onClick={() => setWide(!wide)} title={wide ? "Reduzir" : "Ampliar"} aria-label={wide ? "Reduzir o painel" : "Ampliar o painel"}>{wide ? "⤡" : "⤢"}</button>
           <button type="button" onClick={() => setOpen(false)} aria-label="Fechar o assistente">×</button>
         </header>
+        {settingsOpen && <div className="assistant-settings">
+          <label><input type="checkbox" checked={voz.enviarAoTerminar} onChange={(event) => { const config = { enviarAoTerminar: event.target.checked }; setVoz(config); salvarConfigVoz(config); }} /> Enviar a pergunta ao terminar de falar</label>
+          <small className="assistant-muted">Desligado: o texto ditado fica no campo para você conferir e tocar em Enviar. O áudio não é gravado.</small>
+        </div>}
+        <PendentesPainel lista={pendentes} setLista={setPendentes} flash={flash} aberto={pendOpen} setAberto={setPendOpen} />
         <div className="assistant-messages">
           {!status.configured && <div className="assistant-msg assistant error"><p>O Assistente JC ainda não foi configurado no servidor (falta a chave ANTHROPIC_API_KEY). Avise o administrador.</p></div>}
           {messages.length === 0 && status.configured && <div className="assistant-intro">
-            <p>Pergunte sobre qualquer parte do sistema: combustível, estoque e movimentação de produtos, frota, trocas e O.S., compras, funcionários e tarefas — ou &quot;como faço&quot; algo. Eu só consulto: não registro nem altero nada.</p>
+            <p>Pergunte sobre qualquer parte do sistema: combustível, estoque e movimentação de produtos, frota, trocas e O.S., compras, funcionários e tarefas — ou &quot;como faço&quot; algo. Eu consulto e monto lançamentos pendentes; nada é gravado no sistema sem o seu &quot;Lançar tudo&quot;.</p>
             <div>{SUGGESTIONS.map((suggestion) => <button type="button" key={suggestion} onClick={() => ask(suggestion)}>{suggestion}</button>)}</div>
             {status.dbMode === "PRINCIPAL_SOMENTE_LEITURA" && <p className="assistant-muted">Administrador: a conexão própria do assistente (ASSISTANT_DATABASE_URL, usuário assistente_leitura) ainda não foi cadastrada; as consultas usam a conexão principal em modo somente leitura.</p>}
             {status.canReadSheet && <p className="assistant-muted">Use <b>📷 Enviar ficha</b> para transformar fotos da ficha de abastecimento na planilha de importação.</p>}
+            <p className="assistant-muted">Para lançar, fale ou digite: <i>“lança um filtro de combustível TAG 11 na PC-20”</i>. Eu monto a lista de <b>lançamentos pendentes</b>; nada é gravado até você clicar em <b>Lançar tudo</b>{status.canLaunch ? "" : " (ADMIN/GESTOR)"}.</p>
+            {ditado.verificado && !ditado.suportado && <p className="assistant-muted">O ditado por voz não funciona neste navegador. Use o Chrome (computador ou Android) ou o Safari (iPhone), ou o microfone do teclado do celular.</p>}
+            {ditado.suportado && <p className="assistant-muted">🎤 {toque ? "Segure o microfone para falar" : "Clique no microfone para falar (e de novo para parar)"}; confira o texto e toque em Enviar.</p>}
           </div>}
           {messages.map((message) => message.role === "ficha"
             ? <FichaCard key={message.id} ficha={message.ficha} photos={message.photos} canImport={Boolean(status.canImport)} onChange={(ficha) => setFicha(message.id, ficha)} openImport={setImporting} flash={flash} />
-            : <div key={message.id} className={`assistant-msg ${message.role} ${message.error ? "error" : ""}`}>{message.role === "assistant" ? <RichText text={message.text} /> : <p>{message.text}</p>}
+            : <div key={message.id} className={`assistant-msg ${message.role} ${message.error ? "error" : ""}`}>{message.role === "assistant" ? <RichText text={message.text} /> : <p>{message.voz && <span className="assistant-voz-tag" title="Ditado por voz">🎤 </span>}{message.text}</p>}
+              {message.role === "assistant" && !message.error && leitura.disponivel && <button type="button" className={`assistant-speak ${leitura.falando === message.id ? "on" : ""}`} onClick={() => leitura.ler(message.id, message.text)} aria-label={leitura.falando === message.id ? "Parar a leitura" : "Ouvir a resposta"} title={leitura.falando === message.id ? "Parar" : "Ouvir"}>{leitura.falando === message.id ? "⏹" : "🔊"}</button>}
               {message.role === "assistant" && message.tabelas?.map((tabela, index) => <TabelaCard key={index} tabela={tabela} flash={flash} fechar={() => setOpen(false)} />)}</div>)}
           {busy && <div className="assistant-msg assistant thinking"><span /><span /><span /><small>{busy === "ficha" ? "Lendo a ficha... pode levar até 1 minuto." : "Consultando o sistema..."}</small></div>}
           <div ref={listEnd} />
@@ -269,8 +319,9 @@ export default function AssistantWidget() {
             <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(event) => void sendFicha(event.target.files)} />
             <button type="button" className="assistant-photo" disabled={Boolean(busy) || !status.configured} onClick={() => fileInput.current?.click()} title="Enviar fotos da ficha de abastecimento">📷 Enviar ficha</button>
           </>}
-          <textarea value={question} rows={1} maxLength={1500} placeholder="Pergunte algo..." disabled={!status.configured}
-            onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void ask(question); } }} />
+          <textarea value={question} rows={1} maxLength={1500} placeholder={ditado.ouvindo ? "Ouvindo… fale agora" : "Pergunte algo..."} disabled={!status.configured} className={ditado.ouvindo ? "listening" : ""}
+            onChange={(event) => { setQuestion(event.target.value); if (!event.target.value.trim()) dictated.current = false; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void ask(question); } }} />
+          {microfone}
           <button type="submit" className="primary" disabled={Boolean(busy) || !question.trim() || !status.configured}>Enviar</button>
         </form>
         {notice && <div className="assistant-notice">{notice}</div>}

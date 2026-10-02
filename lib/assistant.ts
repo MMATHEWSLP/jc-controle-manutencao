@@ -9,6 +9,8 @@ import type { SessionUser } from "./auth";
 import { fuelLocalDay, fuelVisibleFronts } from "./fuel";
 import { importKey } from "./fuel-import-rules";
 import { resumoCatalogo } from "./assistente/catalogo";
+import { listarPendentes, type ListaPendentes } from "./assistente/pendentes";
+import { STATUS_ROTULO } from "./assistente/pendentes-regras";
 
 // ---------------------------------------------------------------------------
 // Assistente JC: chat de consulta (ferramentas só de leitura) e leitor de fichas de abastecimento.
@@ -116,7 +118,13 @@ export function readHistory(input: unknown): ChatTurn[] {
   return result;
 }
 
-function chatSystemPrompt(user: SessionUser, fronts: { visible: string[]; displayed: string[] }) {
+// Lista atual de lançamentos pendentes, para a assistente saber os ids (editar/remover) sem consultar.
+function listaNoPrompt(lista: ListaPendentes | null) {
+  if (!lista || lista.itens.length === 0) return "Lista atual de lançamentos pendentes: vazia.";
+  return `Lista atual de lançamentos pendentes (${lista.itens.length}):\n${lista.itens.map((item) => `- id ${item.id}: ${item.tipoRotulo} — ${item.descricao}${item.item.frente ? ` · ${item.item.frente.nome}` : ""} · ${item.avaliacao.incompleto ? "Incompleto" : STATUS_ROTULO[item.avaliacao.status]}`).join("\n")}`;
+}
+
+function chatSystemPrompt(user: SessionUser, fronts: { visible: string[]; displayed: string[] }, lista: ListaPendentes | null) {
   return `Você é o Assistente JC, do sistema de gestão da JC Serviços Florestais (frota, manutenção, combustível, produtos/estoque, compras, funcionários e tarefas).
 Hoje é ${brDate(fuelLocalDay())} (horário de Fortaleza). Quem pergunta: ${user.name} (perfil ${user.profile}).
 Frentes em exibição na tela dele: ${fronts.displayed.join(", ") || "nenhuma"}. Frentes que ele pode consultar: ${fronts.visible.join(", ") || "nenhuma"}.
@@ -129,6 +137,17 @@ Ferramentas:
 - catalogo_sistema: colunas e valores possíveis de uma view. Use quando não tiver certeza do nome de uma coluna ou de um valor de situação/tipo.
 - historico_combustivel, consumo_veiculo, saldo_frente, trocas_e_alertas, historico_manutencao, buscar_equipamento: atalhos prontos para perguntas comuns de combustível e manutenção (consumo médio por veículo/empresa e custo do combustível em R$ só existem em consumo_veiculo).
 - ajuda_sistema: "como faço X no sistema" (caminho no menu e passos).
+- lancamento_adicionar, lancamento_editar, lancamento_remover, lancamento_listar: a lista "Lançamentos pendentes" do usuário (veja abaixo).
+
+Lançamentos pendentes (lista do usuário, mostrada no topo do painel):
+- Pedido para lançar/registrar/dar saída ("lança um filtro de combustível TAG 11 na PC-20", "lança uma lima redonda para o Claudilson", "300 litros de diesel no CM-35 km 140900 motorista Fabrício"): chame lancamento_adicionar, UMA chamada por item (dois lançamentos na mesma frase = duas chamadas). Tipos: saída de produto e saída de combustível.
+- Você NUNCA grava no sistema. A gravação só acontece quando a pessoa clica em "Lançar tudo" e confirma no painel. Nunca diga que lançou/gravou/baixou estoque: diga que adicionou à lista.
+- Passe os termos como a pessoa disse; não invente TAG, código, placa, leitura nem nome. Não passe quantidade, data nem frente se não foram ditas (o sistema usa 1, hoje e a frente selecionada no topo). "TAG 11" vai em produto_tag.
+- Números falados: converta para algarismos quando tiver certeza ("cento e quarenta mil e novecentos" = 140900, "meia dúzia" = 6); na dúvida, passe o texto como foi dito. O texto pode vir de reconhecimento de voz, com erros ("PC vinte" = PC-20, "CM trinta e cinco" = CM-35).
+- Responda curto, usando a "confirmacao" devolvida (ex.: "Adicionado: 1 FILTRO DE COMBUSTÍVEL (TAG 11) para PC-20. 3 itens pendentes."). Se vier com perguntas (falta dado, produto/colaborador ambíguo ou não encontrado), faça só essas perguntas, mostrando as opções numeradas. Nunca escolha uma opção sozinha. Quando a pessoa responder ("o segundo", "o Claudilson Silva"), use lancamento_editar com escolha_campo e escolha_id.
+- Comandos da lista: "remove o último" (lancamento_remover ultimo), "tira a lima do Claudilson" (lancamento_remover com o id), "muda a quantidade do filtro para 2" (lancamento_editar), "limpa a lista" (lancamento_remover todos), "o que tem na lista?" (lancamento_listar). Use os ids da lista abaixo.
+- Item Bloqueado (estoque insuficiente, leitura menor que a anterior, cadastro não encontrado, dado faltando) não será lançado: diga o motivo em uma frase. Item em Atenção será lançado, mas destaque o aviso.
+${listaNoPrompt(lista)}
 
 Como responder:
 - Português do Brasil, direto. Comece pela resposta; depois os detalhes. Números no formato brasileiro (1.234,50), datas DD/MM/AAAA, unidades L, km, h, km/L, L/h, R$.
@@ -139,37 +158,43 @@ Como responder:
 - "O que tem" (estoque, saldos, frota, situação): traga o retrato atual e destaque o que está crítico (estoque zerado/baixo/negativo, trocas vencidas, equipamentos parados, consumo fora da média).
 - Produtos: diferencie saídas (tipo = Saída) de Correção de estoque (AJUSTE do sistema antigo) e de Ajuste de saldo; diga quando os dados vêm do sistema antigo importado (importado_sistema_antigo = sim, só histórico) se isso mudar a interpretação.
 - Equipamento citado por código ou placa: filtre pela coluna equipamento/codigo/placa; se for ambíguo, use buscar_equipamento e, se continuar ambíguo, pergunte.
-- Você só consulta: não registra, altera nem apaga nada. Pedido de lançamento ou alteração: explique em que tela fazer (use ajuda_sistema).
+- Fora da lista de lançamentos pendentes, você só consulta: não altera nem apaga nada no sistema. Pedido de alteração de outro tipo (editar um lançamento já gravado, cadastrar equipamento...): explique em que tela fazer (use ajuda_sistema).
 - Se uma ferramenta devolver erro (coluna inexistente, sem acesso), corrija a consulta uma vez; se for falta de acesso, explique em uma frase.`;
 }
 
 // semRegistro: teste automático (scripts/testar-assistente.ts) — não grava em assistant_logs nem conta no limite.
-export async function runAssistantChat(ctx: AssistantToolContext, question: string, history: ChatTurn[], options: { semRegistro?: boolean } = {}) {
+export async function runAssistantChat(ctx: AssistantToolContext, question: string, history: ChatTurn[], options: { semRegistro?: boolean; viaVoz?: boolean } = {}) {
   const config = assistantConfig();
   const api = client();
   const usage = options.semRegistro ? { messagesLeft: config.dailyMessages } : await assistantUsageToday(ctx.db, ctx.user.id);
   if (usage.messagesLeft <= 0) throw new AssistantError(`Você atingiu o limite de ${config.dailyMessages} perguntas por dia no assistente. O limite renova amanhã.`, 429);
   const log = (entry: typeof assistantLogs.$inferInsert) => (options.semRegistro ? Promise.resolve() : writeLog(ctx.db, entry));
   ctx.tabelas = [];
+  ctx.pergunta = question; ctx.viaVoz = options.viaVoz === true; ctx.pendentesAlterados = false;
+  const viaVoz = options.viaVoz === true;
   const started = Date.now();
   const tools: ToolCall[] = [];
   const tokens = { input: 0, output: 0 };
   const messages: Anthropic.MessageParam[] = [...history.map((turn) => ({ role: turn.role, content: turn.text })), { role: "user", content: question }];
   try {
     const { refused, response } = await runLoop(api, {
-      model: config.model, max_tokens: config.maxTokens, system: chatSystemPrompt(ctx.user, await frontsLine(ctx)), tools: ASSISTANT_TOOLS,
+      model: config.model, max_tokens: config.maxTokens, system: chatSystemPrompt(ctx.user, await frontsLine(ctx), await listarPendentes(ctx).catch(() => null)), tools: ASSISTANT_TOOLS,
       output_config: { effort: "medium" },
     }, messages, ctx, { maxSteps: MAX_CHAT_STEPS, deadline: started + config.timeoutMs * 2, requestTimeout: config.timeoutMs }, tools, tokens);
     let answer = refused ? "Não posso ajudar com esse pedido. Pergunte sobre os dados do sistema: combustível, estoque, frota, manutenção, compras, funcionários ou tarefas." : textOf(response.content);
     if (!refused && response.stop_reason === "max_tokens") answer = answer ? `${answer}\n\n(Resposta cortada por ser longa: refine a pergunta.)` : "A resposta ficou longa demais. Refine a pergunta (um período, frente ou equipamento).";
     if (!answer) answer = "Não consegui montar uma resposta. Tente perguntar de outro jeito.";
-    await log({ userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), answer, status: refused ? "RECUSADO" : "OK", model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
+    await log({ userId: ctx.user.id, kind: "CHAT", question, viaVoz, tools: JSON.stringify(tools), answer, status: refused ? "RECUSADO" : "OK", model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
     // Até 4 tabelas por resposta (as últimas consultas), para a tela mostrar com "Baixar Excel".
-    return { answer, tools: tools.map((tool) => tool.name), toolCalls: tools, tabelas: refused ? [] : (ctx.tabelas ?? []).slice(-4), remaining: Math.max(0, usage.messagesLeft - 1) };
+    return {
+      answer, tools: tools.map((tool) => tool.name), toolCalls: tools, tabelas: refused ? [] : (ctx.tabelas ?? []).slice(-4), remaining: Math.max(0, usage.messagesLeft - 1),
+      // Lista de lançamentos pendentes atualizada, quando a assistente mexeu nela (o painel redesenha).
+      ...(ctx.pendentesAlterados && ctx.pendentes ? { pendentes: ctx.pendentes } : {}),
+    };
   } catch (error) {
     const friendly = friendlyApiError(error);
     if (!(error instanceof AssistantError)) console.error("[assistente.chat]", error);
-    await log({ userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), status: "ERRO", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
+    await log({ userId: ctx.user.id, kind: "CHAT", question, viaVoz, tools: JSON.stringify(tools), status: "ERRO", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
     throw friendly;
   }
 }

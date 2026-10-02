@@ -76,7 +76,7 @@ export const CATALOGO: readonly ViewCatalogo[] = [
     view: "v_leituras", titulo: "Leituras de horímetro/KM", modulo: "Equipamentos", escopo: "frente", colunaData: "data", eventos: true, permissoes: ["meter.view", "equipment.view"], tela: "Horímetros / KM",
     descricao: "Histórico de leituras de horímetro e KM dos equipamentos.", padrao: ["data", "equipamento", "frente", "horimetro", "km", "operador", "origem"],
     colunas: [n("leitura_id", "Id"), d("data", "Data da leitura"), ...equipamento, ...frente, n("horimetro", "Horímetro (h)"), n("km", "Hodômetro (km)"), t("operador", "Quem informou"),
-      t("origem", "Como foi registrada", ["Manual", "Planilha", "QR Code", "Troca de óleo"]), b("regressao_autorizada", "Leitura menor que a anterior aceita"), t("observacao", "Observação")],
+      t("origem", "Como foi registrada", ["Manual", "Planilha", "QR Code", "Troca de óleo", "Assistente JC"]), b("regressao_autorizada", "Leitura menor que a anterior aceita"), t("observacao", "Observação")],
   },
   {
     view: "v_trocas_oleo", titulo: "Situação das trocas de óleo", modulo: "Troca de Óleo", escopo: "frente", permissoes: OLEO_PERMS, tela: "Central de alertas",
@@ -165,7 +165,7 @@ export const CATALOGO: readonly ViewCatalogo[] = [
       n("leitura", "Leitura no abastecimento"), t("unidade_leitura", "Unidade da leitura", ["km", "h"]), n("rodado", "Rodado desde o último tanque cheio (km ou h)"),
       n("litros_do_consumo", "Litros usados no cálculo do consumo"), n("consumo", "Consumo do abastecimento"), t("unidade_consumo", "Unidade do consumo", ["km/L", "L/h"]),
       b("tanque_cheio", "Tanque cheio"), b("consumo_fora_da_media", "Consumo desviou mais de 25% da média"), b("veiculo_pendente", "Veículo ainda não identificado"),
-      t("responsavel", "Motorista/responsável"), t("observacao", "Observação"), t("origem_registro", "Origem", ["Lançamento", "Importação de planilha", "Histórico importado"]),
+      t("responsavel", "Motorista/responsável"), t("observacao", "Observação"), t("origem_registro", "Origem", ["Lançamento", "Assistente JC", "Importação de planilha", "Histórico importado"]),
       t("veiculo_planilha", "Veículo como veio na planilha importada (quando o veículo está a identificar)")],
   },
   {
@@ -223,7 +223,7 @@ export const CATALOGO: readonly ViewCatalogo[] = [
     padrao: ["data", "frente", "tipo", "origem", "documento", "tag", "produto", "quantidade", "valor_unitario", "valor_total", "equipamento", "colaborador", "departamento"],
     dica: "Consumo/saídas: tipo = 'Saída' (não inclui 'Correção de estoque'). importado_sistema_antigo = sim são lançamentos do almoxarifado antigo (jan–out/2026) que entraram só como histórico (baixou_estoque = não). Departamentos do sistema antigo foram unificados: 'Setor de Alimentação e Refeições' = ALIMENTAÇÃO, 'Manutenção e Gestão da Frota' = MANUTENÇÃO DA FROTA, 'Gestão de Alojamentos' = ALOJAMENTO (o nome antigo fica em departamento_planilha). Filtre departamento com contem e parte do nome.",
     colunas: [n("movimento_id", "Id"), d("data", "Data"), ...frente, t("tipo", "Tipo", ["Entrada", "Saída", "Correção de estoque", "Ajuste de saldo"]),
-      t("origem", "De onde veio", ["Movimentação", "Ordem de Serviço", "Solicitação de Materiais", "Pedido de compra", "Ajuste manual", "Sistema antigo (importado)"]),
+      t("origem", "De onde veio", ["Movimentação", "Movimentação (Assistente JC)", "Ordem de Serviço", "Solicitação de Materiais", "Pedido de compra", "Ajuste manual", "Sistema antigo (importado)"]),
       t("documento", "Documento (SAI-, OS-, SOL-, PED-, IMP-)"), n("produto_id", "Id do produto"), t("tag", "TAG"), t("produto", "Nome do produto"), n("quantidade", "Quantidade"), b("e_entrada", "É entrada"),
       n("valor_unitario", "Valor unitário (R$)"), n("valor_total", "Valor total (R$)"), n("equipamento_id", "Id do equipamento"), t("equipamento", "Equipamento (código ou texto do sistema antigo)"),
       t("terceiro", "Terceiro/prestador"), t("colaborador", "Funcionário/quem retirou"), t("departamento", "Departamento (cadastro do sistema)"),

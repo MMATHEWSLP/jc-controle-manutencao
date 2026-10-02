@@ -10,6 +10,7 @@ import type { Profile, SessionUser } from "./auth";
 //  ASSISTANT_DAILY_PHOTOS      fotos de ficha por usuário por dia (padrão 20)
 //  ASSISTANT_MAX_TOKENS        teto de tokens de saída por resposta do chat (padrão 4000)
 //  ASSISTANT_TIMEOUT_SECONDS   tempo máximo de cada chamada à API (padrão 60; a leitura de ficha usa o dobro)
+//  ASSISTANT_LAUNCH_PROFILES   perfis que podem usar "Lançar tudo" nos lançamentos pendentes (padrão ADMIN,GESTOR)
 // ---------------------------------------------------------------------------
 export const DEFAULT_ASSISTANT_MODEL = "claude-sonnet-5-5";
 export const ASSISTANT_PROFILES: Profile[] = ["ADMIN", "GESTOR", "OFICINA", "OPERADOR", "ALMOXARIFADO", "CAMPO"];
@@ -22,11 +23,13 @@ const intEnv = (name: string, fallback: number, min: number, max: number) => {
 };
 
 export function assistantConfig() {
+  const launchProfiles = env("ASSISTANT_LAUNCH_PROFILES").toUpperCase().split(/[,;\s]+/).filter((item): item is Profile => (ASSISTANT_PROFILES as string[]).includes(item));
   const profiles = env("ASSISTANT_PROFILES").toUpperCase().split(/[,;\s]+/).filter((item): item is Profile => (ASSISTANT_PROFILES as string[]).includes(item));
   return {
     configured: env("ANTHROPIC_API_KEY").length > 0,
     model: env("ASSISTANT_MODEL") || DEFAULT_ASSISTANT_MODEL,
     profiles: profiles.length ? profiles : (["ADMIN", "GESTOR"] as Profile[]),
+    launchProfiles: launchProfiles.length ? launchProfiles : (["ADMIN", "GESTOR"] as Profile[]),
     dailyMessages: intEnv("ASSISTANT_DAILY_MESSAGES", 40, 0, 1000),
     dailyPhotos: intEnv("ASSISTANT_DAILY_PHOTOS", 20, 0, 500),
     maxTokens: intEnv("ASSISTANT_MAX_TOKENS", 4000, 500, 32000),

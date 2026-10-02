@@ -281,6 +281,20 @@
       "when": 1790968531622,
       "tag": "0039_assistente_ajustes",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790971172985,
+      "tag": "0040_assistente_pendentes",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790971174611,
+      "tag": "0041_assistente_pendentes_views",
+      "breakpoints": true
     }
   ]
 }

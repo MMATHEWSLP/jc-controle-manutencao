@@ -21,6 +21,8 @@ export type StockExitInput = {
   employeeId: number | null; equipmentId: number | null; departmentId: number | null; notes: string | null;
   thirdPartyId: number | null; thirdPartyVehicleId: number | null; receivedBy: string | null;
   items: Array<{ productId: number; quantity: number }>; allowNegative: boolean;
+  // "Lançar tudo" do Assistente JC (nunca vem do formulário).
+  createdVia?: "ASSISTENTE" | null;
 };
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -85,7 +87,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
     const [exit] = await tx.insert(stockExits).values({
       serviceFrontId: input.serviceFrontId, exitDate: input.exitDate, destinationType: input.destinationType,
       employeeId: input.employeeId, equipmentId: input.equipmentId, departmentId: input.departmentId,
-      thirdPartyId: input.thirdPartyId, thirdPartyVehicleId: input.thirdPartyVehicleId, receivedBy: input.receivedBy, notes: input.notes, createdBy: user.id,
+      thirdPartyId: input.thirdPartyId, thirdPartyVehicleId: input.thirdPartyVehicleId, receivedBy: input.receivedBy, notes: input.notes, createdVia: input.createdVia ?? null, createdBy: user.id,
     }).returning({ id: stockExits.id });
     const number = stockExitNumber(exit.id);
     for (const item of input.items) {

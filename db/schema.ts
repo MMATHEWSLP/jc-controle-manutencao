@@ -327,7 +327,7 @@ export const meterReadings = pgTable("meter_readings", {
   operator: text("operator"),
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   notes: text("notes"),
-  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE"] }).notNull().default("MANUAL"),
+  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE","ASSISTENTE"] }).notNull().default("MANUAL"),
   authorizedRegression: boolean("authorized_regression").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
@@ -1112,6 +1112,8 @@ export const fuelMovements = pgTable("fuel_movements", {
   consumptionOutlier: boolean("consumption_outlier").notNull().default(false),
   // Leitura menor/igual à última aceita por ADMIN/GESTOR com justificativa: vira nova base do consumo.
   readingException: boolean("reading_exception").notNull().default(false),
+  // ASSISTENTE = lançado pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); null = tela/importação.
+  createdVia: text("created_via", { enum:["ASSISTENTE"] }),
   ...timestamps,
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
@@ -1596,6 +1598,8 @@ export const stockExits = pgTable("stock_exits", {
   thirdPartyVehicleId: integer("third_party_vehicle_id").references(() => thirdPartyVehicles.id),
   receivedBy: text("received_by"),
   notes: text("notes"),
+  // ASSISTENTE = lançada pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); null = tela.
+  createdVia: text("created_via", { enum:["ASSISTENTE"] }),
   createdBy: integer("created_by").references(() => users.id),
   cancelledAt: text("cancelled_at"),
   cancelledBy: integer("cancelled_by").references(() => users.id),
@@ -1755,8 +1759,11 @@ export const fuelImportBatches = pgTable("fuel_import_batches", {
 export const assistantLogs = pgTable("assistant_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
-  kind: text("kind", { enum:["CHAT","FICHA"] }).notNull(),
+  // LANCAR = confirmação do "Lançar tudo" (lançamentos pendentes gravados no sistema).
+  kind: text("kind", { enum:["CHAT","FICHA","LANCAR"] }).notNull(),
   question: text("question").notNull().default(""),
+  // A pergunta foi ditada pelo microfone (Web Speech API do navegador; o áudio nunca é guardado).
+  viaVoz: boolean("via_voz").notNull().default(false),
   imageCount: integer("image_count").notNull().default(0),
   imageNames: text("image_names"),
   // JSON: [{ name, input, ok }]
@@ -1770,6 +1777,27 @@ export const assistantLogs = pgTable("assistant_logs", {
   durationMs: integer("duration_ms"),
   createdAt: text("created_at").notNull().default(isoNow),
 }, (table) => [index("assistant_logs_user_created_idx").on(table.userId, table.createdAt)]);
+
+// Assistente JC — lançamentos pendentes ("carrinho") de cada usuário. A assistente só adiciona,
+// edita e remove itens aqui; nada entra no sistema até o usuário clicar em "Lançar tudo" e
+// confirmar. payload = JSON do item (lib/assistente/pendentes-regras.ts: ItemPendente) com o que
+// foi pedido e o que foi localizado no cadastro; o status (Pronto/Atenção/Bloqueado) é calculado
+// na hora, com o estoque e as leituras atuais. last_error = motivo da última falha ao lançar.
+export const assistantPendingItems = pgTable("assistant_pending_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete:"cascade" }),
+  kind: text("kind", { enum:["SAIDA_PRODUTO","SAIDA_COMBUSTIVEL"] }).notNull(),
+  payload: text("payload").notNull(),
+  // Texto que a pessoa falou/digitou para este item (auditoria e conferência).
+  sourceText: text("source_text"),
+  viaVoz: boolean("via_voz").notNull().default(false),
+  // UUID enviado como client_request_id do lançamento de combustível: repetir o "Lançar tudo" não duplica.
+  requestId: text("request_id").notNull(),
+  // Marca enquanto o "Lançar tudo" grava o item (dois cliques/abas não lançam o mesmo item duas vezes).
+  launchingAt: text("launching_at"),
+  lastError: text("last_error"),
+  ...timestamps,
+}, (table) => [index("assistant_pending_items_user_idx").on(table.userId, table.id)]);
 
 // Resumo do dia do Combustível: textos da mensagem do WhatsApp por frente (o ADMIN edita no modal).
 // Aceitam {frente}, {combustivel} e {ano}. Frente sem linha aqui usa o padrão de lib/fuel-daily-rules.ts.
