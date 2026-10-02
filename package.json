@@ -55,7 +55,9 @@
     "test:fuel-import-rules": "esbuild tests/fuel-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-import-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-import-rules.mjs",
     "test:stock-history-import": "esbuild tests/stock-history-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-stock-history-import.mjs && node --test /tmp/manutencao-preventiva-stock-history-import.mjs",
     "test:fuel-daily-rules": "esbuild tests/fuel-daily-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-daily-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-daily-rules.mjs",
-    "test:assistant-rules": "esbuild tests/assistant-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistant-rules.mjs && node --test /tmp/manutencao-preventiva-assistant-rules.mjs"
+    "test:assistant-rules": "esbuild tests/assistant-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistant-rules.mjs && node --test /tmp/manutencao-preventiva-assistant-rules.mjs",
+    "test:assistente-consulta": "esbuild tests/assistente-consulta.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistente-consulta.mjs && node --test /tmp/manutencao-preventiva-assistente-consulta.mjs",
+    "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

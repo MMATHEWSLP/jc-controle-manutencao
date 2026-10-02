@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
 import StockHistoryImportModal from "./StockHistoryImportView";
+import { consumirFiltros } from "../lib/assistente-nav";
 import { optimizePhoto } from "../lib/photo-client";
 import { CatalogPicker, type CatalogOption } from "./stock-client";
 
@@ -75,7 +76,8 @@ export default function ProductsView({ authUser, flash }: { authUser: User; flas
   const [brands, setBrands] = useState<CatalogOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
+  // Aberto pelo "Ver no sistema" do Assistente JC: já com a busca da consulta (TAG/nome).
+  const [query, setQuery] = useState(() => (typeof window === "undefined" ? "" : consumirFiltros("Produtos")?.busca ?? ""));
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [tagQuery, setTagQuery] = useState("");
   const [debouncedTag, setDebouncedTag] = useState("");

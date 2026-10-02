@@ -12,6 +12,7 @@ import { allowedEquipmentIds } from "./front-scope";
 import { loadHistoryEntries } from "./history-data";
 import { recalculateMaintenanceIfStale } from "./maintenance-recalculation";
 import { thirdPartyConsumptionReport } from "./third-parties";
+import { FerramentaError, FERRAMENTAS_GERAIS, HANDLERS_GERAIS, type TabelaResposta } from "./assistente/ferramentas";
 import { loadWhatsappAlerts } from "./whatsapp";
 
 // ---------------------------------------------------------------------------
@@ -21,7 +22,8 @@ import { loadWhatsappAlerts } from "./whatsapp";
 // brasileiro (1.234,5 · DD/MM/AAAA) para o modelo repetir sem converter.
 // ---------------------------------------------------------------------------
 type Db = Awaited<ReturnType<typeof getDb>>;
-export type AssistantToolContext = { db: Db; user: SessionUser; displayed: number[] | "ALL" };
+// tabelas: resultados de consultar_dados desta resposta (vão para a tela com "Baixar Excel").
+export type AssistantToolContext = { db: Db; user: SessionUser; displayed: number[] | "ALL"; tabelas?: TabelaResposta[] };
 type Input = Record<string, unknown>;
 
 export class AssistantToolError extends Error {}
@@ -330,6 +332,7 @@ const periodProps = {
 const frontProp = { frente: { type: "string", description: "Nome da frente de serviço. Omitir = frentes em exibição para o usuário." } };
 
 export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
+  ...FERRAMENTAS_GERAIS,
   {
     name: "buscar_equipamento",
     description: "Procura um equipamento da frota própria pelo código (ex.: CM-35), placa (ex.: QVN6E34) ou modelo/tipo, e veículos de terceiros pela placa. Devolve código cadastrado, placa, modelo, frente, situação, tipo de controle e leitura atual, e como foi encontrado (código, placa, parecido).",
@@ -397,7 +400,8 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-const HANDLERS: Record<string, (ctx: AssistantToolContext, input: Input) => Promise<unknown>> = {
+const HANDLERS: Record<string, (ctx: AssistantToolContext, input: Input) => Promise<unknown> | unknown> = {
+  ...HANDLERS_GERAIS,
   buscar_equipamento: buscarEquipamento,
   historico_combustivel: historicoCombustivel,
   consumo_veiculo: consumoVeiculo,
@@ -418,7 +422,7 @@ export async function runAssistantTool(ctx: AssistantToolContext, name: string, 
     const json = JSON.stringify(result);
     return { ok: true, content: json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (resultado cortado; peça um filtro menor)` : json };
   } catch (error) {
-    if (error instanceof AssistantToolError) return { ok: false, content: error.message };
+    if (error instanceof AssistantToolError || error instanceof FerramentaError) return { ok: false, content: error.message };
     console.error(`[assistente.tool.${name}]`, error);
     return { ok: false, content: "Falha ao consultar o sistema agora." };
   }

@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { consumirFiltros, type NavegacaoAssistente } from "../lib/assistente-nav";
 import { DepartmentsModal, useDepartments, type Department } from "./DepartmentsManager";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
 import { ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
@@ -24,7 +25,9 @@ const asOption = (department: Department | null): CatalogOption | null => (depar
 // departamento, data e produtos) e "Histórico" só carrega quando é aberta, com os filtros.
 export default function StockExitsView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canCreate = authUser.permissions.includes("stock.exits_create");
-  const [tab, setTab] = useState<Tab>(canCreate ? "movimentar" : "historico");
+  // Aberto pelo "Ver no sistema" do Assistente JC: já no Histórico com o período da consulta.
+  const [assistantFilters] = useState(() => (typeof window === "undefined" ? null : consumirFiltros("Movimentação")));
+  const [tab, setTab] = useState<Tab>(canCreate && !assistantFilters ? "movimentar" : "historico");
   const [options, setOptions] = useState<StockOptions>({ fronts: [], defaultFrontId: null, equipment: [] });
   const departments = useDepartments();
   const [managing, setManaging] = useState(false);
@@ -44,7 +47,7 @@ export default function StockExitsView({ authUser, flash }: { authUser: User; fl
       </div>
       {tab === "movimentar" && canCreate
         ? <MovementForm options={options} departments={departments.departments} createDepartment={departments.canManage ? departments.create : undefined} flash={flash} />
-        : <HistoryPanel options={options} departments={departments.departments} flash={flash} />}
+        : <HistoryPanel options={options} departments={departments.departments} flash={flash} initial={assistantFilters} />}
       {managing && <DepartmentsModal close={() => setManaging(false)} changed={departments.reload} flash={flash} />}
     </>
   );
@@ -147,7 +150,7 @@ function MovementForm({ options, departments, createDepartment, flash }: {
 }
 
 // Histórico: só carrega quando a aba é aberta (como no Combustível). Filtros combináveis.
-function HistoryPanel({ options, departments, flash }: { options: StockOptions; departments: Department[]; flash: (message: string) => void }) {
+function HistoryPanel({ options, departments, flash, initial }: { options: StockOptions; departments: Department[]; flash: (message: string) => void; initial?: NavegacaoAssistente | null }) {
   const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState("");
   const [view, setView] = useState<"itens" | "saidas">("itens");
@@ -158,8 +161,8 @@ function HistoryPanel({ options, departments, flash }: { options: StockOptions; 
   const thirdPartyOptions = useThirdPartyOptions();
   const [partyFilter, setPartyFilter] = useState<ThirdPartyOption | null>(null);
   const [partyVehicleFilter, setPartyVehicleFilter] = useState<VehicleOption | null>(null);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(initial?.de ?? "");
+  const [to, setTo] = useState(initial?.ate ?? "");
   const query = new URLSearchParams(Object.entries({
     equipamento: equipmentFilter ? String(equipmentFilter.id) : "", funcionario: employeeFilter ? String(employeeFilter.id) : "", departamento: departmentFilter,
     produto: productFilter ? String(productFilter.id) : "", de: from, ate: to,

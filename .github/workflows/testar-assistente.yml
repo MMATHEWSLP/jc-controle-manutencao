@@ -1,0 +1,50 @@
+name: Testar Assistente JC
+
+# Roda as 10 perguntas de referência do Assistente JC (como ADMIN e como um usuário de uma frente só) e confere
+# que o usuário de uma frente só NÃO vê dados de outras frentes. Somente leitura: não grava nada no banco.
+on:
+  workflow_dispatch:
+    inputs:
+      frente:
+        description: "Frente do usuário simulado de uma frente só"
+        type: string
+        default: "Arapiuns"
+      sem_ia:
+        description: "Só as consultas (sem gerar as respostas do assistente pela Anthropic)"
+        type: boolean
+        default: false
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Perguntas de referência e isolamento por frente
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ASSISTANT_DATABASE_URL: ${{ secrets.ASSISTANT_DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ASSISTANT_MODEL: ${{ vars.ASSISTANT_MODEL }}
+          FRENTE: ${{ github.event.inputs.frente }}
+          SEM_IA: ${{ github.event.inputs.sem_ia }}
+        run: |
+          set -o pipefail
+          EXTRA=""
+          if [ "$SEM_IA" = "true" ]; then EXTRA="--sem-ia"; fi
+          npx tsx scripts/testar-assistente.ts "--frente=${FRENTE:-Arapiuns}" $EXTRA | tee resultado-assistente.txt
+
+      - name: Guardar o resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-assistente-${{ github.run_number }}
+          path: resultado-assistente.txt
+          if-no-files-found: ignore

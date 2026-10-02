@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import FuelImportModal from "./FuelImportView";
+import { navegarParaTela, type NavegacaoAssistente } from "../lib/assistente-nav";
 
 // ---------------------------------------------------------------------------
 // Assistente JC: botão flutuante com painel de conversa. Perguntas de consulta (combustível,
@@ -14,13 +15,18 @@ type Values = Record<Column, string>;
 type FichaRow = { values: Values; doubts: Partial<Record<Column, string[]>> };
 type Ficha = { header: { data: string; frente: string; combustivel: string; origem: string }; rows: FichaRow[]; warnings: string[] };
 type Usage = { messagesLeft: number; photosLeft: number; dailyMessages: number; dailyPhotos: number };
-type Status = { allowed: boolean; configured?: boolean; usage?: Usage; canReadSheet?: boolean; canImport?: boolean; error?: string };
-type NewMessage = { role: "user" | "assistant"; text: string; error?: boolean } | { role: "ficha"; ficha: Ficha; photos: number };
+type Status = { allowed: boolean; configured?: boolean; usage?: Usage; canReadSheet?: boolean; canImport?: boolean; error?: string; dbMode?: "DEDICADA" | "PRINCIPAL_SOMENTE_LEITURA" };
+// Tabela de uma consulta (consultar_dados): valores crus (datas AAAA-MM-DD, números) para a tela e o Excel.
+type Tabela = {
+  titulo: string; view: string; tela: string | null; periodo: string | null; frentes: string; filtros: string[]; limitado: boolean;
+  colunas: Array<{ nome: string; rotulo: string; tipo: string }>; linhas: Array<Array<string | number | boolean | null>>; navegacao: NavegacaoAssistente | null;
+};
+type NewMessage = { role: "user" | "assistant"; text: string; error?: boolean; tabelas?: Tabela[] } | { role: "ficha"; ficha: Ficha; photos: number };
 type Message = NewMessage & { id: number };
 
 const WIDTH: Record<Column, number> = { data: 88, tipo: 118, frente: 90, origem: 110, combustivel: 90, equipamento: 92, empresa: 96, litros: 62, leitura: 76, tanque_cheio: 52, motorista: 124, observacao: 190 };
 const LABEL: Record<Column, string> = { data: "data", tipo: "tipo", frente: "frente", origem: "origem", combustivel: "combustível", equipamento: "equipamento", empresa: "empresa", litros: "litros", leitura: "leitura", tanque_cheio: "tanque cheio", motorista: "motorista", observacao: "observação" };
-const SUGGESTIONS = ["Qual o saldo de diesel das frentes?", "Quais trocas de óleo estão vencidas?", "Quanto diesel saiu este mês?", "Qual o consumo médio do CM-35 este mês?"];
+const SUGGESTIONS = ["Saldo de diesel por frente", "Produtos que mais saíram no mês", "Equipamentos com troca vencida", "Consumo dos caminhões terceirizados", "O que saiu da minha frente esta semana?", "Produtos com estoque zerado ou baixo"];
 const MAX_SIDE = 2000;
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -51,14 +57,69 @@ function RichText({ text }: { text: string }) {
   const blocks: ReactNode[] = [];
   let list: string[] = [];
   const flush = () => { if (list.length) blocks.push(<ul key={`l${blocks.length}`}>{list.map((item, index) => <li key={index}>{inline(item)}</li>)}</ul>); list = []; };
+  let table: string[][] = [];
+  const flushTable = () => {
+    const rows = table.filter((cells) => !cells.every((cell) => /^:?-{2,}:?$/.test(cell)));
+    if (rows.length) blocks.push(<div key={`t${blocks.length}`} className="assistant-table-wrap"><table className="assistant-table"><thead><tr>{rows[0].map((cell, index) => <th key={index}>{inline(cell)}</th>)}</tr></thead><tbody>{rows.slice(1).map((cells, row) => <tr key={row}>{cells.map((cell, index) => <td key={index}>{inline(cell)}</td>)}</tr>)}</tbody></table></div>);
+    table = [];
+  };
   for (const raw of text.split("\n")) {
     const line = raw.trim();
+    if (/^\|.*\|$/.test(line)) { flush(); table.push(line.slice(1, -1).split("|").map((cell) => cell.trim())); continue; }
+    flushTable();
     if (/^[-•*]\s+/.test(line)) { list.push(line.replace(/^[-•*]\s+/, "")); continue; }
     flush();
     if (line) blocks.push(<p key={`p${blocks.length}`}>{inline(line.replace(/^#+\s*/, ""))}</p>);
   }
-  flush();
+  flush(); flushTable();
   return <>{blocks}</>;
+}
+
+const LABEL_COLUNA = (nome: string) => nome.replace(/_/g, " ").replace(/^(\w)/, (letter) => letter.toUpperCase());
+function celula(valor: string | number | boolean | null, tipo: string) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  if (typeof valor === "boolean") return valor ? "Sim" : "Não";
+  if ((tipo === "data" || tipo === "semana" || tipo === "mes") && typeof valor === "string") {
+    const [y, m, d] = valor.split("-");
+    return tipo === "mes" ? `${m}/${y}` : `${d}/${m}/${y}`;
+  }
+  if (typeof valor === "number") return tipo === "ano" ? String(valor) : valor.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  return String(valor);
+}
+
+// Tabela da consulta, com "Baixar Excel" e "Ver no sistema".
+function TabelaCard({ tabela, flash, fechar }: { tabela: Tabela; flash: (message: string) => void; fechar: () => void }) {
+  const [todas, setTodas] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const visiveis = todas ? tabela.linhas : tabela.linhas.slice(0, 12);
+  async function baixar() {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/assistente/excel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tabela) });
+      if (!response.ok) throw new Error(String(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "Não foi possível gerar a planilha."));
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(await response.blob());
+      link.download = `${tabela.titulo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w-]+/g, "-")}.xlsx`;
+      link.click(); URL.revokeObjectURL(link.href);
+    } catch (problem) { flash(problem instanceof Error ? problem.message : "Não foi possível gerar a planilha."); }
+    finally { setBusy(false); }
+  }
+  const meta = [tabela.periodo, tabela.frentes && tabela.frentes !== "—" ? `Frentes: ${tabela.frentes}` : "", tabela.filtros.length ? `Filtros: ${tabela.filtros.join("; ")}` : ""].filter(Boolean).join(" · ");
+  return (
+    <div className="assistant-data">
+      <div className="assistant-data-head"><strong>{tabela.titulo}</strong><span>{tabela.linhas.length.toLocaleString("pt-BR")} linha(s){tabela.limitado ? " (cortado)" : ""}</span></div>
+      {meta && <small className="assistant-muted">{meta}</small>}
+      {tabela.linhas.length > 0 ? <div className="assistant-table-wrap"><table className="assistant-table">
+        <thead><tr>{tabela.colunas.map((coluna) => <th key={coluna.nome} title={coluna.rotulo}>{LABEL_COLUNA(coluna.nome)}</th>)}</tr></thead>
+        <tbody>{visiveis.map((linha, row) => <tr key={row}>{tabela.colunas.map((coluna, index) => <td key={coluna.nome} className={coluna.tipo === "numero" ? "num" : ""}>{celula(linha[index], coluna.tipo)}</td>)}</tr>)}</tbody>
+      </table></div> : <p className="assistant-muted">Nenhum registro.</p>}
+      <div className="assistant-data-actions">
+        {tabela.linhas.length > 12 && <button type="button" onClick={() => setTodas(!todas)}>{todas ? "Mostrar menos" : `Mostrar todas (${tabela.linhas.length.toLocaleString("pt-BR")})`}</button>}
+        {tabela.linhas.length > 0 && <button type="button" onClick={baixar} disabled={busy}>{busy ? "Gerando..." : "⇩ Baixar Excel"}</button>}
+        {tabela.navegacao && <button type="button" className="primary" onClick={() => { navegarParaTela(tabela.navegacao!); fechar(); }}>Ver no sistema →</button>}
+      </div>
+    </div>
+  );
 }
 
 const fichaFileName = (ficha: Ficha) => `ficha-abastecimento-${(ficha.header.data || "sem-data").replace(/\//g, "-")}.xlsx`;
@@ -153,8 +214,9 @@ export default function AssistantWidget() {
     push({ role: "user", text: clean });
     setQuestion(""); setBusy("chat");
     try {
-      const data = await api<{ answer: string; remaining: number }>("/api/assistente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: clean, history }) });
-      push({ role: "assistant", text: data.answer });
+      const data = await api<{ answer: string; remaining: number; tabelas?: Tabela[] }>("/api/assistente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: clean, history }) });
+      push({ role: "assistant", text: data.answer, tabelas: data.tabelas });
+      if (data.tabelas?.length) setWide(true);
       updateUsage({ messagesLeft: data.remaining });
     } catch (problem) { push({ role: "assistant", text: problem instanceof Error ? problem.message : "Não foi possível responder agora.", error: true }); }
     finally { setBusy(""); }
@@ -190,13 +252,15 @@ export default function AssistantWidget() {
         <div className="assistant-messages">
           {!status.configured && <div className="assistant-msg assistant error"><p>O Assistente JC ainda não foi configurado no servidor (falta a chave ANTHROPIC_API_KEY). Avise o administrador.</p></div>}
           {messages.length === 0 && status.configured && <div className="assistant-intro">
-            <p>Pergunte sobre combustível, saldos, consumo, trocas de óleo e histórico de manutenção. Eu só consulto: não registro nem altero nada.</p>
+            <p>Pergunte sobre qualquer parte do sistema: combustível, estoque e movimentação de produtos, frota, trocas e O.S., compras, funcionários e tarefas — ou &quot;como faço&quot; algo. Eu só consulto: não registro nem altero nada.</p>
             <div>{SUGGESTIONS.map((suggestion) => <button type="button" key={suggestion} onClick={() => ask(suggestion)}>{suggestion}</button>)}</div>
+            {status.dbMode === "PRINCIPAL_SOMENTE_LEITURA" && <p className="assistant-muted">Administrador: a conexão própria do assistente (ASSISTANT_DATABASE_URL, usuário assistente_leitura) ainda não foi cadastrada; as consultas usam a conexão principal em modo somente leitura.</p>}
             {status.canReadSheet && <p className="assistant-muted">Use <b>📷 Enviar ficha</b> para transformar fotos da ficha de abastecimento na planilha de importação.</p>}
           </div>}
           {messages.map((message) => message.role === "ficha"
             ? <FichaCard key={message.id} ficha={message.ficha} photos={message.photos} canImport={Boolean(status.canImport)} onChange={(ficha) => setFicha(message.id, ficha)} openImport={setImporting} flash={flash} />
-            : <div key={message.id} className={`assistant-msg ${message.role} ${message.error ? "error" : ""}`}>{message.role === "assistant" ? <RichText text={message.text} /> : <p>{message.text}</p>}</div>)}
+            : <div key={message.id} className={`assistant-msg ${message.role} ${message.error ? "error" : ""}`}>{message.role === "assistant" ? <RichText text={message.text} /> : <p>{message.text}</p>}
+              {message.role === "assistant" && message.tabelas?.map((tabela, index) => <TabelaCard key={index} tabela={tabela} flash={flash} fechar={() => setOpen(false)} />)}</div>)}
           {busy && <div className="assistant-msg assistant thinking"><span /><span /><span /><small>{busy === "ficha" ? "Lendo a ficha... pode levar até 1 minuto." : "Consultando o sistema..."}</small></div>}
           <div ref={listEnd} />
         </div>

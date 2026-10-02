@@ -52,6 +52,8 @@ function migratedDatabase(){
       // Migrações de dados (UPDATE/INSERT/DELETE com sintaxe só do Postgres) e ALTER COLUMN não
       // têm efeito num banco vazio de teste; o resto (estrutura) precisa aplicar sem erro.
       if(/^(UPDATE|INSERT|DELETE|DO)\b/i.test(code)||/ALTER COLUMN/i.test(code)){try{database.exec(code);}catch{/* só Postgres */}continue;}
+      // Camada de leitura do Assistente JC (schema "assistente": funções, views e permissões): só Postgres.
+      if(/^(CREATE SCHEMA|CREATE OR REPLACE (FUNCTION|VIEW)|REVOKE|GRANT)\b/i.test(code))continue;
       database.exec(code);
     }
   }
