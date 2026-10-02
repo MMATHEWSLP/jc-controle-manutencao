@@ -24,6 +24,8 @@ export type FuelCreateOptions = {
   // Importação: lote gravado no lançamento e leitura de terceiro conferida pela data do abastecimento.
   importBatchId?: number | null;
   referenceByDate?: boolean;
+  // "Lançar tudo" do Assistente JC.
+  createdVia?: "ASSISTENTE" | null;
 };
 
 export type FuelCreateResult = { id: number; duplicate: boolean; message: string; consumption: { value: number; unit: string } | null };
@@ -66,7 +68,7 @@ export async function createFuelMovement(db: Db, user: SessionUser, body: Record
   let created: { id: number };
   try {
     [created] = await db.insert(fuelMovements).values({
-      ...input, serviceFrontId, clientRequestId, importBatchId: options.importBatchId ?? null,
+      ...input, serviceFrontId, clientRequestId, importBatchId: options.importBatchId ?? null, createdVia: options.createdVia ?? null,
       // Frente ↔ Porto da mesma frente: o destino é a própria frente.
       destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
       meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,

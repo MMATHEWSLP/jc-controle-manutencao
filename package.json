@@ -57,6 +57,8 @@
     "test:fuel-daily-rules": "esbuild tests/fuel-daily-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-fuel-daily-rules.mjs && node --test /tmp/manutencao-preventiva-fuel-daily-rules.mjs",
     "test:assistant-rules": "esbuild tests/assistant-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistant-rules.mjs && node --test /tmp/manutencao-preventiva-assistant-rules.mjs",
     "test:assistente-consulta": "esbuild tests/assistente-consulta.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistente-consulta.mjs && node --test /tmp/manutencao-preventiva-assistente-consulta.mjs",
+    "test:assistente-pendentes": "esbuild tests/assistente-pendentes.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistente-pendentes.mjs && node --test /tmp/manutencao-preventiva-assistente-pendentes.mjs",
+    "test:assistente-pendentes-banco": "tsx --test tests/assistente-pendentes.integration.test.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
   "dependencies": {

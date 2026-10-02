@@ -5,6 +5,7 @@ import { assistantConfig, canUseAssistant } from "../../../lib/assistant-config"
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { canImportFuel } from "../../../lib/fuel-import";
 import { assistantDbMode } from "../../../lib/assistente/db";
+import { podeLancarPendentes } from "../../../lib/assistente/pendentes";
 
 export const maxDuration = 180;
 
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
     return Response.json({
       allowed: true, configured: config.configured, usage: await assistantUsageToday(await getDb(), user.id),
       canReadSheet: user.permissions.includes("fuel.view"), canImport: canImportFuel(user) && user.permissions.includes("fuel.register"),
+      canLaunch: podeLancarPendentes(user),
       ...(user.profile === "ADMIN" ? { dbMode: assistantDbMode() } : {}),
     });
   } catch (error) {
@@ -35,10 +37,11 @@ export async function POST(request: Request) {
   const user = auth.user!;
   if (!canUseAssistant(user)) return Response.json({ error: "O Assistente JC não está liberado para o seu perfil." }, { status: 403 });
   try {
-    const body = (await request.json()) as { question?: unknown; history?: unknown };
+    const body = (await request.json()) as { question?: unknown; history?: unknown; voz?: unknown };
     const question = typeof body.question === "string" ? body.question.trim().slice(0, 1500) : "";
     if (!question) return Response.json({ error: "Escreva a pergunta." }, { status: 400 });
-    const result = await runAssistantChat({ db: await getDb(), user, displayed: frentesEmExibicao(user, request) }, question, readHistory(body.history));
+    // voz = a pergunta foi ditada no microfone (só o texto chega aqui; o áudio fica no navegador).
+    const result = await runAssistantChat({ db: await getDb(), user, displayed: frentesEmExibicao(user, request) }, question, readHistory(body.history), { viaVoz: body.voz === true });
     return Response.json(result);
   } catch (error) {
     if (error instanceof AssistantError) return Response.json({ error: error.message }, { status: error.status });

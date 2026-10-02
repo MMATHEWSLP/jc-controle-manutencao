@@ -96,7 +96,7 @@ export async function loadHistoryEntries(d1:D1DatabaseLike,options:{equipmentId?
     };
   });
   const readings:HistoryEntry[]=readingResult.results.map((row)=>{
-    const unit:string=String(row.control_type)==="KM"?"KM":"HOURS";const source=String(row.source??"MANUAL");const method=source==="EXCEL_IMPORT"?"IMPORTAÇÃO EXCEL":source==="QR_CODE"?"QR CODE":source==="MAINTENANCE"?"MANUTENÇÃO":"MANUAL";
+    const unit:string=String(row.control_type)==="KM"?"KM":"HOURS";const source=String(row.source??"MANUAL");const method=source==="EXCEL_IMPORT"?"IMPORTAÇÃO EXCEL":source==="ASSISTENTE"?"ASSISTENTE JC":source==="QR_CODE"?"QR CODE":source==="MAINTENANCE"?"MANUTENÇÃO":"MANUAL";
     return {
       id:`R-${row.id}`,sourceId:Number(row.id),maintenanceId:null,maintenanceTypeId:null,kind:"READING",date:asIso(row.reading_date),dateOnly:isDateOnly(row.reading_date),recordedAt:asIso(row.created_at),equipmentId:Number(row.equipment_id),prefix:String(row.prefix),equipmentCategory:String(row.equipment_category??"Sem categoria cadastrada"),
       front:textOrNull(row.historical_front),

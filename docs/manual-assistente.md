@@ -112,4 +112,14 @@ O que faz: cria usuários, define perfil (ADMIN, GESTOR, usuário), frentes que 
 
 ## Assistente JC
 Caminho: botão "✦ Assistente JC" no canto da tela.
-O que faz: responde perguntas sobre os dados do sistema (só consulta, nunca grava), mostra tabelas com "Baixar Excel" e "Ver no sistema", e lê fotos de fichas de abastecimento ("📷 Enviar ficha") para gerar a planilha de importação. Respeita as frentes e os módulos liberados para cada usuário.
+O que faz: responde perguntas sobre os dados do sistema, mostra tabelas com "Baixar Excel" e "Ver no sistema", lê fotos de fichas de abastecimento ("📷 Enviar ficha") para gerar a planilha de importação e monta a lista de "Lançamentos pendentes". Respeita as frentes e os módulos liberados para cada usuário.
+Voz: botão de microfone ao lado de "Pergunte algo...". No celular, segure o botão enquanto fala; no computador, clique para começar e de novo para parar. O texto aparece no campo para conferir; depois toque em Enviar (na engrenagem ⚙ dá para ligar "Enviar a pergunta ao terminar de falar"). Funciona no Chrome (computador e Android) e no Safari (iPhone); em outros navegadores o botão não aparece (use o microfone do teclado). O áudio não é gravado. O botão 🔊 em cada resposta lê o texto em voz alta (as tabelas não são lidas).
+
+## Lançamentos pendentes (Assistente JC)
+Caminho: Assistente JC → faixa "N pendentes" no topo do painel.
+O que faz: guarda os lançamentos pedidos à assistente até a pessoa conferir e clicar em "Lançar tudo". A assistente nunca grava sozinha.
+Como pedir: fale ou digite, por exemplo, "lança um filtro de combustível TAG 11 na PC-20", "lança uma lima redonda para o Claudilson" ou "lança 2 correntes 42 dentes para o Vanderson e 300 litros de diesel no CM-35 km 140900 motorista Fabrício" (vira dois itens). Quantidade não dita = 1, data não dita = hoje, frente = a selecionada no topo. Se o produto ou o colaborador tiver mais de uma opção, a assistente pergunta qual (também dá para tocar na opção no painel).
+Comandos: "remove o último", "tira a lima do Claudilson", "muda a quantidade do filtro para 2", "limpa a lista", "o que tem na lista?".
+Status de cada item: Pronto; Atenção (lança, mas destaca: estoque vai ficar baixo, consumo fora da média, quantidade acima do habitual); Bloqueado (não lança: estoque ou saldo de combustível insuficiente, cadastro não encontrado, leitura menor que a anterior, dado obrigatório faltando — "Incompleto" quando falta responder uma pergunta).
+Editar ou remover: botões ✎ e ✕ em cada item. A lista fica salva no banco para o usuário (não se perde ao recarregar nem ao trocar de aparelho).
+Como lançar: "Lançar tudo" (ADMIN e GESTOR) → confira o resumo (itens, unidades de produto e litros) → "Confirmar". Cada item é gravado como no formulário (Movimentação: saída e baixa do estoque; Combustível: lançamento, saldo, leitura do equipamento e alertas), com origem "Assistente JC" e o usuário que confirmou. Itens bloqueados não são enviados; os que derem erro ficam na lista com o motivo; os gravados saem da lista.

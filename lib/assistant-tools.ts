@@ -13,6 +13,8 @@ import { loadHistoryEntries } from "./history-data";
 import { recalculateMaintenanceIfStale } from "./maintenance-recalculation";
 import { thirdPartyConsumptionReport } from "./third-parties";
 import { FerramentaError, FERRAMENTAS_GERAIS, HANDLERS_GERAIS, type TabelaResposta } from "./assistente/ferramentas";
+import { FERRAMENTAS_LANCAMENTO, HANDLERS_LANCAMENTO } from "./assistente/ferramentas-lancamento";
+import type { ListaPendentes } from "./assistente/pendentes";
 import { loadWhatsappAlerts } from "./whatsapp";
 
 // ---------------------------------------------------------------------------
@@ -23,7 +25,11 @@ import { loadWhatsappAlerts } from "./whatsapp";
 // ---------------------------------------------------------------------------
 type Db = Awaited<ReturnType<typeof getDb>>;
 // tabelas: resultados de consultar_dados desta resposta (vão para a tela com "Baixar Excel").
-export type AssistantToolContext = { db: Db; user: SessionUser; displayed: number[] | "ALL"; tabelas?: TabelaResposta[] };
+export type AssistantToolContext = {
+  db: Db; user: SessionUser; displayed: number[] | "ALL"; tabelas?: TabelaResposta[];
+  // Lançamentos pendentes: texto do pedido atual (guardado no item), se veio por voz, e a lista após mudanças.
+  pergunta?: string; viaVoz?: boolean; pendentesAlterados?: boolean; pendentes?: ListaPendentes;
+};
 type Input = Record<string, unknown>;
 
 export class AssistantToolError extends Error {}
@@ -333,6 +339,7 @@ const frontProp = { frente: { type: "string", description: "Nome da frente de se
 
 export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   ...FERRAMENTAS_GERAIS,
+  ...FERRAMENTAS_LANCAMENTO,
   {
     name: "buscar_equipamento",
     description: "Procura um equipamento da frota própria pelo código (ex.: CM-35), placa (ex.: QVN6E34) ou modelo/tipo, e veículos de terceiros pela placa. Devolve código cadastrado, placa, modelo, frente, situação, tipo de controle e leitura atual, e como foi encontrado (código, placa, parecido).",
@@ -402,6 +409,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
 
 const HANDLERS: Record<string, (ctx: AssistantToolContext, input: Input) => Promise<unknown> | unknown> = {
   ...HANDLERS_GERAIS,
+  ...HANDLERS_LANCAMENTO,
   buscar_equipamento: buscarEquipamento,
   historico_combustivel: historicoCombustivel,
   consumo_veiculo: consumoVeiculo,

@@ -41,6 +41,7 @@ código (`cloudflare:workers`, D1, R2, `vinext`, `wrangler` foram removidos).
 | `ASSISTANT_DAILY_PHOTOS` | Não | Fotos de ficha por usuário por dia. Padrão `20` |
 | `ASSISTANT_MAX_TOKENS` | Não | Teto de tokens de saída por resposta do chat. Padrão `4000` |
 | `ASSISTANT_TIMEOUT_SECONDS` | Não | Tempo máximo de cada chamada à API. Padrão `60` (leitura de ficha: o dobro) |
+| `ASSISTANT_LAUNCH_PROFILES` | Não | Perfis que podem usar "Lançar tudo" nos lançamentos pendentes do assistente. Padrão `ADMIN,GESTOR` |
 
 ## Como rodar pela primeira vez
 
