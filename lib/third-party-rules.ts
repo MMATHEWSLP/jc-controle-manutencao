@@ -45,6 +45,27 @@ export function parseThirdParty(body: Record<string, unknown>): { value?: ThirdP
   return { value: { name, kind: body.kind, document, contactName: text(body.contactName), phone: text(body.phone), serviceFrontId, notes: text(body.notes) } };
 }
 
+// Funcionários dos terceiros (aba "Funcionários" da empresa): recebem combustível ou peças sem veículo.
+export type ThirdPartyEmployeeInput = { name: string; jobTitle: string | null; cpf: string | null; phone: string | null };
+export function parseThirdPartyEmployee(body: Record<string, unknown>): { value?: ThirdPartyEmployeeInput; error?: string } {
+  const name = (text(body.name) ?? "").toUpperCase();
+  if (name.length < 3) return { error: "Informe o nome do funcionário." };
+  const cpf = documentDigits(body.cpf) || null;
+  if (cpf && cpf.length !== 11) return { error: "O CPF deve ter 11 dígitos (ou deixe em branco)." };
+  return { value: { name, jobTitle: text(body.jobTitle)?.toUpperCase() ?? null, cpf, phone: text(body.phone) } };
+}
+
+// Saída para terceiro: destino Veículo (leitura e média de consumo) ou Funcionário (com finalidade,
+// sem leitura e fora de qualquer média de consumo).
+export const THIRD_PARTY_DESTINATIONS = ["VEICULO", "FUNCIONARIO"] as const;
+export type ThirdPartyDestination = typeof THIRD_PARTY_DESTINATIONS[number];
+export const THIRD_PARTY_DESTINATION_LABELS: Record<ThirdPartyDestination, string> = { VEICULO: "Veículo", FUNCIONARIO: "Funcionário" };
+export const FUEL_PURPOSES = ["MOTOSSERRA", "GERADOR", "GALAO", "MAQUINA_NAO_CADASTRADA", "OUTROS"] as const;
+export type FuelPurpose = typeof FUEL_PURPOSES[number];
+export const FUEL_PURPOSE_LABELS: Record<FuelPurpose, string> = { MOTOSSERRA: "Motosserra", GERADOR: "Gerador", GALAO: "Galão / reserva", MAQUINA_NAO_CADASTRADA: "Máquina não cadastrada", OUTROS: "Outros" };
+export const isFuelPurpose = (value: unknown): value is FuelPurpose => typeof value === "string" && (FUEL_PURPOSES as readonly string[]).includes(value);
+export const purposeText = (purpose: FuelPurpose | null | undefined, note: string | null | undefined) => (purpose ? (purpose === "OUTROS" && note ? `Outros: ${note}` : FUEL_PURPOSE_LABELS[purpose]) : null);
+
 export type VehicleInput = {
   plate: string; plateKey: string; description: string | null; vehicleType: VehicleType; meterType: MeterType; fuelTypeId: number | null;
   tankCapacityLiters: number | null; expectedConsumption: number | null; lastReading: number | null;

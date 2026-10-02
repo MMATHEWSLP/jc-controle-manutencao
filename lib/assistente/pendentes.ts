@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getD1 } from "../../db";
-import { assistantLogs, assistantPendingItems, departments, employees, fuelMovements, productFrontStock, productReferences, products, serviceFronts, thirdParties } from "../../db/schema";
+import { assistantLogs, assistantPendingItems, departments, employees, fuelMovements, productFrontStock, productReferences, products, serviceFronts, thirdParties, thirdPartyEmployees } from "../../db/schema";
 import { loadEquipmentIndex, matchEquipment, AssistantToolError, type AssistantToolContext, type EquipmentIndex } from "../assistant-tools";
 import { assistantConfig } from "../assistant-config";
 import { activeFuelTypes, fuelBalances, fuelLocalDay, fuelVisibleFronts } from "../fuel";
@@ -14,7 +14,7 @@ import { prepareThirdPartyFuel, ThirdPartyError, vehicleFuelings } from "../thir
 import { averageConsumption, computeConsumption, CONSUMPTION_UNITS, isOutlier, type Fueling, type MeterType } from "../third-party-rules";
 import { numeroFalado } from "./numeros";
 import {
-  buscarPessoa, buscarPorNome, buscarProduto, dataBr, descreverItem, destinoTexto, lerData, fecharAvaliacao, numeroBr, perguntaDaDuvida, semAcento, TIPO_ROTULO,
+  buscarPessoa, buscarPorNome, buscarProduto, dataBr, descreverItem, destinoTexto, lerData, lerFinalidade, fecharAvaliacao, numeroBr, perguntaDaDuvida, semAcento, TIPO_ROTULO,
   type Avaliacao, type ItemCombustivel, type ItemPendente, type ItemProduto, type Opcao, type PessoaBusca, type ProdutoBusca, type Ref, type TipoItem,
 } from "./pendentes-regras";
 
@@ -48,12 +48,13 @@ export type CamposPedido = Partial<{
   combustivel: string; combustivel_id: number; estoque: string; litros: number | string; leitura: number | string; tanque_cheio: boolean;
   motorista: string; motorista_id: number; aceitar_motorista_digitado: boolean;
   veiculo_terceiro_id: number;
+  funcionario_terceiro: string; funcionario_terceiro_id: number; finalidade: string; finalidade_texto: string;
   limpar: string[];
 }>;
 
-const CAMPOS_TEXTO = ["tipo", "frente", "data", "observacao", "produto", "produto_tag", "equipamento", "colaborador", "departamento", "terceiro", "veiculo_terceiro", "recebido_por", "combustivel", "estoque", "motorista"] as const;
-const CAMPOS_ID = ["frente_id", "produto_id", "equipamento_id", "colaborador_id", "departamento_id", "terceiro_id", "combustivel_id", "motorista_id", "veiculo_terceiro_id"] as const;
-const CAMPOS_LIMPAVEIS = ["equipamento", "colaborador", "departamento", "terceiro", "veiculo_terceiro", "recebido_por", "leitura", "motorista", "observacao"];
+const CAMPOS_TEXTO = ["tipo", "frente", "data", "observacao", "produto", "produto_tag", "equipamento", "colaborador", "departamento", "terceiro", "veiculo_terceiro", "recebido_por", "combustivel", "estoque", "motorista", "funcionario_terceiro", "finalidade", "finalidade_texto"] as const;
+const CAMPOS_ID = ["frente_id", "produto_id", "equipamento_id", "colaborador_id", "departamento_id", "terceiro_id", "combustivel_id", "motorista_id", "veiculo_terceiro_id", "funcionario_terceiro_id"] as const;
+const CAMPOS_LIMPAVEIS = ["equipamento", "colaborador", "departamento", "terceiro", "veiculo_terceiro", "recebido_por", "leitura", "motorista", "observacao", "funcionario_terceiro"];
 
 // Normaliza o que veio da ferramenta/painel (tipos errados viram "não informado").
 export function lerCampos(entrada: unknown): CamposPedido {
@@ -79,6 +80,7 @@ export function lerCampos(entrada: unknown): CamposPedido {
 // Cadastros (carregados uma vez por pedido)
 // ---------------------------------------------------------------------------
 type Terceiro = { id: number; nome: string; tipo: string };
+type FuncionarioTerceiro = { id: number; nome: string; terceiroId: number; empresa: string; tipoEmpresa: string };
 type Cadastros = ReturnType<typeof cadastros>;
 
 function cadastros(ctx: Ctx) {
@@ -105,6 +107,9 @@ function cadastros(ctx: Ctx) {
     }),
     departamentos: () => uma("departamentos", async () => (await ctx.db.select({ id: departments.id, nome: departments.name }).from(departments).where(eq(departments.active, true)).orderBy(asc(departments.name)))),
     terceiros: () => uma("terceiros", async (): Promise<Terceiro[]> => (await ctx.db.select({ id: thirdParties.id, nome: thirdParties.name, tipo: thirdParties.kind }).from(thirdParties).where(eq(thirdParties.active, true)).orderBy(asc(thirdParties.name)))),
+    funcionariosTerceiros: () => uma("funcionariosTerceiros", async (): Promise<FuncionarioTerceiro[]> => (await ctx.db.select({ id: thirdPartyEmployees.id, nome: thirdPartyEmployees.name, terceiroId: thirdPartyEmployees.thirdPartyId, empresa: thirdParties.name, tipoEmpresa: thirdParties.kind })
+      .from(thirdPartyEmployees).innerJoin(thirdParties, eq(thirdParties.id, thirdPartyEmployees.thirdPartyId))
+      .where(and(eq(thirdPartyEmployees.active, true), eq(thirdParties.active, true))).orderBy(asc(thirdPartyEmployees.name)))),
     combustiveis: () => uma("combustiveis", async () => (await activeFuelTypes(ctx.db)).map((row) => ({ id: row.id, nome: row.name }))),
     equipamentos: () => uma("equipamentos", () => loadEquipmentIndex(ctx)),
   };
@@ -185,14 +190,16 @@ export async function montarItem(ctx: Ctx, cad: Cadastros, atual: ItemPendente |
       if (campo === "equipamento") item.equipamento = null;
       if (campo === "colaborador") item.colaborador = null;
       if (campo === "departamento") item.departamento = null;
-      if (campo === "terceiro") { item.terceiro = null; item.veiculoTerceiro = null; item.recebidoPor = null; }
+      if (campo === "terceiro") { item.terceiro = null; item.veiculoTerceiro = null; item.funcionarioTerceiro = null; item.recebidoPor = null; }
       if (campo === "veiculo_terceiro") item.veiculoTerceiro = null;
+      if (campo === "funcionario_terceiro") item.funcionarioTerceiro = null;
       if (campo === "recebido_por") item.recebidoPor = null;
     } else {
       if (campo === "leitura") item.leitura = null;
       if (campo === "motorista") item.responsavel = null;
+      if (campo === "funcionario_terceiro") { item.funcionarioTerceiro = null; item.finalidade = null; item.finalidadeTexto = null; }
     }
-    resolvido(campo === "veiculo_terceiro" ? "veiculoTerceiro" : campo === "motorista" ? "responsavel" : campo);
+    resolvido(campo === "veiculo_terceiro" ? "veiculoTerceiro" : campo === "motorista" ? "responsavel" : campo === "funcionario_terceiro" ? "funcionarioTerceiro" : campo);
   }
 
   const equipamentoIndex = async () => cad.equipamentos();
@@ -222,6 +229,15 @@ export async function montarItem(ctx: Ctx, cad: Cadastros, atual: ItemPendente |
   }
   return item;
 }
+
+// Funcionário do terceiro (cadastro da empresa): por id ou nome, só da empresa já escolhida (se houver).
+async function acharFuncionarioTerceiro(cad: Cadastros, campos: CamposPedido, terceiroId: number | null) {
+  const lista = (await cad.funcionariosTerceiros()).filter((row) => !terceiroId || row.terceiroId === terceiroId);
+  if (campos.funcionario_terceiro_id) return { escolhido: lista.find((row) => row.id === campos.funcionario_terceiro_id) ?? null, opcoes: [] as FuncionarioTerceiro[], motivo: "funcionário do terceiro não encontrado" };
+  const achado = buscarPorNome(lista, campos.funcionario_terceiro!);
+  return { escolhido: achado.escolhido ? lista.find((row) => row.id === achado.escolhido!.id) ?? null : null, opcoes: achado.opcoes.map((opcao) => lista.find((row) => row.id === opcao.id)!).filter(Boolean), motivo: achado.motivo };
+}
+const opcaoFuncionarioTerceiro = (row: FuncionarioTerceiro): Opcao => ({ id: row.id, rotulo: `${row.nome} (${row.empresa})` });
 
 type Ajudantes = {
   duvida: (campo: string, pedido: string, motivo: string, opcoes?: Opcao[]) => void;
@@ -301,6 +317,17 @@ async function montarProduto(ctx: Ctx, cad: Cadastros, item: ItemProduto, campos
     if (veiculo) { item.veiculoTerceiro = { id: veiculo.id, placa: veiculo.plate }; item.terceiro = { id: veiculo.thirdPartyId, nome: veiculo.company }; resolvido("veiculoTerceiro"); resolvido("equipamento"); resolvido("terceiro"); }
     else duvida("veiculoTerceiro", String(campos.veiculo_terceiro_id), "veículo de terceiro não encontrado");
   }
+  if (campos.funcionario_terceiro_id || campos.funcionario_terceiro) {
+    const achado = await acharFuncionarioTerceiro(cad, campos, item.terceiro?.id ?? null);
+    if (achado.escolhido) {
+      const worker = achado.escolhido;
+      item.funcionarioTerceiro = { id: worker.id, nome: worker.nome }; item.terceiro = { id: worker.terceiroId, nome: worker.empresa }; item.veiculoTerceiro = null;
+      resolvido("funcionarioTerceiro"); resolvido("terceiro"); resolvido("veiculoTerceiro");
+      if (!item.recebidoPor && campos.recebido_por === undefined) item.recebidoPor = worker.nome;
+    } else duvida("funcionarioTerceiro", campos.funcionario_terceiro ?? String(campos.funcionario_terceiro_id), achado.motivo ?? "funcionário do terceiro não encontrado", achado.opcoes.slice(0, 5).map(opcaoFuncionarioTerceiro));
+  }
+  if (item.veiculoTerceiro) item.funcionarioTerceiro = null;
+  if (item.funcionarioTerceiro && item.terceiro && (await cad.funcionariosTerceiros()).find((row) => row.id === item.funcionarioTerceiro!.id)?.terceiroId !== item.terceiro.id) item.funcionarioTerceiro = null;
   if (campos.recebido_por !== undefined) item.recebidoPor = campos.recebido_por || null;
   item.destino = item.terceiro ? "TERCEIRO" : item.equipamento ? "EQUIPAMENTO" : item.colaborador ? "COLABORADOR" : item.departamento ? "DEPARTAMENTO" : null;
   if (item.destino === "TERCEIRO") { item.equipamento = null; item.colaborador = null; item.departamento = null; }
@@ -343,13 +370,13 @@ async function montarCombustivel(ctx: Ctx, cad: Cadastros, item: ItemCombustivel
   const index = campos.equipamento_id || campos.equipamento || campos.veiculo_terceiro || campos.veiculo_terceiro_id || campos.terceiro || campos.terceiro_id ? await ajuda.equipamentoIndex() : null;
   const usarFrota = (row: EquipmentIndex["fleet"][number]) => {
     item.alvo = "FROTA"; item.equipamento = { id: row.id, prefixo: row.prefix, controle: row.controlType as "HOURS" | "KM" | "HOURS_KM" };
-    item.terceiro = null; item.veiculo = null; resolvido("equipamento");
+    item.terceiro = null; item.veiculo = null; item.funcionarioTerceiro = null; item.finalidade = null; item.finalidadeTexto = null; resolvido("equipamento");
   };
   const usarVeiculo = async (row: EquipmentIndex["vehicles"][number]) => {
     const terceiro = (await cad.terceiros()).find((party) => party.id === row.thirdPartyId);
     item.alvo = terceiro?.tipo === "PESSOA_FISICA" ? "TERCEIRO" : "PRESTADOR";
     item.terceiro = { id: row.thirdPartyId, nome: row.company }; item.veiculo = { id: row.id, placa: row.plate, medidor: row.meterType as "KM" | "HORIMETRO" };
-    item.equipamento = null; resolvido("equipamento"); resolvido("terceiro");
+    item.equipamento = null; item.funcionarioTerceiro = null; resolvido("equipamento"); resolvido("terceiro");
   };
   if (index && campos.veiculo_terceiro_id) {
     const row = index.vehicles.find((vehicle) => vehicle.id === campos.veiculo_terceiro_id);
@@ -373,17 +400,40 @@ async function montarCombustivel(ctx: Ctx, cad: Cadastros, item: ItemCombustivel
     const achado = campos.terceiro_id ? { escolhido: terceiros.find((row) => row.id === campos.terceiro_id) ?? null, opcoes: [] as Terceiro[], motivo: "terceiro não encontrado" } : buscarPorNome(terceiros, campos.terceiro!);
     if (achado.escolhido) {
       const party = achado.escolhido;
-      if (item.veiculo && item.terceiro?.id !== party.id) item.veiculo = null;
+      if (item.terceiro?.id !== party.id) { item.veiculo = null; item.funcionarioTerceiro = null; }
       item.terceiro = { id: party.id, nome: party.nome }; item.alvo = party.tipo === "PESSOA_FISICA" ? "TERCEIRO" : "PRESTADOR"; item.equipamento = null; resolvido("terceiro");
-      // Terceiro com um veículo só: já escolhe.
+      // Terceiro com um veículo só: já escolhe (a não ser que o destino seja um funcionário da empresa).
       const veiculos = (index ?? await ajuda.equipamentoIndex()).vehicles.filter((row) => row.thirdPartyId === party.id);
-      if (!item.veiculo && veiculos.length === 1) { item.veiculo = { id: veiculos[0].id, placa: veiculos[0].plate, medidor: veiculos[0].meterType as "KM" | "HORIMETRO" }; resolvido("equipamento"); }
+      const paraFuncionario = Boolean(item.funcionarioTerceiro || campos.funcionario_terceiro || campos.funcionario_terceiro_id || campos.finalidade);
+      if (paraFuncionario) { /* veículo não se aplica */ }
+      else if (!item.veiculo && veiculos.length === 1) { item.veiculo = { id: veiculos[0].id, placa: veiculos[0].plate, medidor: veiculos[0].meterType as "KM" | "HORIMETRO" }; resolvido("equipamento"); }
       else if (!item.veiculo && veiculos.length > 1 && party.tipo !== "PESSOA_FISICA") duvida("equipamento", "", `qual veículo de ${party.nome}`, veiculos.slice(0, 5).map((row) => ({ id: -row.id, rotulo: `${row.plate}${row.description ? ` — ${row.description}` : ""}` })));
     } else duvida("terceiro", campos.terceiro ?? String(campos.terceiro_id), achado.motivo ?? "não encontrado", achado.opcoes.map((row) => ({ id: row.id, rotulo: row.nome })));
   }
 
+  // Destino Funcionário no terceiro: funcionário da empresa + finalidade, sem veículo e sem leitura.
+  if (campos.funcionario_terceiro_id || campos.funcionario_terceiro) {
+    const achado = await acharFuncionarioTerceiro(cad, campos, item.terceiro?.id ?? null);
+    if (achado.escolhido) {
+      const worker = achado.escolhido;
+      item.funcionarioTerceiro = { id: worker.id, nome: worker.nome }; item.terceiro = { id: worker.terceiroId, nome: worker.empresa };
+      item.alvo = worker.tipoEmpresa === "PESSOA_FISICA" ? "TERCEIRO" : "PRESTADOR"; item.equipamento = null; item.veiculo = null; item.leitura = null;
+      resolvido("funcionarioTerceiro"); resolvido("terceiro"); resolvido("equipamento"); resolvido("leitura");
+    } else duvida("funcionarioTerceiro", campos.funcionario_terceiro ?? String(campos.funcionario_terceiro_id), achado.motivo ?? "funcionário do terceiro não encontrado", achado.opcoes.slice(0, 5).map(opcaoFuncionarioTerceiro));
+  }
+  if (campos.finalidade) {
+    const lida = lerFinalidade(campos.finalidade);
+    if (lida) { item.finalidade = lida.finalidade; item.finalidadeTexto = lida.texto ?? (lida.finalidade === "OUTROS" ? item.finalidadeTexto ?? null : null); resolvido("finalidade"); }
+  }
+  if (campos.finalidade_texto) { item.finalidadeTexto = campos.finalidade_texto; item.finalidade ??= "OUTROS"; }
+  if (item.funcionarioTerceiro) { item.veiculo = null; item.leitura = null; delete item.duvidas.equipamento; delete item.duvidas.leitura; }
+
   // Motorista/responsável (Funcionários). Fora do cadastro só com confirmação (como o "digitar nome" do formulário).
-  if (campos.motorista_id) {
+  // No terceiro, o nome de um funcionário da empresa também vale (é quem recebeu).
+  const daEmpresa = campos.motorista && item.terceiro && item.alvo !== "FROTA"
+    ? buscarPorNome((await cad.funcionariosTerceiros()).filter((row) => row.terceiroId === item.terceiro!.id), campos.motorista).escolhido : null;
+  if (daEmpresa) { item.responsavel = { id: null, nome: daEmpresa.nome }; resolvido("responsavel"); }
+  else if (campos.motorista_id) {
     const pessoa = (await cad.pessoas()).find((row) => row.id === campos.motorista_id);
     if (pessoa) { item.responsavel = { id: pessoa.id, nome: pessoa.nome }; resolvido("responsavel"); } else duvida("responsavel", String(campos.motorista_id), "funcionário não encontrado");
   } else if (campos.motorista) {
@@ -394,6 +444,8 @@ async function montarCombustivel(ctx: Ctx, cad: Cadastros, item: ItemCombustivel
   } else if (campos.aceitar_motorista_digitado && item.duvidas.responsavel?.pedido) {
     item.responsavel = { id: null, nome: item.duvidas.responsavel.pedido }; resolvido("responsavel");
   }
+  // Destino Funcionário sem responsável dito: quem recebeu é o próprio funcionário (como no formulário).
+  if (item.funcionarioTerceiro && !item.responsavel && !item.duvidas.responsavel) item.responsavel = { id: null, nome: item.funcionarioTerceiro.nome };
 }
 
 // Opção escolhida no painel/conversa: o id da opção vira o campo *_id certo (veículo de terceiro = id negativo).
@@ -407,6 +459,7 @@ export function campoDaOpcao(item: ItemPendente, campo: string, id: number): Cam
   if (campo === "frente") return { frente_id: id };
   if (campo === "equipamento") return id > 0 ? { equipamento_id: id } : { veiculo_terceiro_id: -id };
   if (campo === "veiculoTerceiro") return { veiculo_terceiro_id: Math.abs(id) };
+  if (campo === "funcionarioTerceiro") return { funcionario_terceiro_id: id };
   return {};
 }
 
@@ -450,7 +503,7 @@ export async function avaliarItens(ctx: Ctx, cad: Cadastros, linhas: LinhaPenden
     if (item.alertas.__inativo) { bloqueios.push(item.alertas.__inativo); delete item.alertas.__inativo; }
     if (!item.produto && !item.duvidas.produto) perguntas.push("Qual produto?");
     if (!(item.quantidade !== null && item.quantidade > 0) && !item.duvidas.quantidade) perguntas.push("Qual a quantidade?");
-    if (!item.destino && !Object.keys(item.duvidas).some((campo) => ["equipamento", "colaborador", "departamento", "terceiro"].includes(campo))) perguntas.push("Para quem/onde vai: equipamento, colaborador, departamento ou terceiro?");
+    if (!item.destino && !Object.keys(item.duvidas).some((campo) => ["equipamento", "colaborador", "departamento", "terceiro", "funcionarioTerceiro"].includes(campo))) perguntas.push("Para quem/onde vai: equipamento, colaborador, departamento ou terceiro?");
     if (item.destino === "TERCEIRO" && !item.recebidoPor) perguntas.push(`Quem recebeu os produtos em ${item.terceiro?.nome ?? "terceiro"}?`);
     if (!ctx.user.permissions.includes("stock.exits_create")) bloqueios.push("Seu usuário não tem permissão para lançar saída de produtos (Movimentação).");
     if (item.data > hoje) bloqueios.push("A data da saída não pode ser futura.");
@@ -494,7 +547,7 @@ export async function avaliarItens(ctx: Ctx, cad: Cadastros, linhas: LinhaPenden
       if (!item.combustivel && !item.duvidas.combustivel) perguntas.push("Qual combustível?");
       if (!(item.litros !== null && item.litros > 0) && !item.duvidas.litros) perguntas.push("Quantos litros?");
       if (!item.alvo && !item.duvidas.equipamento && !item.duvidas.terceiro) perguntas.push("Qual veículo/equipamento (código da frota ou placa do terceiro)?");
-      if (!item.responsavel && !item.duvidas.responsavel) perguntas.push("Quem é o motorista/responsável?");
+      if (!item.responsavel && !item.duvidas.responsavel) perguntas.push(item.funcionarioTerceiro ? `Quem é o responsável (pode ser ${item.funcionarioTerceiro.nome})?` : "Quem é o motorista/responsável?");
       if (!ctx.user.permissions.includes("fuel.register")) bloqueios.push("Seu usuário não tem permissão para lançar combustível.");
       const historico = item.equipamento ? historicoFrota.get(item.equipamento.id) ?? [] : item.veiculo ? (historicoVeiculo.get(item.veiculo.id) ?? []) as Fueling[] : [];
       if (item.alvo === "FROTA" && item.equipamento) {
@@ -522,7 +575,21 @@ export async function avaliarItens(ctx: Ctx, cad: Cadastros, linhas: LinhaPenden
       } else if (item.terceiro && item.litros) {
         const terceiro = terceiros.find((row) => row.id === item.terceiro!.id);
         if (!terceiro) bloqueios.push(`${item.terceiro.nome} está inativo ou não existe mais no cadastro de terceiros.`);
-        else if (!item.veiculo && terceiro.tipo !== "PESSOA_FISICA") { if (!item.duvidas.equipamento) perguntas.push(`Qual veículo de ${terceiro.nome} (placa)?`); }
+        else if (item.funcionarioTerceiro) {
+          // Destino Funcionário: confere funcionário e finalidade como o formulário (sem leitura e fora da média).
+          if (!item.finalidade) { if (!item.duvidas.finalidade) perguntas.push("Para que é o combustível: motosserra, gerador, galão/reserva, máquina não cadastrada ou outros?"); }
+          else if (item.finalidade === "OUTROS" && !item.finalidadeTexto) perguntas.push("Qual a finalidade (Outros)?");
+          else {
+            try {
+              await prepareThirdPartyFuel(ctx.db, ctx.user, {
+                mode: item.alvo === "PRESTADOR" ? "PRESTADOR" : "GERAL", thirdPartyId: terceiro.id, vehicleId: null, reading: null, fullTank: true, quantity: item.litros, movementDate: item.data, notes: item.observacao,
+                readingException: false, confirmTank: true, confirmOutlier: true, editingId: null, current: null,
+                destination: "FUNCIONARIO", employeeId: item.funcionarioTerceiro.id, purpose: item.finalidade, purposeNote: item.finalidadeTexto ?? null,
+              });
+            } catch (error) { if (!(error instanceof ThirdPartyError)) throw error; bloqueios.push(error.message); }
+          }
+        }
+        else if (!item.veiculo && terceiro.tipo !== "PESSOA_FISICA") { if (!item.duvidas.equipamento) perguntas.push(`Qual veículo de ${terceiro.nome} (placa)? Ou é para um funcionário da empresa (motosserra, gerador, galão)?`); }
         else if (item.veiculo && item.leitura === null) { if (!item.duvidas.leitura) perguntas.push(`Qual a leitura ${item.veiculo.medidor === "KM" ? "do hodômetro (km)" : "do horímetro (h)"} do ${item.veiculo.placa}?`); }
         else {
           // Mesmas conferências do formulário (leitura menor que a última, tanque, consumo): read-only.
@@ -701,7 +768,8 @@ async function gravarProduto(ctx: Ctx, item: ItemProduto) {
   const criado = await createStockExit(ctx.db, ctx.user, {
     serviceFrontId: item.frente!.id, exitDate: item.data, destinationType: DESTINO_SAIDA[item.destino!],
     employeeId: terceiro ? null : item.colaborador?.id ?? null, equipmentId: terceiro ? null : item.equipamento?.id ?? null, departmentId: terceiro ? null : item.departamento?.id ?? null,
-    thirdPartyId: terceiro ? item.terceiro?.id ?? null : null, thirdPartyVehicleId: terceiro ? item.veiculoTerceiro?.id ?? null : null, receivedBy: terceiro ? item.recebidoPor : null,
+    thirdPartyId: terceiro ? item.terceiro?.id ?? null : null, thirdPartyVehicleId: terceiro && !item.funcionarioTerceiro ? item.veiculoTerceiro?.id ?? null : null,
+    thirdPartyEmployeeId: terceiro ? item.funcionarioTerceiro?.id ?? null : null, receivedBy: terceiro ? item.recebidoPor : null,
     notes: [item.observacao, "Lançado pelo Assistente JC"].filter(Boolean).join(" — "),
     items: [{ productId: item.produto!.id, quantity: item.quantidade! }], allowNegative: false, createdVia: "ASSISTENTE",
   });
@@ -718,7 +786,11 @@ async function gravarCombustivel(ctx: Ctx, item: ItemCombustivel, requestId: str
     ...(frota
       ? { equipmentId: item.equipamento!.id, meterReading: item.leitura }
       // Avisos de tanque e consumo já foram mostrados no painel antes do "Confirmar".
-      : { thirdPartyId: item.terceiro!.id, thirdPartyVehicleId: item.veiculo?.id ?? null, thirdPartyReading: item.leitura, fullTank: item.tanqueCheio, confirmTank: true, confirmOutlier: true, readingException: false }),
+      : item.funcionarioTerceiro
+        // Destino Funcionário: sem veículo/leitura, fora da média de consumo.
+        ? { thirdPartyId: item.terceiro!.id, thirdPartyDestination: "FUNCIONARIO", thirdPartyEmployeeId: item.funcionarioTerceiro.id, purpose: item.finalidade, purposeNote: item.finalidadeTexto ?? "",
+          thirdPartyVehicleId: null, thirdPartyReading: "", fullTank: true, confirmTank: true, confirmOutlier: true, readingException: false }
+        : { thirdPartyId: item.terceiro!.id, thirdPartyVehicleId: item.veiculo?.id ?? null, thirdPartyReading: item.leitura, fullTank: item.tanqueCheio, confirmTank: true, confirmOutlier: true, readingException: false }),
   }, { displayedFronts: ctx.displayed, createdVia: "ASSISTENTE" });
   // Frota: leitura maior que a atual atualiza o equipamento (ciclos e alertas) — mesma regra da importação de fichas.
   if (frota && item.leitura !== null && !result.duplicate) {

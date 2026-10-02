@@ -273,6 +273,15 @@ html[data-theme="dark"] .fuel-import-note{background:#2a2419;border-color:#5a4a2
 .third-party-filters>.primary{margin-left:auto}
 .third-party-table tr.selected td{background:#eef6fb}
 .third-party-vehicles-panel{margin-top:14px}
+.third-party-tabs{display:flex;gap:6px;margin-top:14px}
+.third-party-tabs button{padding:8px 14px;border:1px solid var(--line,#d6dee5);border-radius:8px 8px 0 0;background:transparent;font-weight:650;cursor:pointer}
+.third-party-tabs button.active{background:var(--panel,#fff);border-bottom-color:transparent;color:var(--accent,#0b6aa2)}
+.third-party-tabs+.third-party-vehicles-panel{margin-top:0}
+.third-party-summary-panel{margin-top:14px}
+.third-party-summary-panel tfoot td{font-weight:700;border-top:2px solid var(--line,#d6dee5)}
+.fuel-destination-switch{display:flex;gap:6px;flex-wrap:wrap}
+.fuel-destination-switch button{padding:8px 14px;border:1px solid var(--line,#d6dee5);border-radius:8px;background:transparent;font-weight:650;cursor:pointer}
+.fuel-destination-switch button.active{background:var(--accent,#0b6aa2);border-color:var(--accent,#0b6aa2);color:#fff}
 .third-party-vehicles-panel .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .fuel-third-party-field{display:grid;gap:6px;align-content:start}
 .fuel-field-label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:650;color:var(--ink,#1c2d39)}

@@ -116,6 +116,8 @@ export async function GET(request: Request) {
       { header: "Saída para terceiros — destino/descrição", key: "thirdParty", width: 30 },
       { header: "Prestador — empresa", key: "providerCompany", width: 24 },
       { header: "Prestador — equipamento", key: "providerEquipment", width: 26 },
+      { header: "Destino (terceiro)", key: "thirdPartyDestination", width: 28 },
+      { header: "Finalidade", key: "purpose", width: 22 },
       { header: "Hodômetro/Horímetro", key: "meter", width: 16 },
       { header: "Responsável", key: "responsible", width: 22 },
       { header: "Observações", key: "notes", width: 30 },
@@ -132,6 +134,7 @@ export async function GET(request: Request) {
         destination: row.movementType === "TRANSFERENCIA" ? `${row.destinationFrontName ?? row.frontName} — ${row.destinationLocationLabel ?? "Frente"}` : "",
         equipment: row.equipmentPrefix ?? (row.vehiclePending ? `A identificar (${row.importedVehicle ?? "sem veículo"})` : ""), model: row.equipmentModel ?? "", thirdParty: row.thirdParty && row.thirdPartyKind !== "PRESTADOR" ? row.thirdPartyDescription ?? "" : "",
         providerCompany: row.providerCompany ?? "", providerEquipment: row.providerEquipment ?? "", meter: meter(row),
+        thirdPartyDestination: row.destinationLabel ?? "", purpose: row.purposeLabel ?? "",
         responsible: row.responsible ?? "", notes: row.notes ?? "", createdBy: row.createdByName ?? "",
       });
     }

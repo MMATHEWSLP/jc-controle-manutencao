@@ -72,19 +72,20 @@ Como pedir: "＋ Novo pedido" → frente, departamento, urgência, itens → Env
 ## Movimentação (saída de produtos)
 Caminho: PRODUTOS → Movimentação.
 O que faz: saída de produtos do estoque (SAI-000123) para um equipamento, funcionário, departamento ou terceiro/prestador; aba Histórico com filtros e exportação em Excel. O histórico também mostra as peças de O.S. fechadas e o histórico importado do sistema antigo.
-Como lançar: na tela Movimentação preencha frente, data, destino (veículo, funcionário, departamento ou terceiro) e os produtos com quantidades → "LANÇAR SAÍDA". Para desfazer: "Estornar" na saída (precisa da permissão).
+Como lançar: na tela Movimentação preencha frente, data, destino (veículo, funcionário, departamento ou terceiro) e os produtos com quantidades → "LANÇAR SAÍDA". Para terceiro, depois da empresa escolha o destino "Veículo" (placa, opcional) ou "Funcionário" (funcionário da empresa; "＋ Novo" cadastra na hora, só ADMIN/GESTOR); "Recebido por" pode ser escolhido entre os funcionários da empresa ou digitado. Para desfazer: "Estornar" na saída (precisa da permissão).
 Departamentos: a lista é única (Movimentação e Compras) e é mantida por quem tem "departments.manage".
 
 ## Terceiros
 Caminho: PRODUTOS → Terceiros (também na aba Terceiros do Combustível).
-O que faz: cadastro de prestadores, terceirizadas e pessoas físicas e dos veículos deles (placa, medidor, capacidade, consumo esperado). Usado nas saídas de combustível e de produtos.
-Como cadastrar: "＋ Novo terceiro" → nome, tipo, CNPJ, contato → adicionar veículos.
+O que faz: cadastro de prestadores, terceirizadas e pessoas físicas, dos veículos deles (placa, medidor, capacidade, consumo esperado) e dos funcionários deles (nome, função, CPF e telefone opcionais). Usado nas saídas de combustível e de produtos.
+Como cadastrar: "＋ Novo terceiro" → nome, tipo, CNPJ, contato → "Abrir" → abas "Veículos" e "Funcionários" para adicionar.
+Resumo por empresa: no fim da tela Terceiros, por período: combustível nos veículos x para funcionários (litros e R$ pelo custo médio), peças nos veículos x para funcionários e o total; "Exportar Excel".
 
 ## Combustível
 Caminho: COMBUSTÍVEL. Abas: Novo Registro, Histórico, Terceiros, Consumo de Terceiros, Tanque (régua).
 O que faz: entradas, saídas e transferências de diesel/gasolina por frente, com dois estoques por frente (Frente e Porto). O saldo é sempre a soma dos lançamentos.
 Como lançar uma entrada: Novo Registro → tipo Entrada → frente, data, combustível, origem (Frente ou Porto), litros e valor por litro → Salvar.
-Como lançar uma saída: Novo Registro → tipo Saída → frente, data, combustível, estoque de origem → para a frota JC escolha o equipamento e a leitura; para terceiro/prestador escolha a empresa e o veículo → litros, tanque cheio, responsável → Salvar.
+Como lançar uma saída: Novo Registro → tipo Saída → frente, data, combustível, estoque de origem → para a frota JC escolha o equipamento e a leitura; para terceiro/prestador escolha a empresa e o destino: "Veículo" (placa, leitura e tanque cheio) ou "Funcionário" (funcionário da empresa + finalidade: motosserra, gerador, galão/reserva, máquina não cadastrada ou outros; sem leitura e fora da média de consumo) → litros, responsável (funcionário da empresa ou digitado) → Salvar. O Histórico tem as colunas Destino e Finalidade e os filtros por funcionário do terceiro e destino.
 Como transferir diesel entre frentes: Novo Registro → tipo Transferência → Frente de Serviço = frente de onde o diesel SAI, Origem = estoque de saída (Frente ou Porto) → em Filial Destino escolha a frente que RECEBE e em Destino o estoque (Frente ou Porto) → data, combustível, litros e responsável → Salvar. Sai do saldo da origem e entra no saldo do destino num lançamento só. Para mover entre Frente e Porto da mesma frente, deixe a mesma filial e mude só o Destino.
 Como corrigir ou excluir: Histórico → editar/excluir o lançamento (precisa de "fuel.manage").
 Importar planilha / ficha: botão "⇧ Importar planilha" no topo do Combustível (modelo para baixar), ou pelo Assistente JC → "📷 Enviar ficha".
@@ -108,7 +109,7 @@ O que faz: lista dados que precisam de correção: saídas de combustível sem v
 
 ## Usuários
 Caminho: USUÁRIOS (quem tem permissão).
-O que faz: cria usuários, define perfil (ADMIN, GESTOR, usuário), frentes que enxerga, permissões por módulo e cargo de tarefas; ativa/desativa e redefine senha. Funcionário de campo entra só com nome + código no Controle Diário.
+O que faz: cria usuários, define perfil (ADMIN, GESTOR, usuário), frentes que enxerga, permissões por módulo e cargo de tarefas; ativa/desativa e redefine senha. Motoristas e operadores entram por "Sou operador" com nome (ou matrícula) + PIN de 4 dígitos e só veem o Controle Diário da sua frente. O acesso é criado sozinho para os funcionários de funções marcadas "Opera equipamento" (FUNCIONÁRIOS → Funções); na demissão é desativado. Aba Usuários → Operadores: situação (ativo/bloqueado/desativado), último acesso, "Redefinir PIN" e "Criar acessos pendentes" (gera o PDF com os PINs, que só aparecem nessa hora). 5 PINs errados bloqueiam por 15 minutos.
 
 ## Assistente JC
 Caminho: botão "✦ Assistente JC" no canto da tela.

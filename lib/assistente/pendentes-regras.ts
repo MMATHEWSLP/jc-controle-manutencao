@@ -37,8 +37,28 @@ export type ItemProduto = Base & {
   departamento: (Ref & { inferido?: boolean }) | null;
   terceiro: Ref | null;
   veiculoTerceiro: { id: number; placa: string } | null;
+  // Destino Funcionário no terceiro (itens antigos da lista não têm o campo).
+  funcionarioTerceiro?: Ref | null;
   recebidoPor: string | null;
 };
+
+export type Finalidade = "MOTOSSERRA" | "GERADOR" | "GALAO" | "MAQUINA_NAO_CADASTRADA" | "OUTROS";
+export const FINALIDADE_ROTULO: Record<Finalidade, string> = { MOTOSSERRA: "Motosserra", GERADOR: "Gerador", GALAO: "Galão / reserva", MAQUINA_NAO_CADASTRADA: "Máquina não cadastrada", OUTROS: "Outros" };
+
+// Finalidade como a pessoa falou ("pra motosserra", "galão", "roçadeira") → código + texto (Outros).
+export function lerFinalidade(texto: string): { finalidade: Finalidade; texto: string | null } | null {
+  const limpo = semAcento(texto).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!limpo) return null;
+  const codigo = limpo.toUpperCase().replace(/ /g, "_");
+  if ((Object.keys(FINALIDADE_ROTULO) as Finalidade[]).includes(codigo as Finalidade) && codigo !== "OUTROS") return { finalidade: codigo as Finalidade, texto: null };
+  if (/moto ?s?serra/.test(limpo)) return { finalidade: "MOTOSSERRA", texto: null };
+  if (/gerador/.test(limpo)) return { finalidade: "GERADOR", texto: null };
+  if (/galao|galoes|reserva|bombona|tambor/.test(limpo)) return { finalidade: "GALAO", texto: null };
+  if (/maquina/.test(limpo)) return { finalidade: "MAQUINA_NAO_CADASTRADA", texto: null };
+  const outro = limpo.replace(/^(outros?|outra)( finalidade)?\s*/, "").trim();
+  return { finalidade: "OUTROS", texto: outro ? texto.trim().replace(/^(outros?|outra)( finalidade)?[:\s-]*/i, "").slice(0, 200) || null : null };
+}
+export const finalidadeTexto = (finalidade: Finalidade | null | undefined, texto: string | null | undefined) => (finalidade ? (finalidade === "OUTROS" && texto ? `Outros: ${texto}` : FINALIDADE_ROTULO[finalidade]) : null);
 
 export type AlvoCombustivel = "FROTA" | "TERCEIRO" | "PRESTADOR";
 export type ItemCombustivel = Base & {
@@ -50,6 +70,10 @@ export type ItemCombustivel = Base & {
   equipamento: { id: number; prefixo: string; controle: "HOURS" | "KM" | "HOURS_KM" } | null;
   terceiro: Ref | null;
   veiculo: { id: number; placa: string; medidor: "KM" | "HORIMETRO" } | null;
+  // Destino Funcionário no terceiro: sem veículo/leitura, com a finalidade (motosserra, gerador...).
+  funcionarioTerceiro?: Ref | null;
+  finalidade?: Finalidade | null;
+  finalidadeTexto?: string | null;
   leitura: number | null;
   tanqueCheio: boolean;
   // id null = nome digitado (fora do cadastro), aceito só com confirmação.
@@ -217,9 +241,10 @@ export const dataBr = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.sp
 export function destinoTexto(item: ItemPendente) {
   if (item.tipo === "SAIDA_COMBUSTIVEL") {
     if (item.alvo === "FROTA") return item.equipamento?.prefixo ?? null;
+    if (item.funcionarioTerceiro) return [item.terceiro?.nome, `funcionário ${item.funcionarioTerceiro.nome}${item.finalidade ? ` (${finalidadeTexto(item.finalidade, item.finalidadeTexto)})` : ""}`].filter(Boolean).join(" · ");
     return [item.terceiro?.nome, item.veiculo?.placa].filter(Boolean).join(" · ") || null;
   }
-  if (item.destino === "TERCEIRO") return [item.terceiro?.nome, item.veiculoTerceiro?.placa, item.recebidoPor ? `recebido por ${item.recebidoPor}` : null].filter(Boolean).join(" · ") || null;
+  if (item.destino === "TERCEIRO") return [item.terceiro?.nome, item.funcionarioTerceiro ? `funcionário ${item.funcionarioTerceiro.nome}` : item.veiculoTerceiro?.placa, item.recebidoPor ? `recebido por ${item.recebidoPor}` : null].filter(Boolean).join(" · ") || null;
   return [item.equipamento?.prefixo, item.colaborador?.nome, item.departamento ? `${item.departamento.nome}${item.departamento.inferido ? " (pelo histórico)" : ""}` : null].filter(Boolean).join(" · ") || null;
 }
 
@@ -232,7 +257,7 @@ export function descreverItem(item: ItemPendente) {
   }
   const alvo = destino ?? (item.duvidas.equipamento ? `"${item.duvidas.equipamento.pedido}" (a confirmar)` : "veículo a definir");
   const leitura = item.leitura !== null ? ` (${item.alvo === "FROTA" ? (item.equipamento?.controle === "KM" ? "km" : "horímetro") : item.veiculo?.medidor === "KM" ? "km" : "horímetro"} ${numeroBr(item.leitura)})` : "";
-  return `${numeroBr(item.litros)} L de ${item.combustivel?.nome ?? "combustível"} no ${alvo}${leitura}${item.responsavel ? `, motorista ${item.responsavel.nome}` : ""}`;
+  return `${numeroBr(item.litros)} L de ${item.combustivel?.nome ?? "combustível"} ${item.funcionarioTerceiro ? "para" : "no"} ${alvo}${leitura}${item.responsavel ? `, motorista ${item.responsavel.nome}` : ""}`;
 }
 
 // Junta bloqueios, avisos e perguntas num status (Bloqueado > Atenção > Pronto).
@@ -243,7 +268,7 @@ export function fecharAvaliacao(bloqueios: string[], avisos: string[], perguntas
 
 // Pergunta para um campo em dúvida, com as opções numeradas (a assistente repete isso ao usuário).
 export function perguntaDaDuvida(campo: string, duvida: Duvida) {
-  const nome: Record<string, string> = { produto: "Qual produto", colaborador: "Qual colaborador", responsavel: "Qual motorista/responsável", equipamento: "Qual veículo/equipamento", departamento: "Qual departamento", terceiro: "Qual terceiro", combustivel: "Qual combustível", frente: "Qual frente", veiculoTerceiro: "Qual veículo do terceiro" };
+  const nome: Record<string, string> = { produto: "Qual produto", colaborador: "Qual colaborador", responsavel: "Qual motorista/responsável", equipamento: "Qual veículo/equipamento", departamento: "Qual departamento", terceiro: "Qual terceiro", combustivel: "Qual combustível", frente: "Qual frente", veiculoTerceiro: "Qual veículo do terceiro", funcionarioTerceiro: "Qual funcionário do terceiro" };
   const opcoes = duvida.opcoes.map((opcao, index) => `${index + 1}) ${opcao.rotulo}`).join("; ");
   return `${nome[campo] ?? campo}? ${duvida.motivo}${opcoes ? `: ${opcoes}` : ""}.`;
 }

@@ -5,6 +5,7 @@ import EmployeeProfile from "./EmployeeProfile";
 import RegistryFrontButtons, { frontParam } from "./RegistryFrontButtons";
 import { CompaniesModal, EmployeeForm, StepModal, TransferModal } from "./EmployeeForms";
 import { EmployeesHistory, RestrictedList } from "./EmployeesHistory";
+import { JobFunctionsModal } from "./OperatorAccess";
 import {
   AlertChip, api, brDay, dayCount, fold, initials, nextAction, phaseOf, problemText, SituationPills,
   type Alerts, type Company, type CycleStep, type Employee, type Front, type Phase, type User,
@@ -43,6 +44,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
   const [transferring, setTransferring] = useState<Employee | null>(null);
   const [stepping, setStepping] = useState<{ employees: Employee[]; steps: CycleStep[]; label: string } | null>(null);
   const [companiesOpen, setCompaniesOpen] = useState(false);
+  const [functionsOpen, setFunctionsOpen] = useState(false);
   const [details, setDetails] = useState<number | null>(null);
   const [moduleFront, setModuleFront] = useState<number | "ALL">("ALL");
   const canManage = authUser.permissions.includes("employees.manage");
@@ -102,6 +104,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
         <div><p className="eyebrow">CADASTRO DE PESSOAS</p><h1>Funcionários</h1><span>Cadastro por frente, transferências, ciclo de folga (trabalho → viagem → folga → retorno), afastamentos e demissões.</span></div>
         <div className="heading-actions">
           {data.canManageCompanies && <button className="secondary" onClick={() => setCompaniesOpen(true)}>Empresas</button>}
+          <button className="secondary" onClick={() => setFunctionsOpen(true)}>Funções</button>
           {canManage && <button className="primary" onClick={() => setEditing("new")}>＋ Novo funcionário</button>}
         </div>
       </div>
@@ -202,6 +205,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
       {editing && <EmployeeForm item={editing === "new" ? null : editing} fronts={data.fronts.filter((front) => canChange({ serviceFrontId: front.id }))} companies={data.companies} canSeeSalary={data.canSeeSalary} close={() => setEditing(null)} saved={refreshAfter} />}
       {transferring && <TransferModal item={transferring} fronts={data.fronts} close={() => setTransferring(null)} saved={refreshAfter} />}
       {stepping && <StepModal employees={stepping.employees} steps={stepping.steps} title={stepping.label} close={() => setStepping(null)} saved={refreshAfter} />}
+      {functionsOpen && <JobFunctionsModal close={() => setFunctionsOpen(false)} flash={flash} />}
       {companiesOpen && <CompaniesModal companies={data.companies} close={() => setCompaniesOpen(false)} changed={async (message) => { await load(); flash(message); }} />}
       {details !== null && <EmployeeProfile id={details} canManage={canManage} canSeeSalary={data.canSeeSalary} fronts={data.fronts} close={() => setDetails(null)} changed={load} flash={flash}
         edit={(item) => { setDetails(null); setEditing(item); }} />}

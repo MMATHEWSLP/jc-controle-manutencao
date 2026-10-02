@@ -374,5 +374,5 @@ export function publicUser(user:SessionUser) {
 }
 
 export function profileLabel(profile:Profile) {
-  return profile==="CAMPO"?"Funcionário de campo":profile==="ADMIN"?"Administrador":profile==="GESTOR"?"Gestor":profile==="OFICINA"?"Manutenção / Oficina":profile==="OPERADOR"?"Operador":"Operador";
+  return profile==="CAMPO"?"Operador (campo)":profile==="ADMIN"?"Administrador":profile==="GESTOR"?"Gestor":profile==="OFICINA"?"Manutenção / Oficina":profile==="OPERADOR"?"Operador":"Operador";
 }

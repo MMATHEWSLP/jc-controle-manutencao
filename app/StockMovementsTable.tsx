@@ -11,6 +11,8 @@ export type StockMovementRow = {
   reason: string; reversed: boolean; createdBy: string | null;
   // Histórico importado do sistema antigo (Produtos → Importar movimentações).
   correction?: boolean; historyOnly?: boolean; destination?: string | null; owner?: string | null;
+  // Saída para terceiro: empresa e o destino (veículo ou funcionário da empresa).
+  thirdParty?: { id: number; name: string | null; plate: string | null; receivedBy: string | null; employee: string | null; destination: string | null } | null;
 };
 
 const qty = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
@@ -19,8 +21,10 @@ const day = (value: string) => value.split("-").reverse().join("/");
 
 // Destino da saída: veículo, funcionário e/ou departamento; abaixo, onde a peça foi aplicada e quem retirou.
 function DestinationCell({ row }: { row: StockMovementRow }) {
-  const parts = [row.equipment?.prefix, row.employee?.name, row.department?.name].filter((value): value is string => Boolean(value));
-  const extra = [row.application && !parts.includes(row.application) ? row.application : null, row.withdrawnBy ? `Retirado por ${row.withdrawnBy}` : null,
+  const party = row.thirdParty;
+  const partyText = party ? [party.name, party.employee ? `Funcionário: ${party.employee}` : party.plate ? `Veículo: ${party.plate}` : null].filter(Boolean).join(" · ") : null;
+  const parts = [row.equipment?.prefix, row.employee?.name, row.department?.name, partyText].filter((value): value is string => Boolean(value));
+  const extra = [row.application && !party && !parts.includes(row.application) ? row.application : null, party?.receivedBy ? `Recebido por ${party.receivedBy}` : null, row.withdrawnBy ? `Retirado por ${row.withdrawnBy}` : null,
     row.destination && row.destination !== row.application ? `Local: ${row.destination}` : null, row.owner ? `Proprietário: ${row.owner}` : null].filter(Boolean);
   return <>{parts.length ? parts.join(" · ") : "—"}{extra.length > 0 && <small className="table-sub">{extra.join(" · ")}</small>}</>;
 }

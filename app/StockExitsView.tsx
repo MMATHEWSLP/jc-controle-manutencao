@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { consumirFiltros, type NavegacaoAssistente } from "../lib/assistente-nav";
 import { DepartmentsModal, useDepartments, type Department } from "./DepartmentsManager";
 import StockMovementsTable, { type StockMovementRow } from "./StockMovementsTable";
-import { ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
+import { ThirdPartyPicker, ThirdPartyVehiclePicker, ThirdPartyWorkerPicker, useThirdPartyOptions, WorkerFormModal, type ThirdPartyOption, type VehicleOption, type WorkerOption } from "./ThirdPartiesView";
 import {
   api, ApiError, brDay, CatalogPicker, EmployeePicker, EquipmentPicker, jsonBody, localToday, moneyFormat, parseQty, problemText, ProductPicker, qtyFormat, ShortageNotice,
   type CatalogOption, type EmployeeOption, type EquipmentOption, type ProductOption, type Shortage, type StockOptions,
@@ -70,6 +70,10 @@ function MovementForm({ options, departments, createDepartment, flash }: {
   const [party, setParty] = useState<ThirdPartyOption | null>(null);
   const [partyVehicle, setPartyVehicle] = useState<VehicleOption | null>(null);
   const [receivedBy, setReceivedBy] = useState("");
+  // Destino no terceiro: veículo da empresa ou funcionário dela (peças para motosserra, EPI...).
+  const [partyTarget, setPartyTarget] = useState<"VEICULO" | "FUNCIONARIO">("VEICULO");
+  const [partyWorker, setPartyWorker] = useState<WorkerOption | null>(null);
+  const [creatingWorker, setCreatingWorker] = useState(false);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [shortages, setShortages] = useState<Shortage[]>([]);
@@ -78,13 +82,14 @@ function MovementForm({ options, departments, createDepartment, flash }: {
   const [last, setLast] = useState("");
   const selectedFront = frontId || (options.defaultFrontId ? String(options.defaultFrontId) : "");
   const patch = (key: string, value: Partial<Line>) => setLines((current) => current.map((line) => (line.key === key ? { ...line, ...value } : line)));
-  const reset = () => { setEquipmentItem(null); setEmployee(null); setDepartment(null); setParty(null); setPartyVehicle(null); setReceivedBy(""); setNotes(""); setLines([newLine()]); setShortages([]); };
+  const reset = () => { setEquipmentItem(null); setEmployee(null); setDepartment(null); setParty(null); setPartyVehicle(null); setPartyWorker(null); setReceivedBy(""); setNotes(""); setLines([newLine()]); setShortages([]); };
   const toThirdParty = destination === "TERCEIRO";
 
   async function submit(event: FormEvent | null, allowNegative = false) {
     event?.preventDefault();
     setError("");
     if (toThirdParty && !party) { setError("Escolha a empresa/pessoa (Terceiro / Prestador)."); return; }
+    if (toThirdParty && partyTarget === "FUNCIONARIO" && !partyWorker) { setError("Escolha o funcionário do terceiro (ou mude o destino para Veículo)."); return; }
     if (toThirdParty && !receivedBy.trim()) { setError("Informe quem recebeu os produtos (Recebido por)."); return; }
     if (!toThirdParty && !equipmentItem && !employee && !department) { setError("Informe o destino: veículo, funcionário e/ou departamento."); return; }
     if (lines.some((line) => !line.product)) { setError("Escolha o produto de todos os itens (ou remova a linha vazia)."); return; }
@@ -93,7 +98,7 @@ function MovementForm({ options, departments, createDepartment, flash }: {
       const result = await api<{ message: string; number: string }>("/api/stock-exits", jsonBody("POST", {
         serviceFrontId: Number(selectedFront), exitDate, notes, allowNegative,
         ...(toThirdParty
-          ? { destinationType: "THIRD_PARTY", thirdPartyId: party!.id, thirdPartyVehicleId: partyVehicle?.id ?? null, receivedBy }
+          ? { destinationType: "THIRD_PARTY", thirdPartyId: party!.id, ...(partyTarget === "FUNCIONARIO" ? { thirdPartyVehicleId: null, thirdPartyEmployeeId: partyWorker?.id ?? null } : { thirdPartyVehicleId: partyVehicle?.id ?? null, thirdPartyEmployeeId: null }), receivedBy }
           : { equipmentId: equipmentItem?.id ?? null, employeeId: employee?.id ?? null, departmentId: department?.id ?? null }),
         items: lines.map((line) => ({ productId: line.product!.id, quantity: parseQty(line.quantity) })),
       }));
@@ -115,9 +120,17 @@ function MovementForm({ options, departments, createDepartment, flash }: {
             <button type="button" className={destination === "TERCEIRO" ? "active" : ""} aria-pressed={destination === "TERCEIRO"} onClick={() => setDestination("TERCEIRO")}>Terceiro / Prestador</button>
           </fieldset>
           {toThirdParty ? <>
-            <label>Empresa / pessoa *<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={party} onPick={(item) => { setParty(item); setPartyVehicle(null); }} /></label>
-            <label>Veículo do terceiro<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={partyVehicle} onPick={setPartyVehicle} disabled={!party} /></label>
-            <label>Recebido por *<input required value={receivedBy} onChange={(event) => setReceivedBy(event.target.value)} placeholder="Nome de quem recebeu os produtos" /></label>
+            <label>Empresa / pessoa *<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={party} onPick={(item) => { setParty(item); setPartyVehicle(null); setPartyWorker(null); }} /></label>
+            {party && <div className="fuel-third-party-field"><span className="fuel-field-label">Destino *</span>
+              <div className="fuel-destination-switch" role="group" aria-label="Destino no terceiro">
+                {([["VEICULO", "Veículo"], ["FUNCIONARIO", "Funcionário"]] as const).map(([value, label]) => <button type="button" key={value} className={partyTarget === value ? "active" : ""} aria-pressed={partyTarget === value} onClick={() => setPartyTarget(value)}>{label}</button>)}
+              </div></div>}
+            {partyTarget === "FUNCIONARIO" && party
+              ? <div className="fuel-third-party-field"><span className="fuel-field-label">Funcionário do terceiro *{thirdPartyOptions.canManage && <button type="button" className="link-button" onClick={() => setCreatingWorker(true)}>＋ Novo</button>}</span>
+                <ThirdPartyWorkerPicker workers={party.employees} value={partyWorker} onPick={(item) => { setPartyWorker(item); if (item && !receivedBy.trim()) setReceivedBy(item.name); }} /></div>
+              : <label>Veículo do terceiro<ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={partyVehicle} onPick={setPartyVehicle} disabled={!party} /></label>}
+            <label>Recebido por *<input required value={receivedBy} list={party?.employees.length ? "stock-party-workers" : undefined} onChange={(event) => setReceivedBy(event.target.value)} placeholder="Escolha um funcionário da empresa ou digite o nome" />
+              {party && party.employees.length > 0 && <datalist id="stock-party-workers">{party.employees.map((item) => <option key={item.id} value={item.name}>{item.jobTitle ?? ""}</option>)}</datalist>}</label>
           </> : <>
             <label>Veículo / equipamento<EquipmentPicker options={options.equipment} value={equipmentItem} onPick={setEquipmentItem} placeholder="Buscar pelo prefixo..." /></label>
             <label>Funcionário<EmployeePicker value={employee} frontId={null} onPick={setEmployee} placeholder="Buscar funcionário..." /></label>
@@ -126,7 +139,7 @@ function MovementForm({ options, departments, createDepartment, flash }: {
           </>}
           <label>Data *<input type="date" required max={localToday()} value={exitDate} onChange={(event) => setExitDate(event.target.value)} /></label>
         </div>
-        <small className="material-item-hint">{toThirdParty ? "Saída para terceiro: empresa e quem recebeu são obrigatórios; o veículo é opcional. Terceiros ativos do cadastro (Combustível → Terceiros ou menu Produtos → Terceiros)." : "Informe pelo menos um destino: veículo, funcionário e/ou departamento."}</small>
+        <small className="material-item-hint">{toThirdParty ? "Saída para terceiro: empresa e quem recebeu são obrigatórios; no destino Veículo a placa é opcional, no destino Funcionário escolha o funcionário da empresa. Terceiros ativos do cadastro (Combustível → Terceiros ou menu Produtos → Terceiros)." : "Informe pelo menos um destino: veículo, funcionário e/ou departamento."}</small>
         <section className="fleet-form-section">
           <div className="fleet-section-title"><h3>Produtos <small>({lines.length})</small></h3></div>
           {lines.map((line, index) => (
@@ -145,6 +158,9 @@ function MovementForm({ options, departments, createDepartment, flash }: {
         {last && !error && <p className="stock-summary">Último lançamento: {last}</p>}
         <div className="stock-movement-actions"><button type="button" className="secondary" onClick={reset} disabled={busy}>Limpar</button><button className="primary" disabled={busy}>{busy ? "LANÇANDO..." : "LANÇAR SAÍDA"}</button></div>
       </form>
+      {creatingWorker && party && <WorkerFormModal thirdParty={party} item={null} close={() => setCreatingWorker(false)}
+        saved={async (id, message) => { setCreatingWorker(false); flash(message); const list = await thirdPartyOptions.reload(); const updated = list.find((item) => item.id === party.id) ?? party; setParty(updated);
+          const created = updated.employees.find((item) => item.id === id) ?? null; setPartyWorker(created); if (created && !receivedBy.trim()) setReceivedBy(created.name); }} />}
     </article>
   );
 }
@@ -161,12 +177,14 @@ function HistoryPanel({ options, departments, flash, initial }: { options: Stock
   const thirdPartyOptions = useThirdPartyOptions();
   const [partyFilter, setPartyFilter] = useState<ThirdPartyOption | null>(null);
   const [partyVehicleFilter, setPartyVehicleFilter] = useState<VehicleOption | null>(null);
+  const [partyWorkerFilter, setPartyWorkerFilter] = useState<WorkerOption | null>(null);
   const [from, setFrom] = useState(initial?.de ?? "");
   const [to, setTo] = useState(initial?.ate ?? "");
   const query = new URLSearchParams(Object.entries({
     equipamento: equipmentFilter ? String(equipmentFilter.id) : "", funcionario: employeeFilter ? String(employeeFilter.id) : "", departamento: departmentFilter,
     produto: productFilter ? String(productFilter.id) : "", de: from, ate: to,
     terceiro: partyFilter ? String(partyFilter.id) : "", veiculoTerceiro: partyVehicleFilter ? String(partyVehicleFilter.id) : "",
+    funcionarioTerceiro: partyWorkerFilter ? String(partyWorkerFilter.id) : "",
   }).filter(([, value]) => value)).toString();
   const load = useCallback(async () => {
     setError("");
@@ -180,7 +198,7 @@ function HistoryPanel({ options, departments, flash, initial }: { options: Stock
     try { flash((await api<{ message: string }>(`/api/stock-exits/${exit.id}`, jsonBody("PUT", { reason }))).message); await load(); }
     catch (problem) { window.alert(problemText(problem, "Não foi possível estornar.")); }
   }
-  const clear = () => { setEquipmentFilter(null); setEmployeeFilter(null); setDepartmentFilter(""); setProductFilter(null); setPartyFilter(null); setPartyVehicleFilter(null); setFrom(""); setTo(""); };
+  const clear = () => { setEquipmentFilter(null); setEmployeeFilter(null); setDepartmentFilter(""); setProductFilter(null); setPartyFilter(null); setPartyVehicleFilter(null); setPartyWorkerFilter(null); setFrom(""); setTo(""); };
   const hasFilters = Boolean(query);
   const total = (data?.movements ?? []).reduce((sum, row) => sum + (row.total ?? 0), 0);
 
@@ -191,8 +209,9 @@ function HistoryPanel({ options, departments, flash, initial }: { options: Stock
         <label className="stock-filter-wide">Funcionário<EmployeePicker value={employeeFilter} frontId={null} onPick={setEmployeeFilter} /></label>
         <label>Departamento<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">Todos</option>{departments.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
         <label className="stock-filter-wide stock-filter-product">Peça / produto<ProductPicker value={productFilter} frontId={null} onPick={setProductFilter} /></label>
-        <label className="stock-filter-wide">Terceiro / prestador<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={partyFilter} onPick={(item) => { setPartyFilter(item); setPartyVehicleFilter(null); }} /></label>
+        <label className="stock-filter-wide">Terceiro / prestador<ThirdPartyPicker options={thirdPartyOptions.options} loadError={thirdPartyOptions.error} value={partyFilter} onPick={(item) => { setPartyFilter(item); setPartyVehicleFilter(null); setPartyWorkerFilter(null); }} /></label>
         {partyFilter && <label className="stock-filter-wide">Veículo do terceiro<ThirdPartyVehiclePicker vehicles={partyFilter.vehicles} value={partyVehicleFilter} onPick={setPartyVehicleFilter} /></label>}
+        {partyFilter && partyFilter.employees.length > 0 && <label className="stock-filter-wide">Funcionário do terceiro<ThirdPartyWorkerPicker workers={partyFilter.employees} value={partyWorkerFilter} onPick={setPartyWorkerFilter} /></label>}
         <label>De<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>Até<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
         {hasFilters && <button type="button" className="secondary" onClick={clear}>Limpar filtros</button>}

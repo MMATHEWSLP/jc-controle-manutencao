@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { ListaPendentes, PendenteVisivel } from "../lib/assistente/pendentes";
-import { STATUS_ROTULO, type ItemCombustivel, type ItemProduto } from "../lib/assistente/pendentes-regras";
+import { FINALIDADE_ROTULO, STATUS_ROTULO, type Finalidade, type ItemCombustivel, type ItemProduto } from "../lib/assistente/pendentes-regras";
 
 // ---------------------------------------------------------------------------
 // "Lançamentos pendentes" no topo do painel do Assistente JC. A lista fica no banco (por usuário),
@@ -19,7 +19,7 @@ async function chamar<T>(url: string, init?: RequestInit): Promise<T> {
 
 const n = (valor: number | null | undefined, casas = 2) => (valor === null || valor === undefined ? "—" : valor.toLocaleString("pt-BR", { maximumFractionDigits: casas }));
 const dataBr = (iso: string) => iso.split("-").reverse().join("/");
-const CAMPO_ROTULO: Record<string, string> = { produto: "Produto", colaborador: "Colaborador", responsavel: "Motorista", equipamento: "Veículo/equipamento", departamento: "Departamento", terceiro: "Terceiro", combustivel: "Combustível", frente: "Frente", veiculoTerceiro: "Veículo do terceiro", quantidade: "Quantidade", litros: "Litros", leitura: "Leitura", data: "Data" };
+const CAMPO_ROTULO: Record<string, string> = { produto: "Produto", colaborador: "Colaborador", responsavel: "Motorista", equipamento: "Veículo/equipamento", departamento: "Departamento", terceiro: "Terceiro", combustivel: "Combustível", frente: "Frente", veiculoTerceiro: "Veículo do terceiro", funcionarioTerceiro: "Funcionário do terceiro", finalidade: "Finalidade", quantidade: "Quantidade", litros: "Litros", leitura: "Leitura", data: "Data" };
 
 function statusDe(item: PendenteVisivel) {
   if (item.avaliacao.incompleto) return { classe: "incompleto", rotulo: "Incompleto" };
@@ -36,12 +36,13 @@ function Editor({ item, frentes, salvar, cancelar }: { item: PendenteVisivel; fr
     ...(produto ? {
       produto: produto.produto ? `TAG ${produto.produto.tag}` : produto.duvidas.produto?.pedido ?? "", quantidade: produto.quantidade !== null ? String(produto.quantidade).replace(".", ",") : "",
       equipamento: produto.equipamento?.prefixo ?? "", colaborador: produto.colaborador?.nome ?? "", departamento: produto.departamento && !produto.departamento.inferido ? produto.departamento.nome : "",
-      terceiro: produto.terceiro?.nome ?? "", recebido_por: produto.recebidoPor ?? "",
+      terceiro: produto.terceiro?.nome ?? "", funcionario_terceiro: produto.funcionarioTerceiro?.nome ?? "", recebido_por: produto.recebidoPor ?? "",
     } : {}),
     ...(comb ? {
       combustivel: comb.combustivel?.nome ?? "", litros: comb.litros !== null ? String(comb.litros).replace(".", ",") : "", estoque: comb.estoque === "PORTO" ? "Porto" : "Frente",
       equipamento: comb.equipamento?.prefixo ?? comb.veiculo?.placa ?? "", leitura: comb.leitura !== null ? String(comb.leitura).replace(".", ",") : "", motorista: comb.responsavel?.nome ?? "",
-      tanque_cheio: comb.tanqueCheio ? "sim" : "nao",
+      tanque_cheio: comb.tanqueCheio ? "sim" : "nao", terceiro: comb.alvo !== "FROTA" ? comb.terceiro?.nome ?? "" : "", funcionario_terceiro: comb.funcionarioTerceiro?.nome ?? "",
+      finalidade: comb.finalidade ?? "", finalidade_texto: comb.finalidadeTexto ?? "",
     } : {}),
   };
   const [valores, setValores] = useState(inicial);
@@ -56,7 +57,7 @@ function Editor({ item, frentes, salvar, cancelar }: { item: PendenteVisivel; fr
       if (valor === inicial[nome]) continue;
       if (nome === "frente_id") { mudou.frente_id = Number(valor); continue; }
       if (nome === "tanque_cheio") { mudou.tanque_cheio = valor === "sim"; continue; }
-      if (!valor.trim()) { if (["equipamento", "colaborador", "departamento", "terceiro", "recebido_por", "leitura", "motorista", "observacao"].includes(nome)) limpar.push(nome); continue; }
+      if (!valor.trim()) { if (["equipamento", "colaborador", "departamento", "terceiro", "recebido_por", "leitura", "motorista", "observacao", "funcionario_terceiro"].includes(nome)) limpar.push(nome); continue; }
       mudou[nome] = nome === "data" ? dataBr(valor) : valor.trim();
     }
     if (limpar.length) mudou.limpar = limpar;
@@ -76,12 +77,17 @@ function Editor({ item, frentes, salvar, cancelar }: { item: PendenteVisivel; fr
           {campo("colaborador", "Colaborador")}
           {campo("departamento", "Departamento")}
           {campo("terceiro", "Terceiro")}
+          {valores.terceiro && campo("funcionario_terceiro", "Funcionário do terceiro", { dica: "Só se for para um funcionário" })}
           {valores.terceiro && campo("recebido_por", "Recebido por")}
         </>}
         {comb && <>
-          {campo("equipamento", "Veículo (código ou placa)", { dica: "CM-35" })}
+          {!valores.funcionario_terceiro && campo("equipamento", "Veículo (código ou placa)", { dica: "CM-35" })}
+          {(valores.terceiro || valores.funcionario_terceiro) && campo("terceiro", "Terceiro")}
+          {valores.terceiro && campo("funcionario_terceiro", "Funcionário do terceiro", { dica: "Fora dos veículos" })}
+          {valores.funcionario_terceiro && <label>Finalidade<select value={valores.finalidade} onChange={(event) => setValores({ ...valores, finalidade: event.target.value })}><option value="">—</option>{(Object.keys(FINALIDADE_ROTULO) as Finalidade[]).map((valor) => <option key={valor} value={valor}>{FINALIDADE_ROTULO[valor]}</option>)}</select></label>}
+          {valores.funcionario_terceiro && valores.finalidade === "OUTROS" && campo("finalidade_texto", "Qual finalidade?")}
           {campo("litros", "Litros", { modo: "decimal" })}
-          {campo("leitura", "Leitura (km/h)", { modo: "decimal" })}
+          {!valores.funcionario_terceiro && campo("leitura", "Leitura (km/h)", { modo: "decimal" })}
           {campo("motorista", "Motorista")}
           {campo("combustivel", "Combustível")}
           <label>Estoque<select value={valores.estoque} onChange={(event) => setValores({ ...valores, estoque: event.target.value })}><option>Frente</option><option>Porto</option></select></label>

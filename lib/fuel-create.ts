@@ -67,14 +67,15 @@ export async function createFuelMovement(db: Db, user: SessionUser, body: Record
   if (problem) throw new FuelCreateError(problem);
   let created: { id: number };
   try {
-    [created] = await db.insert(fuelMovements).values({
+    const values = {
       ...input, serviceFrontId, clientRequestId, importBatchId: options.importBatchId ?? null, createdVia: options.createdVia ?? null,
       // Frente ↔ Porto da mesma frente: o destino é a própria frente.
       destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? serviceFrontId : null,
-      meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" : "HOURS") : null,
-      ...(thirdPartyFields ?? {}),
+      meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null,
       createdBy: user.id,
-    }).returning({ id: fuelMovements.id });
+    };
+    // Terceiro: empresa, veículo ou funcionário (destino/finalidade), leitura e consumo vêm do cadastro.
+    [created] = await db.insert(fuelMovements).values(thirdPartyFields ? { ...values, ...thirdPartyFields } : values).returning({ id: fuelMovements.id });
   } catch (error) {
     const again = isUniqueViolation(error) ? await alreadySent() : null;
     if (again) return duplicate(again.id);

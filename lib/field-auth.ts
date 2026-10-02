@@ -1,6 +1,6 @@
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { fieldLoginAttempts, serviceFronts, users } from "../db/schema";
+import { employees, fieldLoginAttempts, serviceFronts, users } from "../db/schema";
 import { newSalt, passwordHash, verifyPassword } from "./auth";
 
 // ---------------------------------------------------------------------------
@@ -46,25 +46,37 @@ function normalized(value: string) {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-// Busca por nome (mínimo 2 letras, no máximo 8 resultados) — só nome, nunca código.
+// Busca por nome (mínimo 2 letras) ou matrícula (só números, exata), no máximo 8 resultados —
+// devolve só id e nome, nunca código.
 export async function searchFieldOperators(query: string) {
   const term = query.trim();
   if (term.length < 2) return [];
   const db = await getDb();
   // Filtra em memória (sem acento/maiúsculas): "joao" acha "JOÃO". São poucos nomes por empresa.
-  const rows = await db.select({ id: users.id, name: users.name }).from(users)
+  const rows = await db.select({ id: users.id, name: users.name, registration: employees.registration }).from(users)
+    .leftJoin(employees, eq(employees.id, users.employeeId))
     .where(and(eq(users.role, "CAMPO"), eq(users.status, "ACTIVE"))).orderBy(asc(users.name));
+  if (/^\d+$/.test(term)) {
+    const digits = term.replace(/^0+(?=\d)/, "");
+    return rows.filter((row) => row.registration && row.registration.replace(/\D/g, "").replace(/^0+(?=\d)/, "") === digits).slice(0, 8).map(({ id, name }) => ({ id, name }));
+  }
   const key = normalized(term);
-  return rows.filter((row) => normalized(row.name).includes(key)).slice(0, 8);
+  const words = key.split(" ");
+  return rows.filter((row) => { const name = normalized(row.name); return words.every((word) => name.includes(word)); }).slice(0, 8).map(({ id, name }) => ({ id, name }));
 }
 
 export async function recentFails(filter: { userId?: number; ip?: string }) {
   const db = await getDb();
   const since = new Date(Date.now() - LOCK_MINUTES * 60_000).toISOString();
-  const rows = await db.select({ id: fieldLoginAttempts.id }).from(fieldLoginAttempts).where(and(
-    eq(fieldLoginAttempts.success, false), gte(fieldLoginAttempts.attemptedAt, since),
-    filter.userId !== undefined ? eq(fieldLoginAttempts.userId, filter.userId) : eq(fieldLoginAttempts.ip, filter.ip!),
-  ));
+  // Por pessoa: só contam os erros depois da última troca de código/PIN (redefinir desbloqueia).
+  const rows = filter.userId !== undefined
+    ? await db.select({ id: fieldLoginAttempts.id }).from(fieldLoginAttempts).innerJoin(users, eq(users.id, fieldLoginAttempts.userId)).where(and(
+      eq(fieldLoginAttempts.success, false), gte(fieldLoginAttempts.attemptedAt, since), eq(fieldLoginAttempts.userId, filter.userId),
+      or(isNull(users.accessCodeChangedAt), sql`${fieldLoginAttempts.attemptedAt} > ${users.accessCodeChangedAt}`),
+    ))
+    : await db.select({ id: fieldLoginAttempts.id }).from(fieldLoginAttempts).where(and(
+      eq(fieldLoginAttempts.success, false), gte(fieldLoginAttempts.attemptedAt, since), eq(fieldLoginAttempts.ip, filter.ip!),
+    ));
   return rows.length;
 }
 
@@ -87,12 +99,16 @@ export async function verifyFieldOperator(request: Request, operatorId: number, 
   const ip = clientIp(request);
   if (!Number.isInteger(operatorId) || operatorId <= 0) throw new FieldAuthError("Selecione o seu nome na lista.");
   if (await recentFails({ ip }) >= MAX_FAILS_PER_IP) throw new FieldAuthError(`Muitas tentativas neste aparelho. Aguarde ${LOCK_MINUTES} minutos ou procure o encarregado.`, 429);
-  if (await recentFails({ userId: operatorId }) >= MAX_FAILS_PER_OPERATOR) throw new FieldAuthError(`Acesso bloqueado por ${LOCK_MINUTES} minutos após várias tentativas erradas. Procure o encarregado se esqueceu o código.`, 429);
+  if (await recentFails({ userId: operatorId }) >= MAX_FAILS_PER_OPERATOR) throw new FieldAuthError(`Acesso bloqueado por ${LOCK_MINUTES} minutos após várias tentativas erradas. Procure o encarregado se esqueceu o PIN.`, 429);
   const db = await getDb();
   const row = (await db.select({ id: users.id, name: users.name, role: users.role, status: users.status, jobTitle: users.jobTitle, accessCodeHash: users.accessCodeHash, front: serviceFronts.name })
     .from(users).leftJoin(serviceFronts, eq(serviceFronts.id, users.serviceFrontId)).where(eq(users.id, operatorId)).limit(1))[0];
   const valid = Boolean(row && row.role === "CAMPO" && row.status === "ACTIVE" && ACCESS_CODE_PATTERN.test(code) && await codeMatches(code, row.accessCodeHash));
   await db.insert(fieldLoginAttempts).values({ userId: row ? row.id : null, ip, success: valid, attemptedAt: new Date().toISOString() });
-  if (!valid || !row) throw new FieldAuthError("Nome ou código incorretos.", 401);
+  if (!valid || !row) {
+    // Ao chegar no limite, avisa já nesta tentativa que o acesso ficou bloqueado.
+    if (row && await recentFails({ userId: row.id }) >= MAX_FAILS_PER_OPERATOR) throw new FieldAuthError(`PIN incorreto. Acesso bloqueado por ${LOCK_MINUTES} minutos após ${MAX_FAILS_PER_OPERATOR} tentativas erradas. Procure o encarregado se esqueceu o PIN.`, 429);
+    throw new FieldAuthError("Nome ou PIN incorretos.", 401);
+  }
   return { id: row.id, name: row.name, jobTitle: row.jobTitle, front: row.front };
 }

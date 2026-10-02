@@ -1,7 +1,8 @@
+import { isFuelPurpose, purposeText } from "./third-party-rules";
 import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, thirdParties, thirdPartyVehicles, users } from "../db/schema";
+import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, thirdParties, thirdPartyEmployees, thirdPartyVehicles, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { consumptionByMovement } from "./third-parties";
@@ -24,7 +25,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // a confirmar) ou IMPORTADOS (todo lançamento vindo de importação).
 export type FuelPendingFilter = "VEICULO" | "ORIGEM" | "IMPORTADOS";
 // thirdPartyId / vehicleId = empresa e veículo do cadastro de Terceiros.
-export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null; thirdPartyId: number | null; vehicleId: number | null; equipmentId?: number | null };
+export type FuelFilters = { from: string; to: string; fuelTypeId: number | null; movementType: FuelMovementType | "TERCEIROS" | "PRESTADORES" | null; location: FuelLocation | null; frontId: number | null; q: string; pending: FuelPendingFilter | null; thirdPartyId: number | null; vehicleId: number | null; equipmentId?: number | null;
+  // Funcionário de terceiro e destino da saída para terceiro (Veículo / Funcionário).
+  thirdPartyEmployeeId?: number | null; destination?: "VEICULO" | "FUNCIONARIO" | null };
 
 // Filtros do Histórico/exportação (mesma query string da tela). Período padrão = mês corrente.
 export function parseFuelFilters(params: URLSearchParams): FuelFilters {
@@ -41,6 +44,8 @@ export function parseFuelFilters(params: URLSearchParams): FuelFilters {
   return {
     from: from <= to ? from : to, to: from <= to ? to : from, fuelTypeId, movementType, location, frontId, q: (params.get("q") ?? "").trim(), pending,
     thirdPartyId: Number(params.get("thirdPartyId")) || null, vehicleId: Number(params.get("vehicleId")) || null,
+    thirdPartyEmployeeId: Number(params.get("thirdPartyEmployeeId")) || null,
+    destination: params.get("destination") === "FUNCIONARIO" || params.get("destination") === "VEICULO" ? params.get("destination") as "VEICULO" | "FUNCIONARIO" : null,
   };
 }
 
@@ -89,6 +94,8 @@ function historyWhere(scopeFronts: number[], filters: FuelFilters): SQL | undefi
   if (filters.fuelTypeId) conditions.push(eq(fuelMovements.fuelTypeId, filters.fuelTypeId));
   if (filters.thirdPartyId) conditions.push(eq(fuelMovements.thirdPartyId, filters.thirdPartyId));
   if (filters.vehicleId) conditions.push(eq(fuelMovements.thirdPartyVehicleId, filters.vehicleId));
+  if (filters.thirdPartyEmployeeId) conditions.push(eq(fuelMovements.thirdPartyEmployeeId, filters.thirdPartyEmployeeId));
+  if (filters.destination) conditions.push(eq(fuelMovements.thirdPartyDestination, filters.destination));
   // Equipamento da frota (Assistente JC).
   if (filters.equipmentId) conditions.push(eq(fuelMovements.equipmentId, filters.equipmentId));
   // TERCEIROS = saída para terceiros geral; PRESTADORES = prestadores de serviço.
@@ -125,6 +132,8 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       thirdPartyId: fuelMovements.thirdPartyId, thirdPartyVehicleId: fuelMovements.thirdPartyVehicleId, fullTank: fuelMovements.fullTank,
       consumptionOutlier: fuelMovements.consumptionOutlier, readingException: fuelMovements.readingException,
       thirdPartyName: thirdParties.name, vehiclePlate: thirdPartyVehicles.plate,
+      thirdPartyEmployeeId: fuelMovements.thirdPartyEmployeeId, thirdPartyEmployeeName: thirdPartyEmployees.name, thirdPartyDestination: fuelMovements.thirdPartyDestination,
+      purpose: fuelMovements.purpose, purposeNote: fuelMovements.purposeNote,
     }).from(fuelMovements)
       .innerJoin(serviceFronts, eq(fuelMovements.serviceFrontId, serviceFronts.id))
       .innerJoin(fuelTypes, eq(fuelMovements.fuelTypeId, fuelTypes.id))
@@ -133,6 +142,7 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       .leftJoin(creator, eq(fuelMovements.createdBy, creator.id))
       .leftJoin(thirdParties, eq(fuelMovements.thirdPartyId, thirdParties.id))
       .leftJoin(thirdPartyVehicles, eq(fuelMovements.thirdPartyVehicleId, thirdPartyVehicles.id))
+      .leftJoin(thirdPartyEmployees, eq(fuelMovements.thirdPartyEmployeeId, thirdPartyEmployees.id))
       .where(where).orderBy(desc(fuelMovements.movementDate), desc(fuelMovements.id)).limit(limit).offset(offset),
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
@@ -145,6 +155,8 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
       unitCost: costs.get(row.id)?.unitCost ?? null,
       cost: costs.get(row.id)?.cost ?? null,
       movementLabel: fuelMovementLabel(row),
+      destinationLabel: row.thirdPartyDestination === "FUNCIONARIO" ? `Funcionário: ${row.thirdPartyEmployeeName ?? "—"}` : row.thirdPartyDestination === "VEICULO" ? `Veículo: ${row.vehiclePlate ?? "—"}` : null,
+      purposeLabel: purposeText(row.purpose, row.purposeNote),
       stockLocationLabel: FUEL_LOCATION_LABELS[row.stockLocation],
       destinationLocationLabel: row.destinationLocation ? FUEL_LOCATION_LABELS[row.destinationLocation] : null,
     })),
@@ -226,6 +238,11 @@ export function readThirdPartyFuelFields(body: Record<string, unknown>) {
     thirdPartyId: Number(body.thirdPartyId) || null, vehicleId: Number(body.thirdPartyVehicleId) || null,
     reading: reading === null || Number.isNaN(reading) ? null : reading, fullTank: body.fullTank !== false,
     readingException: body.readingException === true, confirmTank: body.confirmTank === true, confirmOutlier: body.confirmOutlier === true,
+    // Destino Funcionário: funcionário da empresa + finalidade (sem veículo, sem leitura, fora da média).
+    destination: body.thirdPartyDestination === "FUNCIONARIO" ? "FUNCIONARIO" as const : "VEICULO" as const,
+    employeeId: Number(body.thirdPartyEmployeeId) || null,
+    purpose: isFuelPurpose(body.purpose) ? body.purpose : null,
+    purposeNote: typeof body.purposeNote === "string" ? body.purposeNote.trim().slice(0, 200) || null : null,
   };
 }
 

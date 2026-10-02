@@ -295,6 +295,27 @@
       "when": 1790971174611,
       "tag": "0041_assistente_pendentes_views",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790975584415,
+      "tag": "0042_operadores_terceiros",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790975602238,
+      "tag": "0043_operadores_terceiros_dados",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1790976837422,
+      "tag": "0044_assistente_terceiros_views",
+      "breakpoints": true
     }
   ]
 }

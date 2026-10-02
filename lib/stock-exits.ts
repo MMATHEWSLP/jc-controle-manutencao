@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { auditLogs, departments, employees, equipment, products, serviceFronts, stockExitItems, stockExits, thirdParties, thirdPartyVehicles, users } from "../db/schema";
+import { auditLogs, departments, employees, equipment, products, serviceFronts, stockExitItems, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { stockExitNumber } from "./document-numbers";
@@ -20,6 +20,8 @@ export type StockExitInput = {
   serviceFrontId: number; exitDate: string; destinationType: "EMPLOYEE" | "EQUIPMENT" | "DEPARTMENT" | "THIRD_PARTY";
   employeeId: number | null; equipmentId: number | null; departmentId: number | null; notes: string | null;
   thirdPartyId: number | null; thirdPartyVehicleId: number | null; receivedBy: string | null;
+  // Destino terceiro "Funcionário": funcionário da empresa (sem veículo).
+  thirdPartyEmployeeId?: number | null;
   items: Array<{ productId: number; quantity: number }>; allowNegative: boolean;
   // "Lançar tudo" do Assistente JC (nunca vem do formulário).
   createdVia?: "ASSISTENTE" | null;
@@ -40,7 +42,9 @@ export function parseStockExit(body: Record<string, unknown>): StockExitInput {
   const employeeId = toThirdParty ? null : positiveId(body.employeeId);
   const departmentId = toThirdParty ? null : positiveId(body.departmentId);
   const thirdPartyId = toThirdParty ? positiveId(body.thirdPartyId) : null;
-  const thirdPartyVehicleId = toThirdParty ? positiveId(body.thirdPartyVehicleId) : null;
+  const thirdPartyEmployeeId = toThirdParty ? positiveId(body.thirdPartyEmployeeId) : null;
+  // Destino Funcionário: peças/EPI para uso do funcionário, sem vínculo com veículo.
+  const thirdPartyVehicleId = toThirdParty && !thirdPartyEmployeeId ? positiveId(body.thirdPartyVehicleId) : null;
   const receivedBy = toThirdParty ? clean(body.receivedBy).replace(/\s+/g, " ") || null : null;
   if (toThirdParty) {
     if (!thirdPartyId) throw new StockError("Escolha a empresa/pessoa (Terceiro / Prestador) que recebe os produtos.");
@@ -52,7 +56,7 @@ export function parseStockExit(body: Record<string, unknown>): StockExitInput {
   if (items.length === 0) throw new StockError("Adicione ao menos um produto.");
   if (items.some((item) => !Number.isInteger(item.productId) || item.productId <= 0)) throw new StockError("Escolha o produto de todos os itens.");
   if (items.some((item) => !Number.isFinite(item.quantity) || item.quantity <= 0)) throw new StockError("A quantidade de todos os itens deve ser maior que zero.");
-  return { serviceFrontId, exitDate, destinationType, employeeId, equipmentId, departmentId, thirdPartyId, thirdPartyVehicleId, receivedBy, notes: clean(body.notes) || null, items, allowNegative: body.allowNegative === true };
+  return { serviceFrontId, exitDate, destinationType, employeeId, equipmentId, departmentId, thirdPartyId, thirdPartyVehicleId, thirdPartyEmployeeId, receivedBy, notes: clean(body.notes) || null, items, allowNegative: body.allowNegative === true };
 }
 
 export async function createStockExit(db: Db, user: SessionUser, input: StockExitInput) {
@@ -77,6 +81,11 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
       if (!vehicle || vehicle.thirdPartyId !== input.thirdPartyId) throw new StockError("O veículo escolhido não pertence a este terceiro.");
       if (!vehicle.active) throw new StockError("O veículo escolhido está inativo no cadastro.");
     }
+    if (input.thirdPartyEmployeeId) {
+      const worker = (await db.select({ thirdPartyId: thirdPartyEmployees.thirdPartyId, active: thirdPartyEmployees.active, name: thirdPartyEmployees.name }).from(thirdPartyEmployees).where(eq(thirdPartyEmployees.id, input.thirdPartyEmployeeId)).limit(1))[0];
+      if (!worker || worker.thirdPartyId !== input.thirdPartyId) throw new StockError("O funcionário escolhido não pertence a este terceiro.");
+      if (!worker.active) throw new StockError(`${worker.name} está inativo no cadastro do terceiro.`);
+    }
   }
   const catalog = await productsById(db, input.items.map((item) => item.productId));
   const missing = input.items.find((item) => !catalog.get(item.productId)?.active);
@@ -87,7 +96,7 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
     const [exit] = await tx.insert(stockExits).values({
       serviceFrontId: input.serviceFrontId, exitDate: input.exitDate, destinationType: input.destinationType,
       employeeId: input.employeeId, equipmentId: input.equipmentId, departmentId: input.departmentId,
-      thirdPartyId: input.thirdPartyId, thirdPartyVehicleId: input.thirdPartyVehicleId, receivedBy: input.receivedBy, notes: input.notes, createdVia: input.createdVia ?? null, createdBy: user.id,
+      thirdPartyId: input.thirdPartyId, thirdPartyVehicleId: input.thirdPartyVehicleId, thirdPartyEmployeeId: input.thirdPartyEmployeeId ?? null, receivedBy: input.receivedBy, notes: input.notes, createdVia: input.createdVia ?? null, createdBy: user.id,
     }).returning({ id: stockExits.id });
     const number = stockExitNumber(exit.id);
     for (const item of input.items) {
@@ -121,7 +130,7 @@ export async function cancelStockExit(db: Db, user: SessionUser, id: number, rea
 }
 
 // Saídas (documentos) recentes das frentes que a pessoa enxerga, com os itens.
-export async function listStockExits(db: Db, user: SessionUser, filters: { equipmentId?: number | null; employeeId?: number | null; departmentId?: number | null; thirdPartyId?: number | null; thirdPartyVehicleId?: number | null; from?: string | null; to?: string | null; limit?: number }) {
+export async function listStockExits(db: Db, user: SessionUser, filters: { equipmentId?: number | null; employeeId?: number | null; departmentId?: number | null; thirdPartyId?: number | null; thirdPartyVehicleId?: number | null; thirdPartyEmployeeId?: number | null; from?: string | null; to?: string | null; limit?: number }) {
   const visible = frentesVisiveis(user);
   if (visible !== "ALL" && visible.length === 0) return [];
   const creator = alias(users, "exit_creator");
@@ -132,6 +141,7 @@ export async function listStockExits(db: Db, user: SessionUser, filters: { equip
     filters.departmentId ? eq(stockExits.departmentId, filters.departmentId) : undefined,
     filters.thirdPartyId ? eq(stockExits.thirdPartyId, filters.thirdPartyId) : undefined,
     filters.thirdPartyVehicleId ? eq(stockExits.thirdPartyVehicleId, filters.thirdPartyVehicleId) : undefined,
+    filters.thirdPartyEmployeeId ? eq(stockExits.thirdPartyEmployeeId, filters.thirdPartyEmployeeId) : undefined,
     filters.from ? gte(stockExits.exitDate, filters.from) : undefined,
     filters.to ? lte(stockExits.exitDate, filters.to) : undefined,
   ].filter(Boolean);
@@ -141,8 +151,10 @@ export async function listStockExits(db: Db, user: SessionUser, filters: { equip
     equipmentId: stockExits.equipmentId, equipmentPrefix: equipment.prefix, employeeId: stockExits.employeeId, employeeName: employees.name,
     departmentId: stockExits.departmentId, departmentName: departments.name, createdBy: creator.name,
     thirdPartyId: stockExits.thirdPartyId, thirdPartyName: thirdParties.name, thirdPartyVehicleId: stockExits.thirdPartyVehicleId, thirdPartyPlate: thirdPartyVehicles.plate, receivedBy: stockExits.receivedBy,
+    thirdPartyEmployeeId: stockExits.thirdPartyEmployeeId, thirdPartyEmployeeName: thirdPartyEmployees.name,
   }).from(stockExits).innerJoin(serviceFronts, eq(stockExits.serviceFrontId, serviceFronts.id))
     .leftJoin(thirdParties, eq(stockExits.thirdPartyId, thirdParties.id)).leftJoin(thirdPartyVehicles, eq(stockExits.thirdPartyVehicleId, thirdPartyVehicles.id))
+    .leftJoin(thirdPartyEmployees, eq(stockExits.thirdPartyEmployeeId, thirdPartyEmployees.id))
     .leftJoin(equipment, eq(stockExits.equipmentId, equipment.id)).leftJoin(employees, eq(stockExits.employeeId, employees.id))
     .leftJoin(departments, eq(stockExits.departmentId, departments.id))
     .leftJoin(creator, eq(stockExits.createdBy, creator.id))
@@ -152,7 +164,7 @@ export async function listStockExits(db: Db, user: SessionUser, filters: { equip
     .from(stockExitItems).innerJoin(products, eq(stockExitItems.productId, products.id)).where(inArray(stockExitItems.exitId, filtered.map((row) => row.id))) : [];
   return filtered.map((row) => ({
     ...row, number: stockExitNumber(row.id),
-    destination: (row.thirdPartyName ? [row.thirdPartyName, row.thirdPartyPlate, row.receivedBy ? `recebido por ${row.receivedBy}` : null] : [row.equipmentPrefix, row.employeeName, row.departmentName]).filter(Boolean).join(" · ") || null,
+    destination: (row.thirdPartyName ? [row.thirdPartyName, row.thirdPartyPlate, row.thirdPartyEmployeeName ? `funcionário ${row.thirdPartyEmployeeName}` : null, row.receivedBy ? `recebido por ${row.receivedBy}` : null] : [row.equipmentPrefix, row.employeeName, row.departmentName]).filter(Boolean).join(" · ") || null,
     items: items.filter((item) => item.exitId === row.id).map((item) => ({ tag: item.tag, name: item.name, quantity: item.quantity, unitPrice: item.unitPrice })),
   }));
 }

@@ -335,3 +335,24 @@ html[data-theme="dark"] .checklist-card a{color:#9fd8c4}
 .checklist-form .secondary,.checklist-panel .secondary{min-height:36px;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px;font-weight:800;cursor:pointer}
 .daily-queue header .secondary,.daily-queue li .secondary{min-height:34px;padding:6px 12px;border:1px solid #e4c98f;border-radius:8px;background:#fff;color:#7a4b06;font-size:12px;font-weight:800;cursor:pointer}
 html[data-theme="dark"] .daily-queue header .secondary,html[data-theme="dark"] .daily-queue li .secondary{background:#25231f;border-color:#6b5320;color:#fbbf24}
+/* Acesso dos operadores: PIN mostrado uma vez, lista Usuários > Operadores e prévia da criação em massa */
+.operator-pin-backdrop{z-index:400}
+.operator-pin-body{display:grid;gap:8px;justify-items:center;padding:18px 22px;text-align:center}
+.operator-pin-body small{color:var(--muted);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.operator-pin-digits{font-size:54px;letter-spacing:.25em;font-variant-numeric:tabular-nums;color:var(--ink,#0b2942);padding:6px 18px;border:2px dashed #16835f;border-radius:12px;background:#effaf5}
+.operator-pin-body p{margin:0;max-width:440px;font-size:13px;color:var(--muted)}
+.operators-panel .panel-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.operators-result{display:grid;gap:6px;margin:10px 0;padding:12px;border:1px solid #9fd3bd;border-radius:10px;background:#effaf5;font-size:13px}
+.operators-result p,.operators-result ul{margin:0}.operators-result div{display:flex;gap:8px}
+.operators-preview-body{display:grid;gap:14px;padding:16px 20px;max-height:62vh;overflow:auto}
+.operators-preview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.operators-preview-grid h3,.operators-preview-out h3{margin:0 0 6px;font-size:13px}
+.operators-preview-grid ul{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.operators-preview-grid li{display:flex;justify-content:space-between;gap:10px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px}
+.operators-preview-out{padding:10px 12px;border:1px solid #f0c98f;border-radius:8px;background:#fffaf0;color:#7a4a06;font-size:12.5px}
+.operators-preview-out ul{margin:0;padding-left:18px}
+.job-function-toggle{display:inline-flex;align-items:center;gap:6px;font-weight:700}
+.job-function-toggle input{width:auto;min-height:0;margin:0}
+html[data-theme="dark"] .operator-pin-digits{background:#163428;color:#fff}
+html[data-theme="dark"] .operators-result{background:#163428;border-color:#2f6b52}
+html[data-theme="dark"] .operators-preview-out{background:#3a3016;border-color:#6b5a22;color:#f3dd9b}

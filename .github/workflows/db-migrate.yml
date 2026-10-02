@@ -43,6 +43,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/diagnosticar-funcoes.mjs
 
+      - name: Prévia da criação em massa dos acessos dos operadores (somente leitura)
+        if: hashFiles('scripts/previa-operadores.ts') != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/previa-operadores.ts
+
       - name: Corrigir históricos importados sem data (data genérica 05/07/2026)
         if: hashFiles('corrigir-historico-data-generica.mjs') != ''
         env:

@@ -5,6 +5,7 @@ import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { validateEmployee } from "../../../../lib/employee-rules";
 import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSalary, employeeAudit, employeeDetail, employeeErrorResponse, employeeToday, parseEmployeeBody, requireCompany, requireEmployee } from "../../../../lib/employees";
 import { statusForPhase, summarizeStoredCycle } from "../../../../lib/leave-cycle";
+import { sincronizarComAviso } from "../../../../lib/operadores";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -63,7 +64,9 @@ export async function PUT(request: Request, { params }: Context) {
     });
     const hide = (value: typeof current) => (canSeeSalary(user) ? value : { ...value, salary: undefined });
     await employeeAudit(db, user.id, id, "FUNCIONÁRIO EDITADO", hide(current), hide({ ...current, ...next }));
-    return Response.json({ message: "Cadastro atualizado." });
+    // Mudou para função que opera equipamento: cria o acesso (PIN uma vez); para uma que não opera: desativa.
+    const acesso = await sincronizarComAviso(db, id, user, { jobTitle: input.jobTitle });
+    return Response.json({ message: "Cadastro atualizado.", ...acesso });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.id.put]", error);
