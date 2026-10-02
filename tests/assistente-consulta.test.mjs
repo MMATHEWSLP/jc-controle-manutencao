@@ -24,8 +24,8 @@ test("catálogo: colunas padrão, de período e de frente existem; sem colunas s
 });
 
 test("catálogo × migration: toda view do catálogo é criada na migration e vice-versa", () => {
-  const sqlText = readFileSync("drizzle/0038_assistente_views.sql", "utf8");
-  const views = [...sqlText.matchAll(/CREATE OR REPLACE VIEW assistente\.(v_[a-z_]+)/g)].map((match) => match[1]).sort();
+  const sqlText = ["drizzle/0038_assistente_views.sql", "drizzle/0039_assistente_ajustes.sql"].map((file) => readFileSync(file, "utf8")).join("\n");
+  const views = [...new Set([...sqlText.matchAll(/CREATE OR REPLACE VIEW assistente\.(v_[a-z_]+)/g)].map((match) => match[1]))].sort();
   assert.deepEqual(CATALOGO.map((item) => item.view).sort(), views);
 });
 
