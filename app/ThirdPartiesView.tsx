@@ -18,12 +18,15 @@ export type ThirdPartyVehicle = {
 };
 export type ThirdParty = {
   id: number; name: string; kind: Kind; kindLabel: string; document: string | null; contactName: string | null; phone: string | null; serviceFrontId: number | null; front: string | null;
-  notes: string | null; active: boolean; hasMovements: boolean; vehicles: ThirdPartyVehicle[];
+  notes: string | null; active: boolean; hasMovements: boolean; vehicles: ThirdPartyVehicle[]; employees: ThirdPartyWorker[];
 };
+// Funcionários da empresa terceira (quem recebe combustível/peças fora dos veículos).
+export type ThirdPartyWorker = { id: number; name: string; jobTitle: string | null; cpf: string | null; phone: string | null; active: boolean; hasMovements: boolean };
 type ListResponse = { thirdParties: ThirdParty[]; fuelTypes: Option[]; fronts: Option[]; canManage: boolean };
 // Opções dos selects do Combustível/Movimentação (só ativos).
 export type VehicleOption = { id: number; thirdPartyId: number; plate: string; description: string | null; meterType: MeterType; lastReading: number | null; tankCapacityLiters: number | null };
-export type ThirdPartyOption = { id: number; name: string; kind: Kind; document: string | null; vehicles: VehicleOption[] };
+export type WorkerOption = { id: number; thirdPartyId: number; name: string; jobTitle: string | null };
+export type ThirdPartyOption = { id: number; name: string; kind: Kind; document: string | null; vehicles: VehicleOption[]; employees: WorkerOption[] };
 
 export const KIND_LABELS: Record<Kind, string> = { PRESTADOR: "Prestador de serviço", TERCEIRIZADA: "Terceirizada", PESSOA_FISICA: "Pessoa física" };
 const VEHICLE_LABELS: Record<VehicleType, string> = { CAMINHAO: "Caminhão", MAQUINA: "Máquina", VEICULO_LEVE: "Veículo leve", OUTRO: "Outro" };
@@ -94,6 +97,30 @@ export function ThirdPartyVehiclePicker({ vehicles, value, onPick, disabled }: {
           <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(item); setQuery(""); setOpen(false); }}><b>{item.plate}</b> {item.description ?? ""}<small> · {METER_LABEL[item.meterType]}{item.lastReading !== null ? ` · última ${number(item.lastReading)}` : ""}</small></button></li>
         ))}
         {results.length === 0 && <li className="muted"><small>Nenhum veículo ativo desta empresa.</small></li>}
+      </ul>}
+    </div>
+  );
+}
+
+// Select com busca dos funcionários da empresa escolhida.
+export function ThirdPartyWorkerPicker({ workers, value, onPick, disabled }: { workers: WorkerOption[]; value: WorkerOption | null; onPick: (item: WorkerOption | null) => void; disabled?: boolean }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => {
+    const key = searchKey(query.trim());
+    return workers.filter((item) => !key || searchKey(`${item.name} ${item.jobTitle ?? ""}`).includes(key)).slice(0, 40);
+  }, [workers, query]);
+  if (value) return (
+    <div className="material-product-chip"><strong>{value.name}</strong><small>{value.jobTitle ?? "Funcionário do terceiro"}</small><button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button></div>
+  );
+  return (
+    <div className="material-product-picker">
+      <input value={query} disabled={disabled} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} placeholder={disabled ? "Escolha a empresa primeiro" : "Buscar funcionário da empresa..."} />
+      {open && !disabled && <ul>
+        {results.map((item) => (
+          <li key={item.id}><button type="button" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { event.preventDefault(); onPick(item); setQuery(""); setOpen(false); }}><b>{item.name}</b>{item.jobTitle && <small> · {item.jobTitle}</small>}</button></li>
+        ))}
+        {results.length === 0 && <li className="muted"><small>Nenhum funcionário ativo desta empresa.</small></li>}
       </ul>}
     </div>
   );
@@ -171,6 +198,36 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
   );
 }
 
+export function WorkerFormModal({ thirdParty, item, close, saved }: { thirdParty: { id: number; name: string }; item: ThirdPartyWorker | null; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); event.stopPropagation();
+    setBusy(true); setError("");
+    const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const result = await api<{ id?: number; message: string }>(item ? `/api/third-party-employees/${item.id}` : `/api/third-parties/${thirdParty.id}/employees`, jsonBody(item ? "PUT" : "POST", form));
+      await saved(result.id ?? item!.id, result.message);
+    } catch (problem) { setError(problemText(problem, "Não foi possível salvar o funcionário.")); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+      <section className="modal">
+        <header><div><p className="eyebrow">FUNCIONÁRIO DE TERCEIRO</p><h2>{item ? `Editar ${item.name}` : "Novo funcionário"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+        <form className="modal-form" onSubmit={submit}>
+          <label className="full">Nome *<input name="name" required minLength={3} defaultValue={item?.name ?? ""} autoFocus /></label>
+          <label>Função<input name="jobTitle" defaultValue={item?.jobTitle ?? ""} placeholder="Ex.: motosserrista" /></label>
+          <label>CPF<input name="cpf" inputMode="numeric" defaultValue={item?.cpf ?? ""} placeholder="Opcional" /></label>
+          <label>Telefone<input name="phone" defaultValue={item?.phone ?? ""} placeholder="Opcional" /></label>
+          {error && <div className="equipment-form-error full"><span>!</span><strong>{error}</strong></div>}
+          <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy ? "Salvando..." : "Salvar funcionário"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tela do cadastro
 // ---------------------------------------------------------------------------
@@ -184,6 +241,8 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
   const [openId, setOpenId] = useState<number | null>(null);
   const [editing, setEditing] = useState<ThirdParty | "new" | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<{ party: ThirdParty; item: ThirdPartyVehicle | null } | null>(null);
+  const [editingWorker, setEditingWorker] = useState<{ party: ThirdParty; item: ThirdPartyWorker | null } | null>(null);
+  const [tab, setTab] = useState<"VEICULOS" | "FUNCIONARIOS">("VEICULOS");
   const canManage = data?.canManage ?? authUser.permissions.includes("third_parties.manage");
   useEffect(() => { const timer = window.setTimeout(() => setDebounced(query.trim()), 300); return () => window.clearTimeout(timer); }, [query]);
   const load = useCallback(async () => {
@@ -217,7 +276,7 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
         {!data && !error ? <div className="page-loading"><span /><p>Carregando terceiros...</p></div> : data && (
           <div className="table-scroll">
             <table className="third-party-table">
-              <thead><tr><th>Empresa / pessoa</th><th>Tipo</th><th>CNPJ / CPF</th><th>Contato</th><th>Frente</th><th>Veículos</th><th>Situação</th><th>Ações</th></tr></thead>
+              <thead><tr><th>Empresa / pessoa</th><th>Tipo</th><th>CNPJ / CPF</th><th>Contato</th><th>Frente</th><th>Veículos</th><th>Funcionários</th><th>Situação</th><th>Ações</th></tr></thead>
               <tbody>{data.thirdParties.map((party) => (
                 <tr key={party.id} className={`${party.active ? "" : "stock-row-reversed"} ${openId === party.id ? "selected" : ""}`}>
                   <td><strong>{party.name}</strong>{party.notes && <small className="table-sub">{party.notes}</small>}</td>
@@ -226,12 +285,13 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
                   <td>{party.contactName ?? "—"}{party.phone && <small className="table-sub">{party.phone}</small>}</td>
                   <td>{party.front ?? "Todas"}</td>
                   <td>{party.vehicles.filter((vehicle) => vehicle.active).length}{party.vehicles.some((vehicle) => !vehicle.active) && <small className="table-sub">+{party.vehicles.filter((vehicle) => !vehicle.active).length} inativo(s)</small>}</td>
+                  <td>{party.employees.filter((worker) => worker.active).length}</td>
                   <td><span className={`status-pill ${party.active ? "green" : "gray"}`}>{party.active ? "Ativo" : "Inativo"}</span></td>
                   <td><div className="equipment-row-actions">
-                    <button onClick={() => setOpenId(openId === party.id ? null : party.id)}>{openId === party.id ? "Fechar" : "Veículos"}</button>
+                    <button onClick={() => setOpenId(openId === party.id ? null : party.id)}>{openId === party.id ? "Fechar" : "Abrir"}</button>
                     {canManage && <button onClick={() => setEditing(party)}>Editar</button>}
                     {canManage && <button onClick={() => act(`/api/third-parties/${party.id}`, jsonBody("PUT", { active: !party.active }), party.active ? `Inativar ${party.name}? Ele deixa de aparecer nos lançamentos (o histórico fica).` : undefined)}>{party.active ? "Inativar" : "Reativar"}</button>}
-                    {canManage && !party.hasMovements && !party.vehicles.some((vehicle) => vehicle.hasMovements) && <button onClick={() => act(`/api/third-parties/${party.id}`, { method: "DELETE" }, `Excluir ${party.name} e os veículos dele? (só é possível porque ainda não tem movimentação)`)}>Excluir</button>}
+                    {canManage && !party.hasMovements && !party.vehicles.some((vehicle) => vehicle.hasMovements) && !party.employees.some((worker) => worker.hasMovements) && <button onClick={() => act(`/api/third-parties/${party.id}`, { method: "DELETE" }, `Excluir ${party.name} com os veículos e funcionários dele? (só é possível porque ainda não tem movimentação)`)}>Excluir</button>}
                   </div></td>
                 </tr>
               ))}</tbody>
@@ -241,6 +301,38 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
         )}
       </article>
       {opened && data && (
+        <div className="third-party-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === "VEICULOS"} className={tab === "VEICULOS" ? "active" : ""} onClick={() => setTab("VEICULOS")}>Veículos ({opened.vehicles.length})</button>
+          <button type="button" role="tab" aria-selected={tab === "FUNCIONARIOS"} className={tab === "FUNCIONARIOS" ? "active" : ""} onClick={() => setTab("FUNCIONARIOS")}>Funcionários ({opened.employees.length})</button>
+        </div>
+      )}
+      {opened && data && tab === "FUNCIONARIOS" && (
+        <article className="panel module-panel third-party-vehicles-panel">
+          <div className="panel-head"><div><h2>Funcionários — {opened.name}</h2><p>Quem pode receber combustível (motosserra, gerador, galão...) ou peças fora dos veículos da empresa.</p></div>
+            {canManage && <button className="primary" onClick={() => setEditingWorker({ party: opened, item: null })}>＋ Novo funcionário</button>}</div>
+          <div className="table-scroll">
+            <table className="third-party-table">
+              <thead><tr><th>Nome</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Situação</th>{canManage && <th>Ações</th>}</tr></thead>
+              <tbody>{opened.employees.map((worker) => (
+                <tr key={worker.id} className={worker.active ? "" : "stock-row-reversed"}>
+                  <td><strong>{worker.name}</strong></td>
+                  <td>{worker.jobTitle ?? "—"}</td>
+                  <td>{formatDocument(worker.cpf)}</td>
+                  <td>{worker.phone ?? "—"}</td>
+                  <td><span className={`status-pill ${worker.active ? "green" : "gray"}`}>{worker.active ? "Ativo" : "Inativo"}</span></td>
+                  {canManage && <td><div className="equipment-row-actions">
+                    <button onClick={() => setEditingWorker({ party: opened, item: worker })}>Editar</button>
+                    <button onClick={() => act(`/api/third-party-employees/${worker.id}`, jsonBody("PUT", { active: !worker.active }))}>{worker.active ? "Inativar" : "Reativar"}</button>
+                    {!worker.hasMovements && <button onClick={() => act(`/api/third-party-employees/${worker.id}`, { method: "DELETE" }, `Excluir o funcionário ${worker.name}?`)}>Excluir</button>}
+                  </div></td>}
+                </tr>
+              ))}</tbody>
+            </table>
+            {opened.employees.length === 0 && <div className="empty-state">Nenhum funcionário cadastrado para este terceiro.</div>}
+          </div>
+        </article>
+      )}
+      {opened && data && tab === "VEICULOS" && (
         <article className="panel module-panel third-party-vehicles-panel">
           <div className="panel-head"><div><h2>Veículos e máquinas — {opened.name}</h2><p>Última leitura e média de consumo (dos abastecimentos das frentes que você enxerga).</p></div>
             {canManage && <button className="primary" onClick={() => setEditingVehicle({ party: opened, item: null })}>＋ Novo veículo</button>}</div>
@@ -274,6 +366,9 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
         saved={async (id, message) => { setEditing(null); flash(message); await load(); setOpenId(id); }} />}
       {editingVehicle && data && <VehicleFormModal thirdParty={editingVehicle.party} item={editingVehicle.item} fuelTypes={data.fuelTypes} close={() => setEditingVehicle(null)}
         saved={async (_id, message) => { setEditingVehicle(null); flash(message); await load(); }} />}
+      {editingWorker && <WorkerFormModal thirdParty={editingWorker.party} item={editingWorker.item} close={() => setEditingWorker(null)}
+        saved={async (_id, message) => { setEditingWorker(null); flash(message); await load(); }} />}
+      <ThirdPartySummaryPanel />
     </>
   );
 }
@@ -346,6 +441,65 @@ export function ThirdPartyConsumptionReport() {
           )}
         </>
       )}
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Resumo por empresa": combustível e peças em veículos x para funcionários, com o valor total.
+// ---------------------------------------------------------------------------
+type SummaryRow = { thirdPartyId: number; company: string; fuelVehicleLiters: number; fuelVehicleValue: number; fuelEmployeeLiters: number; fuelEmployeeValue: number; fuelOtherLiters: number; fuelOtherValue: number;
+  partsVehicleValue: number; partsEmployeeValue: number; partsOtherValue: number; partsQuantity: number; totalValue: number };
+const money = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+export function ThirdPartySummaryPanel() {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState<SummaryRow[] | null>(null);
+  const [error, setError] = useState("");
+  const params = `de=${from}&ate=${to}`;
+  useEffect(() => {
+    setError(""); setRows(null);
+    api<{ companies: SummaryRow[] }>(`/api/third-parties/summary?${params}`).then((result) => setRows(result.companies)).catch((problem) => setError(problemText(problem, "Não foi possível montar o resumo.")));
+  }, [params]);
+  const total = (key: keyof SummaryRow) => (rows ?? []).reduce((sum, row) => sum + Number(row[key]), 0);
+  return (
+    <article className="panel module-panel third-party-summary-panel">
+      <div className="panel-head"><div><h2>Resumo por empresa</h2><p>Combustível e peças que cada terceiro recebeu: nos veículos dele e para os funcionários (motosserra, gerador, galão...), com o valor total.</p></div></div>
+      <div className="products-filters fuel-history-filters">
+        <label>De<input type="date" value={from} max={to} onChange={(event) => event.target.value && setFrom(event.target.value)} /></label>
+        <label>Até<input type="date" value={to} min={from} onChange={(event) => event.target.value && setTo(event.target.value)} /></label>
+        <div className="fuel-export-actions"><a className="secondary" href={`/api/third-parties/summary?${params}&formato=xlsx`}>Exportar Excel</a></div>
+      </div>
+      {error && <div className="operation-error"><span>!</span><div><strong>Falha ao carregar</strong><p>{error}</p></div></div>}
+      {!rows && !error ? <div className="page-loading"><span /><p>Somando...</p></div> : rows && (
+        <div className="table-scroll">
+          <table className="products-table fuel-history-table">
+            <thead><tr><th>Empresa</th><th>Combustível em veículos</th><th>Combustível p/ funcionários</th><th>Peças em veículos</th><th>Peças p/ funcionários</th><th>Total</th></tr></thead>
+            <tbody>{rows.map((row) => (
+              <tr key={row.thirdPartyId}>
+                <td><strong>{row.company}</strong></td>
+                <td className="price-cell">{number(row.fuelVehicleLiters + row.fuelOtherLiters)} L<small className="table-sub">{money(row.fuelVehicleValue + row.fuelOtherValue)}</small></td>
+                <td className="price-cell">{number(row.fuelEmployeeLiters)} L<small className="table-sub">{money(row.fuelEmployeeValue)}</small></td>
+                <td className="price-cell">{money(row.partsVehicleValue + row.partsOtherValue)}</td>
+                <td className="price-cell">{money(row.partsEmployeeValue)}</td>
+                <td className="price-cell"><strong>{money(row.totalValue)}</strong></td>
+              </tr>
+            ))}</tbody>
+            {rows.length > 1 && <tfoot><tr>
+              <td><strong>Total</strong></td>
+              <td className="price-cell">{number(total("fuelVehicleLiters") + total("fuelOtherLiters"))} L<small className="table-sub">{money(total("fuelVehicleValue") + total("fuelOtherValue"))}</small></td>
+              <td className="price-cell">{number(total("fuelEmployeeLiters"))} L<small className="table-sub">{money(total("fuelEmployeeValue"))}</small></td>
+              <td className="price-cell">{money(total("partsVehicleValue") + total("partsOtherValue"))}</td>
+              <td className="price-cell">{money(total("partsEmployeeValue"))}</td>
+              <td className="price-cell"><strong>{money(total("totalValue"))}</strong></td>
+            </tr></tfoot>}
+          </table>
+          {rows.length === 0 && <div className="empty-state">Nenhuma saída para terceiros no período.</div>}
+        </div>
+      )}
+      <p className="table-sub">Combustível em veículos inclui saídas antigas sem destino definido. Valor do combustível pelo custo médio do estoque.</p>
     </article>
   );
 }

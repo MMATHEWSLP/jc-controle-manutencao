@@ -5,6 +5,7 @@ import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { validateDismissal } from "../../../../../lib/employee-rules";
 import { employeeAudit, employeeErrorResponse, employeeToday, requireEmployee } from "../../../../../lib/employees";
 import { CYCLE_STEPS } from "../../../../../lib/leave-cycle";
+import { sincronizarComAviso } from "../../../../../lib/operadores";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -37,7 +38,9 @@ export async function POST(request: Request, { params }: Context) {
         await tx.update(employeeAbsences).set({ endDate: absence.startDate > input.dismissedAt ? absence.startDate : input.dismissedAt, updatedAt: new Date().toISOString() }).where(eq(employeeAbsences.id, absence.id));
     });
     await employeeAudit(db, user.id, employee.id, "FUNCIONÁRIO DEMITIDO", { status: employee.status }, input);
-    return Response.json({ message: `${employee.name} demitido.${input.rehireAllowed ? "" : " Incluído na lista de Funcionários Restritos."}` });
+    // Demitido: o acesso de operador é desativado na hora (sem excluir, para manter o histórico).
+    const acesso = await sincronizarComAviso(db, employee.id, user);
+    return Response.json({ message: `${employee.name} demitido.${input.rehireAllowed ? "" : " Incluído na lista de Funcionários Restritos."}`, ...acesso });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.dismiss]", error);

@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const rows = await listStockMovements(await getDb(), {
       equipmentId: positive(url.searchParams.get("equipamento")), employeeId: positive(url.searchParams.get("funcionario")),
       departmentId: positive(url.searchParams.get("departamento")), productId: positive(url.searchParams.get("produto")),
-      thirdPartyId: positive(url.searchParams.get("terceiro")), thirdPartyVehicleId: positive(url.searchParams.get("veiculoTerceiro")),
+      thirdPartyId: positive(url.searchParams.get("terceiro")), thirdPartyVehicleId: positive(url.searchParams.get("veiculoTerceiro")), thirdPartyEmployeeId: positive(url.searchParams.get("funcionarioTerceiro")),
       from: isIsoDay(from) ? from : null, to: isIsoDay(to) ? to : null,
       fronts: displayed === "ALL" ? visible : displayed, sources: ["STOCK_EXIT", "WORK_ORDER", "HISTORY_IMPORT"], exitsOnly: true, closedWorkOrdersOnly: true, excludeCorrections: true, limit: 2000,
     });
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       { header: "Data", key: "date", width: 12 }, { header: "Documento", key: "origin", width: 12 }, { header: "TAG", key: "tag", width: 10 },
       { header: "Produto", key: "product", width: 34 }, { header: "Quantidade", key: "quantity", width: 12 }, { header: "Valor unitário (R$)", key: "unitPrice", width: 16 },
       { header: "Valor total (R$)", key: "total", width: 16 }, { header: "Destino / aplicação", key: "application", width: 28 }, { header: "Empresa (terceiro)", key: "company", width: 28 },
-      { header: "Veículo do terceiro", key: "vehicle", width: 18 }, { header: "Recebido por", key: "receivedBy", width: 22 }, { header: "Frente", key: "front", width: 16 },
+      { header: "Destino (terceiro)", key: "thirdDestination", width: 14 }, { header: "Veículo do terceiro", key: "vehicle", width: 18 }, { header: "Funcionário do terceiro", key: "thirdEmployee", width: 24 }, { header: "Recebido por", key: "receivedBy", width: 22 }, { header: "Frente", key: "front", width: 16 },
       { header: "Lançado por", key: "createdBy", width: 22 },
     ];
     const header = sheet.getRow(1);
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     for (const row of rows) sheet.addRow({
       date: new Date(`${row.date}T12:00:00Z`), origin: row.originNumber, tag: row.product.tag, product: row.product.name, quantity: row.quantity,
-      unitPrice: row.unitPrice, total: row.total, application: row.application ?? "", company: row.thirdParty?.name ?? "", vehicle: row.thirdParty?.plate ?? "",
+      unitPrice: row.unitPrice, total: row.total, application: row.application ?? "", company: row.thirdParty?.name ?? "", vehicle: row.thirdParty?.plate ?? "", thirdDestination: row.thirdParty?.destination ?? "", thirdEmployee: row.thirdParty?.employee ?? "",
       receivedBy: row.thirdParty?.receivedBy ?? row.withdrawnBy ?? "", front: row.front, createdBy: row.createdBy ?? "",
     });
     sheet.getColumn("date").numFmt = "dd/mm/yyyy";

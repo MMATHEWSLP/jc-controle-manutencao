@@ -1,4 +1,5 @@
 "use client";
+import { mostrarAcessoOperador, type AcessoOperador } from "./OperatorAccess";
 // Tipos e utilitários compartilhados pelas telas do módulo Funcionários. Nenhuma conta de dias aqui:
 // os números (dias trabalhados, viagem, folga, atraso) chegam prontos da API (lib/leave-cycle.ts).
 
@@ -54,7 +55,13 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
   if (!response.ok) throw Object.assign(new Error(String(data.error ?? "A operação não pôde ser concluída.")), { status: response.status, data });
   return data as T;
 }
-export const post = (url: string, body: unknown, method = "POST") => api<{ message: string; id?: number }>(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+// Salvar funcionário pode criar/reativar o acesso de operador: o PIN aparece uma vez (OperatorPinHost)
+// e avisos do acesso (desativado, pendente) entram na mensagem.
+export const post = async (url: string, body: unknown, method = "POST") => {
+  const data = await api<{ message: string; id?: number; acessoOperador?: AcessoOperador; avisoAcesso?: string }>(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (data.acessoOperador) mostrarAcessoOperador(data.acessoOperador);
+  return { ...data, message: data.avisoAcesso && !data.acessoOperador ? `${data.message} ${data.avisoAcesso}` : data.message };
+};
 export const problemText = (problem: unknown, fallback: string) => {
   if (!(problem instanceof Error)) return fallback;
   const list = (problem as Error & { data?: { problems?: string[] } }).data?.problems;

@@ -3,6 +3,7 @@ import { getDb } from "../../../../../db";
 import { employeeDismissals, employees, employeeTransfers, serviceFronts } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { canSeeEmployeeFront, employeeAudit, employeeErrorResponse, employeeToday, requireEmployee } from "../../../../../lib/employees";
+import { sincronizarComAviso } from "../../../../../lib/operadores";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -35,7 +36,9 @@ export async function POST(request: Request, { params }: Context) {
       await tx.insert(employeeTransfers).values({ employeeId: employee.id, previousServiceFrontId: employee.serviceFrontId, newServiceFrontId: front.id, transferDate: admissionDate, transferredBy: user.id, note: "Readmissão" });
     });
     await employeeAudit(db, user.id, employee.id, "FUNCIONÁRIO READMITIDO", { status: "DEMITIDO", admissionDate: employee.admissionDate }, { status: "ATIVO", admissionDate, serviceFrontId: front.id, restrictedConfirmed: dismissal && !dismissal.rehireAllowed ? true : undefined });
-    return Response.json({ message: `${employee.name} readmitido.` });
+    // Readmitido em função que opera equipamento: acesso reativado com PIN novo (mostrado uma vez).
+    const acesso = await sincronizarComAviso(db, employee.id, user);
+    return Response.json({ message: `${employee.name} readmitido.`, ...acesso });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.rehire]", error);

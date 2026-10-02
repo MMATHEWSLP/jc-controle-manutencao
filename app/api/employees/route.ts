@@ -3,6 +3,7 @@ import { employees, employeeTransfers } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { showsRegistryFrontButtons } from "../../../lib/active-front";
 import { validateEmployee } from "../../../lib/employee-rules";
+import { sincronizarComAviso } from "../../../lib/operadores";
 import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, employeeAlerts, employeeAudit, employeeErrorResponse, employeeScope, employeeToday, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
 
 // Listagem do módulo Funcionários: frentes em exibição (seletor global) ∩ frentes que a pessoa enxerga.
@@ -58,7 +59,9 @@ export async function POST(request: Request) {
       return row;
     });
     await employeeAudit(db, user.id, created.id, "FUNCIONÁRIO CADASTRADO", undefined, { ...input, restrictedConfirmed: restricted.length > 0 || undefined });
-    return Response.json({ id: created.id, message: "Funcionário cadastrado." }, { status: 201 });
+    // Função que opera equipamento: o acesso de operador nasce agora e o PIN aparece uma vez.
+    const acesso = await sincronizarComAviso(db, created.id, user, { jobTitle: input.jobTitle });
+    return Response.json({ id: created.id, message: "Funcionário cadastrado.", ...acesso }, { status: 201 });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.post]", error);

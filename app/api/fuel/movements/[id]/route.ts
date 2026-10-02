@@ -5,6 +5,7 @@ import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { fuelEquipmentContext, resolveResponsible, fuelLocalDay, fuelVisibleFronts, readFuelMovementBody, readThirdPartyFuelFields } from "../../../../../lib/fuel";
 import { validateFuelMovement } from "../../../../../lib/fuel-rules";
 import { prepareThirdPartyFuel, refreshVehicleLastReading, thirdPartyErrorResponse } from "../../../../../lib/third-parties";
+import type { FuelPurpose } from "../../../../../lib/third-party-rules";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -60,11 +61,12 @@ export async function PUT(request: Request, { params }: Context) {
     const originConfirmed = historical && typeof body.originConfirmed === "boolean" ? body.originConfirmed || input.stockLocation !== current.stockLocation : current.originConfirmed;
     // Veículo pendente sai quando o veículo é informado (ou o lançamento deixa de ser saída da frota).
     const vehiclePending = current.vehiclePending && input.movementType === "SAIDA" && !input.thirdParty && !input.equipmentId;
-    const next = {
+    const base = {
       ...input, serviceFrontId: requestedFront, destinationFrontId: input.movementType === "TRANSFERENCIA" ? input.destinationFrontId ?? requestedFront : null, meterUnit: equipment && input.meterReading !== null ? (equipment.controlType === "KM" ? "KM" as const : "HOURS" as const) : null, originConfirmed, vehiclePending,
-      thirdPartyId: null, thirdPartyVehicleId: null, fullTank: true, consumptionOutlier: false, readingException: false,
-      ...(thirdPartyFields ?? {}), updatedAt: now,
+      thirdPartyId: null as number | null, thirdPartyVehicleId: null as number | null, fullTank: true, consumptionOutlier: false, readingException: false,
+      thirdPartyEmployeeId: null as number | null, thirdPartyDestination: null as "VEICULO" | "FUNCIONARIO" | null, purpose: null as FuelPurpose | null, purposeNote: null as string | null, updatedAt: now,
     };
+    const next = thirdPartyFields ? { ...base, ...thirdPartyFields } : base;
     await db.update(fuelMovements).set(next).where(eq(fuelMovements.id, current.id));
     await refreshVehicleLastReading(db, current.thirdPartyVehicleId);
     if (next.thirdPartyVehicleId !== current.thirdPartyVehicleId) await refreshVehicleLastReading(db, next.thirdPartyVehicleId);

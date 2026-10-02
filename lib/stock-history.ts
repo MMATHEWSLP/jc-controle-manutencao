@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "../db";
-import { departments, employees, equipment, productStockMovements, products, serviceFronts, stockExits, thirdParties, thirdPartyVehicles, users, workOrderItems, workOrders } from "../db/schema";
+import { departments, employees, equipment, productStockMovements, products, serviceFronts, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles, users, workOrderItems, workOrders } from "../db/schema";
 import { materialRequestNumber, purchaseOrderNumber, stockExitNumber, workOrderNumber } from "./document-numbers";
 import { STOCK_SOURCE_LABELS, type StockSource } from "./stock";
 
@@ -9,6 +9,7 @@ type Db = Awaited<ReturnType<typeof getDb>>;
 
 // Filtros do histórico de movimentações (aba Histórico do produto e Histórico da Movimentação).
 export type StockHistoryFilters = {
+  thirdPartyEmployeeId?: number | null;
   productId?: number | null;
   equipmentId?: number | null;
   employeeId?: number | null;
@@ -51,6 +52,7 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
   if (filters.departmentId) conditions.push(eq(productStockMovements.departmentId, filters.departmentId));
   if (filters.thirdPartyId) conditions.push(eq(stockExits.thirdPartyId, filters.thirdPartyId));
   if (filters.thirdPartyVehicleId) conditions.push(eq(stockExits.thirdPartyVehicleId, filters.thirdPartyVehicleId));
+  if (filters.thirdPartyEmployeeId) conditions.push(eq(stockExits.thirdPartyEmployeeId, filters.thirdPartyEmployeeId));
   if (filters.sources?.length) conditions.push(inArray(productStockMovements.source, filters.sources));
   if (filters.exitsOnly) conditions.push(sql`${productStockMovements.delta} < 0`, isNull(productStockMovements.reversedAt));
   if (filters.closedWorkOrdersOnly) conditions.push(or(sql`${productStockMovements.source} <> 'WORK_ORDER'`, eq(workOrders.status, "CLOSED"))!);
@@ -70,6 +72,7 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
     application: workOrderItems.application, withdrawnBy: workOrderItems.withdrawnBy,
     createdByName: creator.name,
     thirdPartyId: stockExits.thirdPartyId, thirdPartyName: thirdParties.name, thirdPartyPlate: thirdPartyVehicles.plate, receivedBy: stockExits.receivedBy,
+    thirdPartyEmployeeId: stockExits.thirdPartyEmployeeId, thirdPartyEmployeeName: thirdPartyEmployees.name,
     importBatchId: productStockMovements.importBatchId, historyKind: productStockMovements.historyKind, affectsBalance: productStockMovements.affectsBalance,
     equipmentText: productStockMovements.equipmentText, employeeText: productStockMovements.employeeText, departmentText: productStockMovements.departmentText,
     destinationText: productStockMovements.destinationText, ownerText: productStockMovements.ownerText,
@@ -85,6 +88,7 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
     .leftJoin(stockExits, eq(productStockMovements.stockExitId, stockExits.id))
     .leftJoin(thirdParties, eq(stockExits.thirdPartyId, thirdParties.id))
     .leftJoin(thirdPartyVehicles, eq(stockExits.thirdPartyVehicleId, thirdPartyVehicles.id))
+    .leftJoin(thirdPartyEmployees, eq(stockExits.thirdPartyEmployeeId, thirdPartyEmployees.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(day), desc(productStockMovements.id))
     .limit(Math.min(filters.limit ?? 500, 2000));
@@ -111,7 +115,8 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
       // Histórico do sistema antigo: AJUSTE = Correção de Estoque; affectsBalance=false = não mexeu no saldo.
       correction: row.historyKind === "AJUSTE", historyOnly: imported && !row.affectsBalance,
       destination: imported ? row.destinationText : null, owner: imported ? row.ownerText : null,
-      thirdParty: row.thirdPartyId ? { id: row.thirdPartyId, name: row.thirdPartyName, plate: row.thirdPartyPlate, receivedBy: row.receivedBy } : null,
+      // Destino terceiro: veículo (placa) ou funcionário da empresa.
+      thirdParty: row.thirdPartyId ? { id: row.thirdPartyId, name: row.thirdPartyName, plate: row.thirdPartyPlate, receivedBy: row.receivedBy, employee: row.thirdPartyEmployeeName, destination: row.thirdPartyEmployeeId ? "Funcionário" : row.thirdPartyPlate ? "Veículo" : null } : null,
       withdrawnBy: row.withdrawnBy, unitPrice, total: unitPrice === null ? null : unitPrice * quantity,
       reason: row.reason, reversed: row.reversedAt !== null, createdBy: row.createdByName,
     };

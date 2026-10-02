@@ -59,6 +59,8 @@
     "test:assistente-consulta": "esbuild tests/assistente-consulta.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistente-consulta.mjs && node --test /tmp/manutencao-preventiva-assistente-consulta.mjs",
     "test:assistente-pendentes": "esbuild tests/assistente-pendentes.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-assistente-pendentes.mjs && node --test /tmp/manutencao-preventiva-assistente-pendentes.mjs",
     "test:assistente-pendentes-banco": "tsx --test tests/assistente-pendentes.integration.test.mjs",
+    "test:operadores-regras": "esbuild tests/operadores-regras.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-operadores-regras.mjs && node --test /tmp/manutencao-preventiva-operadores-regras.mjs",
+    "test:operadores-terceiros-banco": "tsx --test tests/operadores-terceiros.integration.test.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
   "dependencies": {

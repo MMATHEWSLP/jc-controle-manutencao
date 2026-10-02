@@ -78,17 +78,17 @@ export default function FieldLogin({ onBack, onAuthenticated }: { onBack: () => 
     {step === "name" && <>
       <h1>Qual é o seu nome?</h1>
       <span>Digite parte do seu nome e toque nele na lista.</span>
-      <label className="field-search"><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: João" autoComplete="off" autoCapitalize="words" aria-label="Seu nome"/></label>
+      <label className="field-search"><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome ou matrícula" autoComplete="off" autoCapitalize="words" aria-label="Seu nome ou matrícula"/></label>
       <div className="field-results">
         {results.map((operator) => <button type="button" key={operator.id} onClick={() => pick(operator)}><b>{initials(operator.name)}</b><span>{operator.name}</span></button>)}
         {query.trim().length >= 2 && !searching && results.length === 0 && <p>Nenhum funcionário encontrado. Confira o nome ou procure o encarregado.</p>}
       </div>
     </>}
     {step === "code" && selected && <form onSubmit={verify}>
-      <h1>Digite o seu código</h1>
+      <h1>Digite o seu PIN</h1>
       <span>{selected.name}</span>
       <input ref={codeInput} className="field-code" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="off" maxLength={8} value={code}
-        onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="••••" aria-label="Código de acesso"/>
+        onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="••••" aria-label="PIN de acesso"/>
       {error && <div className="login-error">! {error}</div>}
       <button className="primary field-big" disabled={busy || code.length < 4}>{busy ? "Conferindo..." : "CONTINUAR"}</button>
       <button type="button" className="field-link" onClick={notMe}>Não é você? Voltar</button>

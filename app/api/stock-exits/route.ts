@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const filters = {
       equipmentId: positive(url.searchParams.get("equipamento")), employeeId: positive(url.searchParams.get("funcionario")),
       departmentId: positive(url.searchParams.get("departamento")),
-      thirdPartyId: positive(url.searchParams.get("terceiro")), thirdPartyVehicleId: positive(url.searchParams.get("veiculoTerceiro")),
+      thirdPartyId: positive(url.searchParams.get("terceiro")), thirdPartyVehicleId: positive(url.searchParams.get("veiculoTerceiro")), thirdPartyEmployeeId: positive(url.searchParams.get("funcionarioTerceiro")),
       productId: positive(url.searchParams.get("produto")), from: isIsoDay(from) ? from : null, to: isIsoDay(to) ? to : null,
     };
     if (filters.from && filters.to && filters.from > filters.to) return Response.json({ error: "O período inicial não pode ser depois do final." }, { status: 400 });

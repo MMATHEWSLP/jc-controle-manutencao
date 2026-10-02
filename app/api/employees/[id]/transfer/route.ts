@@ -3,6 +3,7 @@ import { getDb } from "../../../../../db";
 import { employees, employeeTransfers, serviceFronts } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { canSeeEmployeeFront, employeeAudit, employeeErrorResponse, employeeToday, requireEmployee } from "../../../../../lib/employees";
+import { sincronizarComAviso } from "../../../../../lib/operadores";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -31,7 +32,9 @@ export async function POST(request: Request, { params }: Context) {
       await tx.update(employees).set({ serviceFrontId: front.id, updatedAt: new Date().toISOString() }).where(eq(employees.id, id));
     });
     await employeeAudit(db, user.id, id, "FUNCIONÁRIO TRANSFERIDO", { serviceFrontId: employee.serviceFrontId }, { serviceFrontId: front.id, transferDate, note });
-    return Response.json({ message: `${employee.name} transferido para ${front.name}.` });
+    // O operador passa a enxergar só a frente nova.
+    const acesso = await sincronizarComAviso(db, id, user);
+    return Response.json({ message: `${employee.name} transferido para ${front.name}.`, ...acesso });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.transfer]", error);

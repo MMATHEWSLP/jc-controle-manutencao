@@ -491,3 +491,33 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
   });
   return buildPdf(pages,{width:842,height:595});
 }
+
+// "Acessos dos operadores": nome, matrícula, função, frente e PIN (o único momento em que os PINs
+// aparecem; depois só redefinindo). Tabela em paisagem, 16 por página, PIN grande para recortar.
+export type OperatorAccessPdfRow={name:string;registration:string;jobTitle:string;front:string;pin:string;note?:string};
+export function createOperatorAccessPdf(input:{title:string;generatedAt:string;generatedBy:string;rows:OperatorAccessPdfRow[]}){
+  const perPage=16;const pageCount=Math.max(1,Math.ceil(input.rows.length/perPage));
+  const columns=[{x:40,label:"NOME",max:46},{x:330,label:"MATRÍCULA",max:14},{x:410,label:"FUNÇÃO",max:34},{x:630,label:"FRENTE",max:16},{x:730,label:"PIN",max:6}];
+  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
+    const rows=input.rows.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
+    content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · CONTROLE DIÁRIO",true,"0.08 0.49 0.35");content+=text(130,548,16,input.title,true,"0.08 0.25 0.36");
+    content+=text(130,531,7.5,"Entrar: tela de login > \"Sou operador\" > buscar o nome (ou a matrícula) > PIN de 4 números > \"Sou eu\". Não compartilhe o PIN.",false,"0.31 0.46 0.55");
+    content+=text(674,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(674,553,8,truncate(`${input.generatedAt} · ${input.generatedBy}`,30),false,"0.08 0.25 0.36");content+=text(674,536,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
+    content+="0.06 0.25 0.36 rg 28 474 786 24 re f\n";
+    for(const column of columns)content+=text(column.x,483,7,column.label,true,"1 1 1");
+    rows.forEach((row,index)=>{
+      const top=452-(index*26);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-9} 786 26 re f\n`;
+      content+=text(columns[0].x,top,8.5,truncate(row.name,columns[0].max),true);
+      if(row.note)content+=text(columns[0].x,top-8,6,truncate(row.note,70),false,"0.42 0.51 0.58");
+      content+=text(columns[1].x,top,8,truncate(row.registration||"—",columns[1].max));
+      content+=text(columns[2].x,top,7.5,truncate(row.jobTitle,columns[2].max));
+      content+=text(columns[3].x,top,8,truncate(row.front,columns[3].max));
+      content+=text(columns[4].x,top-2,15,row.pin,true,"0.08 0.25 0.36");
+      content+=`0.80 0.84 0.87 RG 0.4 w [3 2] 0 d 28 ${top-9} m 814 ${top-9} l S [] 0 d\n`;
+    });
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Os PINs não ficam guardados em texto no sistema: se perder, o ADMIN/GESTOR redefine em Usuários > Operadores.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(pages,{width:842,height:595});
+}

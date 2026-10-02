@@ -76,3 +76,11 @@ jobs:
           else
             node importar-funcionarios.mjs $FLAG "--arquivo=$DIR/$ARQUIVO" "--frente=$FRENTE" "--data=$DATA"
           fi
+
+      # Acesso de operador acompanha o cadastro: desativa demitidos/funções que não operam e marca os
+      # pendentes (a criação, com o PDF dos PINs, é em Usuários > Operadores).
+      - name: Sincronizar acessos de operador
+        if: github.event.inputs.modo == 'confirmar'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/sincronizar-operadores.ts --confirmar

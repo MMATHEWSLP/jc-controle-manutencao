@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyVehicles } from "../db/schema";
+import { auditLogs, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles } from "../db/schema";
 import type { SessionUser } from "./auth";
+import { computeFuelCosts } from "./fuel-rules";
 import {
   averageConsumption, computeConsumption, CONSUMPTION_UNITS, isOutlier, METER_LABELS, METER_PHRASES, THIRD_PARTY_KIND_LABELS,
-  type Fueling, type FuelingConsumption, type MeterType, type ThirdPartyInput, type VehicleInput,
+  isFuelPurpose, purposeText,
+  type Fueling, type FuelingConsumption, type FuelPurpose, type MeterType, type ThirdPartyDestination, type ThirdPartyEmployeeInput, type ThirdPartyInput, type VehicleInput,
 } from "./third-party-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -91,6 +93,12 @@ export async function listThirdParties(db: Db, filters: ThirdPartyFilters, visib
     tankCapacityLiters: thirdPartyVehicles.tankCapacityLiters, expectedConsumption: thirdPartyVehicles.expectedConsumption, lastReading: thirdPartyVehicles.lastReading, active: thirdPartyVehicles.active,
   }).from(thirdPartyVehicles).leftJoin(fuelTypes, eq(thirdPartyVehicles.fuelTypeId, fuelTypes.id))
     .where(inArray(thirdPartyVehicles.thirdPartyId, parties.map((party) => party.id))).orderBy(desc(thirdPartyVehicles.active), asc(thirdPartyVehicles.plate)) : [];
+  const workers = parties.length ? await db.select().from(thirdPartyEmployees).where(inArray(thirdPartyEmployees.thirdPartyId, parties.map((party) => party.id))).orderBy(desc(thirdPartyEmployees.active), asc(thirdPartyEmployees.name)) : [];
+  const workerUsage = workers.length ? await Promise.all([
+    db.select({ id: fuelMovements.thirdPartyEmployeeId, total: sql<number>`count(*)::int` }).from(fuelMovements).where(inArray(fuelMovements.thirdPartyEmployeeId, workers.map((row) => row.id))).groupBy(fuelMovements.thirdPartyEmployeeId),
+    db.select({ id: stockExits.thirdPartyEmployeeId, total: sql<number>`count(*)::int` }).from(stockExits).where(inArray(stockExits.thirdPartyEmployeeId, workers.map((row) => row.id))).groupBy(stockExits.thirdPartyEmployeeId),
+  ]) : [[], []];
+  const workersUsed = new Set(workerUsage.flat().filter((row) => Number(row.total) > 0).map((row) => row.id));
   const fuelings = await vehicleFuelings(db, vehicles.map((vehicle) => vehicle.id));
   const [usage, exitUsage] = parties.length ? await Promise.all([
     db.select({ id: fuelMovements.thirdPartyId, total: sql<number>`count(*)::int` }).from(fuelMovements).where(inArray(fuelMovements.thirdPartyId, parties.map((party) => party.id))).groupBy(fuelMovements.thirdPartyId),
@@ -99,6 +107,7 @@ export async function listThirdParties(db: Db, filters: ThirdPartyFilters, visib
   const used = new Set([...usage, ...exitUsage].filter((row) => Number(row.total) > 0).map((row) => row.id));
   return parties.map((party) => ({
     ...party, kindLabel: THIRD_PARTY_KIND_LABELS[party.kind], hasMovements: used.has(party.id),
+    employees: workers.filter((row) => row.thirdPartyId === party.id).map((row) => ({ id: row.id, name: row.name, jobTitle: row.jobTitle, cpf: row.cpf, phone: row.phone, active: row.active, hasMovements: workersUsed.has(row.id) })),
     vehicles: vehicles.filter((vehicle) => vehicle.thirdPartyId === party.id).map((vehicle) => {
       const list = fuelings.get(vehicle.id) ?? [];
       const consumption = computeConsumption(vehicle.meterType, list);
@@ -166,6 +175,7 @@ export async function deleteThirdParty(db: Db, user: SessionUser, id: number) {
   for (const vehicle of vehicles) if (await vehicleUsed(db, vehicle.id)) throw new ThirdPartyError("Um veículo deste terceiro já tem movimentação: só é possível inativar.", 409);
   await db.transaction(async (tx) => {
     await tx.delete(thirdPartyVehicles).where(eq(thirdPartyVehicles.thirdPartyId, id));
+    await tx.delete(thirdPartyEmployees).where(eq(thirdPartyEmployees.thirdPartyId, id));
     const removed = await tx.delete(thirdParties).where(eq(thirdParties.id, id)).returning({ id: thirdParties.id });
     if (!removed.length) throw new ThirdPartyError("Terceiro não encontrado.", 404);
     await tx.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY", entityId: String(id), action: "TERCEIRO EXCLUÍDO" });
@@ -207,6 +217,58 @@ export async function deleteVehicle(db: Db, user: SessionUser, id: number) {
   await db.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY_VEHICLE", entityId: String(id), action: "VEÍCULO DE TERCEIRO EXCLUÍDO" });
 }
 
+// ---------------------------------------------------------------------------
+// Funcionários dos terceiros (aba "Funcionários" da empresa)
+// ---------------------------------------------------------------------------
+async function employeeUsed(db: Db, id: number) {
+  const [fuel, exit] = await Promise.all([
+    db.select({ id: fuelMovements.id }).from(fuelMovements).where(eq(fuelMovements.thirdPartyEmployeeId, id)).limit(1),
+    db.select({ id: stockExits.id }).from(stockExits).where(eq(stockExits.thirdPartyEmployeeId, id)).limit(1),
+  ]);
+  return fuel.length > 0 || exit.length > 0;
+}
+
+export async function createThirdPartyEmployee(db: Db, user: SessionUser, thirdPartyId: number, input: ThirdPartyEmployeeInput) {
+  const party = (await db.select({ id: thirdParties.id }).from(thirdParties).where(eq(thirdParties.id, thirdPartyId)).limit(1))[0];
+  if (!party) throw new ThirdPartyError("Terceiro não encontrado.", 404);
+  try {
+    const [row] = await db.insert(thirdPartyEmployees).values({ ...input, thirdPartyId, createdBy: user.id }).returning({ id: thirdPartyEmployees.id });
+    await db.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY_EMPLOYEE", entityId: String(row.id), action: "FUNCIONÁRIO DE TERCEIRO CADASTRADO", newValue: JSON.stringify({ thirdPartyId, ...input }) });
+    return row.id;
+  } catch (error) {
+    if (uniqueViolation(error)) throw new ThirdPartyError(`Esta empresa já tem um funcionário chamado ${input.name}.`, 409);
+    throw error;
+  }
+}
+
+export async function updateThirdPartyEmployee(db: Db, user: SessionUser, id: number, input: ThirdPartyEmployeeInput | null, active?: boolean) {
+  const current = (await db.select().from(thirdPartyEmployees).where(eq(thirdPartyEmployees.id, id)).limit(1))[0];
+  if (!current) throw new ThirdPartyError("Funcionário não encontrado.", 404);
+  const values = { ...(input ?? {}), ...(active === undefined ? {} : { active }), updatedAt: new Date().toISOString() };
+  try { await db.update(thirdPartyEmployees).set(values).where(eq(thirdPartyEmployees.id, id)); }
+  catch (error) {
+    if (uniqueViolation(error)) throw new ThirdPartyError("Esta empresa já tem outro funcionário com esse nome.", 409);
+    throw error;
+  }
+  await db.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY_EMPLOYEE", entityId: String(id), action: active === false ? "FUNCIONÁRIO DE TERCEIRO INATIVADO" : active === true ? "FUNCIONÁRIO DE TERCEIRO REATIVADO" : "FUNCIONÁRIO DE TERCEIRO EDITADO", previousValue: JSON.stringify(current), newValue: JSON.stringify(values) });
+}
+
+export async function deleteThirdPartyEmployee(db: Db, user: SessionUser, id: number) {
+  if (await employeeUsed(db, id)) throw new ThirdPartyError("Este funcionário já tem movimentação: não pode ser excluído, só inativado.", 409);
+  const removed = await db.delete(thirdPartyEmployees).where(eq(thirdPartyEmployees.id, id)).returning({ id: thirdPartyEmployees.id });
+  if (!removed.length) throw new ThirdPartyError("Funcionário não encontrado.", 404);
+  await db.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY_EMPLOYEE", entityId: String(id), action: "FUNCIONÁRIO DE TERCEIRO EXCLUÍDO" });
+}
+
+// Funcionário escolhido numa saída (combustível ou produtos): precisa ser da empresa e estar ativo
+// (ou já ser o funcionário do lançamento que está sendo editado).
+export async function requireThirdPartyEmployee(db: Db, thirdPartyId: number, employeeId: number, currentId?: number | null) {
+  const worker = (await db.select().from(thirdPartyEmployees).where(eq(thirdPartyEmployees.id, employeeId)).limit(1))[0];
+  if (!worker || worker.thirdPartyId !== thirdPartyId) throw new ThirdPartyError("O funcionário escolhido não pertence a esta empresa.");
+  if (!worker.active && currentId !== worker.id) throw new ThirdPartyError(`${worker.name} está inativo no cadastro do terceiro.`);
+  return worker;
+}
+
 // Última leitura do veículo = a do abastecimento mais recente (data, id); sem abastecimento com
 // leitura, fica a do cadastro.
 export async function refreshVehicleLastReading(db: Db, vehicleId: number | null | undefined) {
@@ -223,7 +285,9 @@ export async function refreshVehicleLastReading(db: Db, vehicleId: number | null
 export type ThirdPartyFuelRequest = {
   mode: "PRESTADOR" | "GERAL"; thirdPartyId: number; vehicleId: number | null; reading: number | null; fullTank: boolean; quantity: number;
   movementDate: string; notes: string | null; readingException: boolean; confirmTank: boolean; confirmOutlier: boolean; editingId: number | null;
-  current: { thirdPartyId: number | null; thirdPartyVehicleId: number | null } | null;
+  current: { thirdPartyId: number | null; thirdPartyVehicleId: number | null; thirdPartyEmployeeId?: number | null } | null;
+  // Destino: VEICULO (padrão; leitura e consumo) ou FUNCIONARIO (funcionário da empresa + finalidade, sem leitura).
+  destination?: ThirdPartyDestination; employeeId?: number | null; purpose?: FuelPurpose | null; purposeNote?: string | null;
   // Importação de fichas antigas: a leitura de referência é a do último abastecimento até a data
   // deste (não a última leitura do veículo, que pode ser de um dia posterior).
   referenceByDate?: boolean;
@@ -236,6 +300,22 @@ export async function prepareThirdPartyFuel(db: Db, user: SessionUser, request: 
   if (!party) throw new ThirdPartyError("Terceiro não encontrado no cadastro.", 404);
   if (!party.active && request.current?.thirdPartyId !== party.id) throw new ThirdPartyError(`${party.name} está inativo no cadastro de terceiros.`);
   if (request.mode === "PRESTADOR" && party.kind === "PESSOA_FISICA") throw new ThirdPartyError("Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Saída para terceiros.");
+  if (request.destination === "FUNCIONARIO") {
+    if (!request.employeeId) throw new ThirdPartyError(`Escolha o funcionário de ${party.name} que recebeu o combustível (ou cadastre com “+ Novo”).`);
+    const worker = await requireThirdPartyEmployee(db, party.id, request.employeeId, request.current?.thirdPartyEmployeeId);
+    if (!isFuelPurpose(request.purpose)) throw new ThirdPartyError("Escolha a finalidade (motosserra, gerador, galão/reserva, máquina não cadastrada ou outros).");
+    const note = request.purposeNote?.trim() || null;
+    if (request.purpose === "OUTROS" && !note) throw new ThirdPartyError("Descreva a finalidade em “Outros”.");
+    if (!(request.quantity > 0)) throw new ThirdPartyError("Informe a quantidade em litros (maior que zero).");
+    const label = `Funcionário: ${worker.name} (${purposeText(request.purpose, note)})`;
+    // Sem veículo, sem leitura e fora da média de consumo de qualquer veículo.
+    return {
+      thirdPartyId: party.id, thirdPartyVehicleId: null, thirdPartyEmployeeId: worker.id, thirdPartyDestination: "FUNCIONARIO" as const, purpose: request.purpose, purposeNote: request.purpose === "OUTROS" ? note : null,
+      meterReading: null, meterUnit: null, fullTank: true, readingException: false, consumptionOutlier: false,
+      providerCompany: request.mode === "PRESTADOR" ? party.name : null, providerEquipment: request.mode === "PRESTADOR" ? label : null,
+      thirdPartyDescription: request.mode === "GERAL" ? [party.name, label].join(" · ") : null,
+    };
+  }
   let vehicle: typeof thirdPartyVehicles.$inferSelect | undefined;
   if (request.vehicleId) {
     vehicle = (await db.select().from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, request.vehicleId)).limit(1))[0];
@@ -277,7 +357,7 @@ export async function prepareThirdPartyFuel(db: Db, user: SessionUser, request: 
   }
   const vehicleLabel = vehicle ? [vehicle.plate, vehicle.description].filter(Boolean).join(" — ") : null;
   return {
-    thirdPartyId: party.id, thirdPartyVehicleId: vehicle?.id ?? null,
+    thirdPartyId: party.id, thirdPartyVehicleId: vehicle?.id ?? null, thirdPartyEmployeeId: null, thirdPartyDestination: vehicle ? "VEICULO" as const : null, purpose: null, purposeNote: null,
     meterReading: vehicle ? request.reading : null, meterUnit: vehicle ? (vehicle.meterType === "KM" ? "KM" as const : "HOURS" as const) : null,
     fullTank: request.fullTank, readingException, consumptionOutlier,
     // Textos livres antigos preenchidos a partir do cadastro (histórico e exportações continuam iguais).
@@ -329,6 +409,66 @@ export async function thirdPartyOptions(db: Db) {
     id: thirdPartyVehicles.id, thirdPartyId: thirdPartyVehicles.thirdPartyId, plate: thirdPartyVehicles.plate, description: thirdPartyVehicles.description,
     meterType: thirdPartyVehicles.meterType, lastReading: thirdPartyVehicles.lastReading, tankCapacityLiters: thirdPartyVehicles.tankCapacityLiters,
   }).from(thirdPartyVehicles).where(and(eq(thirdPartyVehicles.active, true), inArray(thirdPartyVehicles.thirdPartyId, parties.map((party) => party.id)))).orderBy(asc(thirdPartyVehicles.plate)) : [];
-  return parties.map((party) => ({ ...party, vehicles: vehicles.filter((vehicle) => vehicle.thirdPartyId === party.id) }));
+  const workers = parties.length ? await db.select({ id: thirdPartyEmployees.id, thirdPartyId: thirdPartyEmployees.thirdPartyId, name: thirdPartyEmployees.name, jobTitle: thirdPartyEmployees.jobTitle })
+    .from(thirdPartyEmployees).where(and(eq(thirdPartyEmployees.active, true), inArray(thirdPartyEmployees.thirdPartyId, parties.map((party) => party.id)))).orderBy(asc(thirdPartyEmployees.name)) : [];
+  return parties.map((party) => ({ ...party, vehicles: vehicles.filter((vehicle) => vehicle.thirdPartyId === party.id), employees: workers.filter((worker) => worker.thirdPartyId === party.id) }));
 }
 
+
+// ---------------------------------------------------------------------------
+// Relatório por empresa (Terceiros → "Resumo por empresa"): no período e nas frentes do escopo,
+// combustível em veículos × para funcionários (litros e valor pelo custo médio do estoque) e peças
+// em veículos × para funcionários (valor da saída), com o total em R$.
+// ---------------------------------------------------------------------------
+export async function thirdPartySummary(db: Db, scopeFronts: number[], filters: { from: string; to: string; thirdPartyId?: number | null }) {
+  type Linha = { thirdPartyId: number; company: string; fuelVehicleLiters: number; fuelVehicleValue: number; fuelEmployeeLiters: number; fuelEmployeeValue: number; fuelOtherLiters: number; fuelOtherValue: number;
+    partsVehicleValue: number; partsEmployeeValue: number; partsOtherValue: number; partsQuantity: number; totalValue: number };
+  if (scopeFronts.length === 0) return { companies: [] as Linha[] };
+  const [fuel, parts, costs] = await Promise.all([
+    db.select({ id: fuelMovements.id, thirdPartyId: fuelMovements.thirdPartyId, company: thirdParties.name, destination: fuelMovements.thirdPartyDestination, vehicleId: fuelMovements.thirdPartyVehicleId, liters: fuelMovements.quantity })
+      .from(fuelMovements).innerJoin(thirdParties, eq(thirdParties.id, fuelMovements.thirdPartyId))
+      .where(and(isNull(fuelMovements.deletedAt), eq(fuelMovements.movementType, "SAIDA"), eq(fuelMovements.balanceAdjustment, false), inArray(fuelMovements.serviceFrontId, scopeFronts),
+        sql`${fuelMovements.movementDate} >= ${filters.from}`, sql`${fuelMovements.movementDate} <= ${filters.to}`, filters.thirdPartyId ? eq(fuelMovements.thirdPartyId, filters.thirdPartyId) : undefined)),
+    db.execute(sql`SELECT se.third_party_id, tp.name AS company,
+        CASE WHEN se.third_party_employee_id IS NOT NULL THEN 'FUNCIONARIO' WHEN se.third_party_vehicle_id IS NOT NULL THEN 'VEICULO' ELSE 'OUTRO' END AS destino,
+        sum(i.quantity)::float AS quantidade, sum(i.quantity * coalesce(i.unit_price, 0))::float AS valor
+      FROM stock_exits se JOIN stock_exit_items i ON i.exit_id = se.id JOIN third_parties tp ON tp.id = se.third_party_id
+      WHERE se.cancelled_at IS NULL AND se.service_front_id IN (${sql.join(scopeFronts.map((id) => sql`${id}`), sql`, `)})
+        AND se.exit_date >= ${filters.from} AND se.exit_date <= ${filters.to} ${filters.thirdPartyId ? sql`AND se.third_party_id = ${filters.thirdPartyId}` : sql``}
+      GROUP BY 1, 2, 3`),
+    (async () => {
+      const rows = await db.select({
+        id: fuelMovements.id, serviceFrontId: fuelMovements.serviceFrontId, stockLocation: fuelMovements.stockLocation, destinationFrontId: fuelMovements.destinationFrontId,
+        destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType,
+        movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity, unitPrice: fuelMovements.unitPrice,
+      }).from(fuelMovements).where(isNull(fuelMovements.deletedAt));
+      return computeFuelCosts(rows);
+    })(),
+  ]);
+  const mapa = new Map<number, Linha>();
+  const linha = (id: number, company: string) => {
+    let item = mapa.get(id);
+    if (!item) { item = { thirdPartyId: id, company, fuelVehicleLiters: 0, fuelVehicleValue: 0, fuelEmployeeLiters: 0, fuelEmployeeValue: 0, fuelOtherLiters: 0, fuelOtherValue: 0, partsVehicleValue: 0, partsEmployeeValue: 0, partsOtherValue: 0, partsQuantity: 0, totalValue: 0 }; mapa.set(id, item); }
+    return item;
+  };
+  for (const row of fuel) {
+    const item = linha(row.thirdPartyId!, row.company);
+    const value = costs.get(row.id)?.cost ?? 0;
+    if (row.destination === "FUNCIONARIO") { item.fuelEmployeeLiters += row.liters; item.fuelEmployeeValue += value; }
+    else if (row.destination === "VEICULO" || row.vehicleId) { item.fuelVehicleLiters += row.liters; item.fuelVehicleValue += value; }
+    else { item.fuelOtherLiters += row.liters; item.fuelOtherValue += value; }
+  }
+  for (const row of (parts as unknown as { rows: Array<{ third_party_id: number; company: string; destino: string; quantidade: number; valor: number }> }).rows) {
+    const item = linha(Number(row.third_party_id), row.company);
+    item.partsQuantity += Number(row.quantidade);
+    if (row.destino === "FUNCIONARIO") item.partsEmployeeValue += Number(row.valor);
+    else if (row.destino === "VEICULO") item.partsVehicleValue += Number(row.valor);
+    else item.partsOtherValue += Number(row.valor);
+  }
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const companies = [...mapa.values()].map((item) => {
+    const total = item.fuelVehicleValue + item.fuelEmployeeValue + item.fuelOtherValue + item.partsVehicleValue + item.partsEmployeeValue + item.partsOtherValue;
+    return Object.fromEntries(Object.entries({ ...item, totalValue: total }).map(([key, value]) => [key, typeof value === "number" && key !== "thirdPartyId" ? round(value) : value])) as Linha;
+  }).sort((a, b) => b.totalValue - a.totalValue);
+  return { companies };
+}

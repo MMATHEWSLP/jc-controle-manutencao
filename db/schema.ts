@@ -59,9 +59,15 @@ export const users = pgTable("users", {
   jobTitle: text("job_title"),
   // Só para perfil CAMPO: código numérico de acesso, guardado como "salt:hash" (nunca em texto).
   accessCodeHash: text("access_code_hash"),
+  // Quando o código/PIN foi trocado: tentativas erradas anteriores deixam de contar no bloqueio.
+  accessCodeChangedAt: text("access_code_changed_at"),
+  // Acesso de operador (perfil CAMPO) criado a partir do cadastro de Funcionários: o acesso segue
+  // o funcionário (função que opera equipamento, frente, demissão/readmissão) — lib/operadores.ts.
+  employeeId: integer("employee_id").references((): AnyPgColumn => employees.id),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
+  uniqueIndex("users_employee_unique").on(table.employeeId),
   uniqueIndex("users_username_unique").on(table.username),
   index("users_status_role_idx").on(table.status, table.role),
   index("users_service_front_idx").on(table.serviceFrontId),
@@ -1043,6 +1049,23 @@ export const thirdPartyVehicles = pgTable("third_party_vehicles", {
   uniqueIndex("third_party_vehicles_plate_unique").on(table.thirdPartyId, table.plateKey),
 ]);
 
+// Funcionários de terceiros/prestadores (aba "Funcionários" de cada empresa em Terceiros): quem
+// recebe combustível (motosserra, gerador, galão...) ou peças/EPI sem vínculo com veículo.
+export const thirdPartyEmployees = pgTable("third_party_employees", {
+  id: serial("id").primaryKey(),
+  thirdPartyId: integer("third_party_id").notNull().references(() => thirdParties.id),
+  name: text("name").notNull(),
+  jobTitle: text("job_title"),
+  cpf: text("cpf"),
+  phone: text("phone"),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  index("third_party_employees_party_idx").on(table.thirdPartyId, table.active),
+  uniqueIndex("third_party_employees_party_name_unique").on(table.thirdPartyId, table.name),
+]);
+
 export const fuelMovements = pgTable("fuel_movements", {
   id: serial("id").primaryKey(),
   // Frente dona do lançamento (a que tem o saldo alterado). Na TRANSFERÊNCIA é a frente de origem.
@@ -1112,6 +1135,12 @@ export const fuelMovements = pgTable("fuel_movements", {
   consumptionOutlier: boolean("consumption_outlier").notNull().default(false),
   // Leitura menor/igual à última aceita por ADMIN/GESTOR com justificativa: vira nova base do consumo.
   readingException: boolean("reading_exception").notNull().default(false),
+  // Saída para terceiro: destino VEICULO (veículo do cadastro, leitura e consumo) ou FUNCIONARIO
+  // (funcionário da empresa, sem leitura e fora da média de consumo), com a finalidade.
+  thirdPartyDestination: text("third_party_destination", { enum:["VEICULO","FUNCIONARIO"] }),
+  thirdPartyEmployeeId: integer("third_party_employee_id").references((): AnyPgColumn => thirdPartyEmployees.id),
+  purpose: text("purpose", { enum:["MOTOSSERRA","GERADOR","GALAO","MAQUINA_NAO_CADASTRADA","OUTROS"] }),
+  purposeNote: text("purpose_note"),
   // ASSISTENTE = lançado pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); null = tela/importação.
   createdVia: text("created_via", { enum:["ASSISTENTE"] }),
   ...timestamps,
@@ -1383,6 +1412,17 @@ export const companies = pgTable("companies", {
   ...timestamps,
 }, (table) => [uniqueIndex("companies_name_unique").on(table.name)]);
 
+// Funções/cargos dos funcionários (lista editável, preenchida com as funções já usadas no cadastro).
+// operatesEquipment = a função dirige/opera equipamento da frota: o funcionário ativo ganha acesso
+// de operador (login com PIN, só Controle Diário) — lib/operadores.ts.
+export const jobFunctions = pgTable("job_functions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  operatesEquipment: boolean("operates_equipment").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [uniqueIndex("job_functions_name_unique").on(table.name)]);
+
 // Ciclo de folga: cada linha é um ciclo do funcionário, com as 5 datas lançadas à mão. Toda a conta
 // de dias (trabalhados, viagem, folga, atraso) é feita em lib/leave-cycle.ts — nunca aqui nem na tela.
 // O ciclo "aberto" é o que ainda não tem frontArrival; ao registrar a chegada na frente, o próximo
@@ -1597,6 +1637,8 @@ export const stockExits = pgTable("stock_exits", {
   thirdPartyId: integer("third_party_id").references(() => thirdParties.id),
   thirdPartyVehicleId: integer("third_party_vehicle_id").references(() => thirdPartyVehicles.id),
   receivedBy: text("received_by"),
+  // Destino terceiro: funcionário da empresa (EPI, ferramenta, lima, corrente...), sem veículo.
+  thirdPartyEmployeeId: integer("third_party_employee_id").references((): AnyPgColumn => thirdPartyEmployees.id),
   notes: text("notes"),
   // ASSISTENTE = lançada pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); null = tela.
   createdVia: text("created_via", { enum:["ASSISTENTE"] }),
