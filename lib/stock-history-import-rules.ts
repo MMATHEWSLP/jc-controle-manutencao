@@ -485,3 +485,40 @@ export function chunk<T>(list: T[], size = HISTORY_BLOCK_SIZE) {
 export function historyReason(kind: HistoryKind) {
   return kind === "AJUSTE" ? "Correção de Estoque (histórico do sistema antigo)" : "Saída (histórico do sistema antigo)";
 }
+
+// Decisões automáticas (importação feita pelo script, sem a tela), na regra aprovada pelo ADMIN:
+//  - nome repetido no cadastro → produto ativo com a menor TAG (sem ativo: a menor TAG);
+//  - 1ª sugestão ≥ `threshold` parecida → vincula a ela;
+//  - o resto → cadastra como novo (nome + preço, marcado para revisão).
+export function autoDecisions(unmatched: UnmatchedProduct[], products: HistoryProduct[], threshold = 0.9) {
+  const byKey = new Map<string, HistoryProduct[]>();
+  for (const product of products) {
+    const key = historyNameKey(product.name);
+    byKey.set(key, [...(byKey.get(key) ?? []), product]);
+  }
+  const tagOrder = (a: HistoryProduct, b: HistoryProduct) => {
+    const left = Number(a.tag), right = Number(b.tag);
+    return Number.isFinite(left) && Number.isFinite(right) ? left - right : a.tag.localeCompare(b.tag, "pt-BR", { numeric: true });
+  };
+  const decisions: Record<string, ProductDecision> = {};
+  const log: Array<{ name: string; rows: number; action: "LINK" | "CREATE"; reason: string; product?: { id: number; tag: string; name: string } }> = [];
+  for (const item of unmatched) {
+    const same = byKey.get(item.key) ?? [];
+    if (same.length > 1) {
+      const active = same.filter((product) => product.active);
+      const chosen = [...(active.length ? active : same)].sort(tagOrder)[0];
+      decisions[item.key] = { action: "LINK", productId: chosen.id };
+      log.push({ name: item.name, rows: item.rows, action: "LINK", reason: `nome repetido no cadastro (${same.length} TAGs): menor TAG${active.length ? " ativa" : ""}`, product: { id: chosen.id, tag: chosen.tag, name: chosen.name } });
+      continue;
+    }
+    const best = item.suggestions[0];
+    if (best && best.score >= threshold) {
+      decisions[item.key] = { action: "LINK", productId: best.id };
+      log.push({ name: item.name, rows: item.rows, action: "LINK", reason: `${Math.round(best.score * 100)}% parecido`, product: { id: best.id, tag: best.tag, name: best.name } });
+    } else {
+      decisions[item.key] = { action: "CREATE" };
+      log.push({ name: item.name, rows: item.rows, action: "CREATE", reason: best ? `melhor sugestão só ${Math.round(best.score * 100)}% parecida` : "sem sugestão" });
+    }
+  }
+  return { decisions, log };
+}

@@ -1,0 +1,59 @@
+name: Importar movimentações de estoque (histórico do almoxarifado antigo)
+
+# Carga do histórico de saídas/ajustes do almoxarifado antigo (importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx,
+# aba Importar) para product_stock_movements, SÓ como histórico: o saldo dos produtos não muda.
+# Mesmas regras e mesmo serviço da tela Produtos → Importar movimentações. Rode primeiro em dry-run.
+# Produto não encontrado: nome repetido → menor TAG ativa; sugestão ≥ 90% → vincula; resto → cadastra (para revisão).
+# Para desfazer: Produtos → Importar movimentações → Importações anteriores → Desfazer importação.
+# Pré-requisito: migração 0037 aplicada (workflow "Migrar banco de dados (Drizzle)").
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "dry-run (simulação, não grava nada) ou confirmar (grava o lote)"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - confirmar
+      arquivo:
+        description: "Planilha (aba Importar)"
+        required: true
+        default: "importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx"
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Simulação (dry-run, conexão somente leitura)
+        if: ${{ github.event.inputs.modo == 'dry-run' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ARQUIVO: ${{ github.event.inputs.arquivo }}
+        run: npx tsx scripts/import-movimentacoes-estoque.ts "--arquivo=$ARQUIVO" --relatorio=relatorio-importacao.json
+
+      - name: Importação (confirmar)
+        if: ${{ github.event.inputs.modo == 'confirmar' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ARQUIVO: ${{ github.event.inputs.arquivo }}
+        run: npx tsx scripts/import-movimentacoes-estoque.ts "--arquivo=$ARQUIVO" --confirmar --relatorio=relatorio-importacao.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: relatorio-importacao-movimentacoes-${{ github.run_number }}
+          path: relatorio-importacao.json
+          retention-days: 90
+          if-no-files-found: ignore
