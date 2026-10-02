@@ -21,6 +21,8 @@ export type StockHistoryFilters = {
   exitsOnly?: boolean;
   // Peças de O.S. só entram depois que a O.S. é fechada (Histórico da Movimentação).
   closedWorkOrdersOnly?: boolean;
+  // Relatórios de consumo: tira as Correções de Estoque (AJUSTE) do histórico importado.
+  excludeCorrections?: boolean;
   from?: string | null;
   to?: string | null;
   fronts: number[] | "ALL";
@@ -28,7 +30,8 @@ export type StockHistoryFilters = {
 };
 
 // Número do documento de origem do movimento (rastreio): SOL-/PED-/SAI-/OS- ou "Ajuste" (manual).
-export function originNumber(row: { source: string; materialRequestId: number | null; purchaseOrderId: number | null; stockExitId: number | null; workOrderId: number | null }) {
+export function originNumber(row: { source: string; materialRequestId: number | null; purchaseOrderId: number | null; stockExitId: number | null; workOrderId: number | null; importBatchId?: number | null }) {
+  if (row.source === "HISTORY_IMPORT") return row.importBatchId ? `IMP-${row.importBatchId}` : "Importado";
   if (row.source === "MATERIAL_REQUEST" && row.materialRequestId) return materialRequestNumber(row.materialRequestId);
   if (row.source === "PURCHASE" && row.purchaseOrderId) return purchaseOrderNumber(row.purchaseOrderId);
   if (row.source === "STOCK_EXIT" && row.stockExitId) return stockExitNumber(row.stockExitId);
@@ -51,6 +54,7 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
   if (filters.sources?.length) conditions.push(inArray(productStockMovements.source, filters.sources));
   if (filters.exitsOnly) conditions.push(sql`${productStockMovements.delta} < 0`, isNull(productStockMovements.reversedAt));
   if (filters.closedWorkOrdersOnly) conditions.push(or(sql`${productStockMovements.source} <> 'WORK_ORDER'`, eq(workOrders.status, "CLOSED"))!);
+  if (filters.excludeCorrections) conditions.push(sql`${productStockMovements.historyKind} IS DISTINCT FROM 'AJUSTE'`);
   if (filters.from) conditions.push(gte(day, filters.from));
   if (filters.to) conditions.push(lte(day, filters.to));
   const rows = await db.select({
@@ -66,6 +70,9 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
     application: workOrderItems.application, withdrawnBy: workOrderItems.withdrawnBy,
     createdByName: creator.name,
     thirdPartyId: stockExits.thirdPartyId, thirdPartyName: thirdParties.name, thirdPartyPlate: thirdPartyVehicles.plate, receivedBy: stockExits.receivedBy,
+    importBatchId: productStockMovements.importBatchId, historyKind: productStockMovements.historyKind, affectsBalance: productStockMovements.affectsBalance,
+    equipmentText: productStockMovements.equipmentText, employeeText: productStockMovements.employeeText, departmentText: productStockMovements.departmentText,
+    destinationText: productStockMovements.destinationText, ownerText: productStockMovements.ownerText,
   }).from(productStockMovements)
     .innerJoin(products, eq(productStockMovements.productId, products.id))
     .innerJoin(serviceFronts, eq(productStockMovements.serviceFrontId, serviceFronts.id))
@@ -84,6 +91,11 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
   return rows.map((row) => {
     const unitPrice = row.unitPrice ?? null;
     const quantity = Math.abs(row.delta);
+    // Histórico importado: o que não casou com o cadastro aparece pelo texto da planilha.
+    const imported = row.source === "HISTORY_IMPORT";
+    const equipmentLabel = row.equipmentPrefix ?? (imported ? row.equipmentText : null);
+    const employeeLabel = row.employeeName ?? (imported ? row.employeeText : null);
+    const departmentLabel = row.departmentName ?? (imported && row.historyKind !== "AJUSTE" ? row.departmentText : null);
     return {
       id: row.id, date: row.day, createdAt: row.createdAt, type: row.delta > 0 ? "ENTRADA" as const : "SAIDA" as const, quantity,
       source: row.source, sourceLabel: STOCK_SOURCE_LABELS[row.source as StockSource] ?? row.source, originNumber: originNumber(row),
@@ -91,11 +103,14 @@ export async function listStockMovements(db: Db, filters: StockHistoryFilters) {
       workOrderOpen: row.source === "WORK_ORDER" && row.workOrderStatus === "OPEN",
       product: { id: row.productId, tag: row.productTag, name: row.productName },
       front: row.frontName, serviceFrontId: row.serviceFrontId,
-      equipment: row.equipmentId ? { id: row.equipmentId, prefix: row.equipmentPrefix } : null,
-      employee: row.employeeId ? { id: row.employeeId, name: row.employeeName } : null,
-      department: row.departmentId ? { id: row.departmentId, name: row.departmentName } : null,
+      equipment: row.equipmentId ? { id: row.equipmentId, prefix: row.equipmentPrefix } : equipmentLabel ? { id: 0, prefix: equipmentLabel } : null,
+      employee: row.employeeId ? { id: row.employeeId, name: row.employeeName } : employeeLabel ? { id: 0, name: employeeLabel } : null,
+      department: row.departmentId ? { id: row.departmentId, name: row.departmentName } : departmentLabel ? { id: 0, name: departmentLabel } : null,
       // Aplicação: onde a peça da O.S. foi aplicada; na falta, o destino da saída.
-      application: row.application || row.equipmentPrefix || row.employeeName || row.departmentName || (row.thirdPartyName ? [row.thirdPartyName, row.thirdPartyPlate].filter(Boolean).join(" · ") : null) || null,
+      application: row.application || equipmentLabel || employeeLabel || departmentLabel || (imported ? row.destinationText : null) || (row.thirdPartyName ? [row.thirdPartyName, row.thirdPartyPlate].filter(Boolean).join(" · ") : null) || null,
+      // Histórico do sistema antigo: AJUSTE = Correção de Estoque; affectsBalance=false = não mexeu no saldo.
+      correction: row.historyKind === "AJUSTE", historyOnly: imported && !row.affectsBalance,
+      destination: imported ? row.destinationText : null, owner: imported ? row.ownerText : null,
       thirdParty: row.thirdPartyId ? { id: row.thirdPartyId, name: row.thirdPartyName, plate: row.thirdPartyPlate, receivedBy: row.receivedBy } : null,
       withdrawnBy: row.withdrawnBy, unitPrice, total: unitPrice === null ? null : unitPrice * quantity,
       reason: row.reason, reversed: row.reversedAt !== null, createdBy: row.createdByName,

@@ -9,6 +9,8 @@ export type StockMovementRow = {
   department?: { id: number; name: string | null } | null;
   application: string | null; withdrawnBy: string | null; unitPrice: number | null; total: number | null;
   reason: string; reversed: boolean; createdBy: string | null;
+  // Histórico importado do sistema antigo (Produtos → Importar movimentações).
+  correction?: boolean; historyOnly?: boolean; destination?: string | null; owner?: string | null;
 };
 
 const qty = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
@@ -18,7 +20,8 @@ const day = (value: string) => value.split("-").reverse().join("/");
 // Destino da saída: veículo, funcionário e/ou departamento; abaixo, onde a peça foi aplicada e quem retirou.
 function DestinationCell({ row }: { row: StockMovementRow }) {
   const parts = [row.equipment?.prefix, row.employee?.name, row.department?.name].filter((value): value is string => Boolean(value));
-  const extra = [row.application && !parts.includes(row.application) ? row.application : null, row.withdrawnBy ? `Retirado por ${row.withdrawnBy}` : null].filter(Boolean);
+  const extra = [row.application && !parts.includes(row.application) ? row.application : null, row.withdrawnBy ? `Retirado por ${row.withdrawnBy}` : null,
+    row.destination && row.destination !== row.application ? `Local: ${row.destination}` : null, row.owner ? `Proprietário: ${row.owner}` : null].filter(Boolean);
   return <>{parts.length ? parts.join(" · ") : "—"}{extra.length > 0 && <small className="table-sub">{extra.join(" · ")}</small>}</>;
 }
 
@@ -42,7 +45,7 @@ export default function StockMovementsTable({ rows, showProduct, empty }: { rows
           {rows.map((row) => (
             <tr key={row.id} className={row.reversed ? "stock-row-reversed" : ""}>
               <td>{day(row.date)}</td>
-              <td><span className={`status-pill ${row.type === "ENTRADA" ? "green" : "orange"}`}>{row.type === "ENTRADA" ? "Entrada" : "Saída"}</span>{row.reversed && <small className="table-sub">estornado</small>}</td>
+              <td>{row.correction ? <span className="status-pill gray">Correção</span> : <span className={`status-pill ${row.type === "ENTRADA" ? "green" : "orange"}`}>{row.type === "ENTRADA" ? "Entrada" : "Saída"}</span>}{row.reversed && <small className="table-sub">estornado</small>}{row.historyOnly && <small className="table-sub" title="Importado do sistema antigo: não alterou o saldo atual">só histórico</small>}</td>
               {showProduct && <td><strong>{row.product.tag}</strong><small className="table-sub">{row.product.name}</small></td>}
               <td><strong>{row.originNumber}</strong><small className="table-sub">{row.sourceLabel}{row.workOrderOpen ? " · O.S. aberta" : ""}</small></td>
               <td><DestinationCell row={row} /></td>

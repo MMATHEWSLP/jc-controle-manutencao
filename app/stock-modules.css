@@ -145,3 +145,27 @@ html[data-theme="dark"] .po-photo-add{background:#14352c;border-color:#285e4b;co
 .stock-movement-actions button.primary{background:linear-gradient(135deg,#00a879,#05845f);border-color:#007e5b;color:#fff}
 .stock-movement-line .page-search input,.stock-movement-grid input{font-size:13px}
 html[data-theme="dark"] .stock-history-filters{background:#1c1b18}
+/* Produtos → Importar movimentações (histórico do almoxarifado antigo) */
+.history-import-modal{width:min(1280px,97vw)}
+.history-import-options{display:flex;flex-wrap:wrap;gap:12px}
+.history-import-options label{display:grid;gap:4px;font-size:12px;font-weight:700;min-width:200px}
+.history-import-options select,.history-import-options input{margin:0}
+.history-import-section{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.history-import-section>summary{cursor:pointer;font-size:13px}
+.history-import-section>*:not(summary){margin-top:10px}
+.history-import-table-wrap{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.history-import-bulk{display:flex;flex-wrap:wrap;gap:8px}
+.history-import-products td{white-space:normal!important}
+.history-import-name{min-width:240px;max-width:340px}.history-import-name small{display:block;margin-top:3px;color:var(--muted);font-size:11px}
+.history-import-decision{display:grid;gap:4px;min-width:420px}
+.history-import-decision label{display:flex;align-items:flex-start;gap:6px;padding:3px 6px;border-radius:6px;font-size:12px;cursor:pointer}
+.history-import-decision label.picked{background:rgba(22,131,95,.1)}
+.history-import-decision label input{width:14px;height:14px;min-height:0;margin:2px 0 0}
+.history-import-search{position:relative}.history-import-search input{width:100%;min-height:30px;margin:0;font-size:12px}
+.history-import-found{position:absolute;z-index:5;left:0;right:0;top:100%;display:grid;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 8px 20px rgba(0,0,0,.15)}
+.history-import-found button{padding:6px 8px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;font-size:12px;cursor:pointer}
+.history-import-found button:hover{background:rgba(22,131,95,.08)}
+.history-import-tally{display:flex;flex-wrap:wrap;gap:6px}.history-import-tally span{padding:4px 8px;border:1px solid var(--line);border-radius:12px;font-size:12px}
+.history-import-apply{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #f0c98f;border-radius:8px;background:#fffaf0;font-size:13px;font-weight:700;cursor:pointer}
+.history-import-apply input{width:16px;height:16px;min-height:0;margin:0}
+html[data-theme="dark"] .history-import-apply{background:#2a2419;border-color:#5a4a2a}

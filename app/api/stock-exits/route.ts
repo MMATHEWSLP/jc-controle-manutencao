@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     const displayed = frentesEmExibicao(user, request);
     const fronts = displayed === "ALL" ? visible : displayed;
     const [movements, exits] = await Promise.all([
-      listStockMovements(db, { ...filters, fronts, sources: ["STOCK_EXIT", "WORK_ORDER"], exitsOnly: true, closedWorkOrdersOnly: true, limit: 1000 }),
+      listStockMovements(db, { ...filters, fronts, sources: ["STOCK_EXIT", "WORK_ORDER", "HISTORY_IMPORT"], exitsOnly: true, closedWorkOrdersOnly: true, excludeCorrections: true, limit: 1000 }),
       listStockExits(db, user, { ...filters, limit: 100 }),
     ]);
     return Response.json({

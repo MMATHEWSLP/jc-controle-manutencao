@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       departmentId: positive(url.searchParams.get("departamento")), productId: positive(url.searchParams.get("produto")),
       thirdPartyId: positive(url.searchParams.get("terceiro")), thirdPartyVehicleId: positive(url.searchParams.get("veiculoTerceiro")),
       from: isIsoDay(from) ? from : null, to: isIsoDay(to) ? to : null,
-      fronts: displayed === "ALL" ? visible : displayed, sources: ["STOCK_EXIT", "WORK_ORDER"], exitsOnly: true, closedWorkOrdersOnly: true, limit: 2000,
+      fronts: displayed === "ALL" ? visible : displayed, sources: ["STOCK_EXIT", "WORK_ORDER", "HISTORY_IMPORT"], exitsOnly: true, closedWorkOrdersOnly: true, excludeCorrections: true, limit: 2000,
     });
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "JC Manutenção";
