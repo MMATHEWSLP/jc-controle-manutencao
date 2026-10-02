@@ -37,6 +37,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node diagnosticar-historico-oleo.mjs
 
+      - name: Diagnóstico das funções dos funcionários (somente leitura)
+        if: hashFiles('scripts/diagnosticar-funcoes.mjs') != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/diagnosticar-funcoes.mjs
+
       - name: Corrigir históricos importados sem data (data genérica 05/07/2026)
         if: hashFiles('corrigir-historico-data-generica.mjs') != ''
         env:
