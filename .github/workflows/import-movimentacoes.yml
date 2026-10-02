@@ -40,6 +40,10 @@ on:
         description: "Só em reatribuir: TAG do produto que deve receber as linhas"
         required: false
         default: ""
+      equivalencias:
+        description: "Só em departamentos: Texto da planilha=DEPARTAMENTO JÁ CADASTRADO; separados por ;"
+        required: false
+        default: ""
 
 jobs:
   importar:
@@ -91,14 +95,16 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LOTE: ${{ github.event.inputs.lote }}
-        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE"
+          EQUIVALENCIAS: ${{ github.event.inputs.equivalencias }}
+        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE" "--equivalencias=$EQUIVALENCIAS"
 
       - name: Cadastrar e vincular departamentos (grava)
         if: ${{ github.event.inputs.modo == 'departamentos' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LOTE: ${{ github.event.inputs.lote }}
-        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE" --confirmar
+          EQUIVALENCIAS: ${{ github.event.inputs.equivalencias }}
+        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE" "--equivalencias=$EQUIVALENCIAS" --confirmar
 
       - uses: actions/upload-artifact@v4
         if: always()

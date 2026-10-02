@@ -3,10 +3,12 @@
 // tela de Departamentos (lib/departments.ts: nome em maiúsculas, chave sem acento/pontuação — um
 // departamento já cadastrado com a mesma chave é reaproveitado e reativado, nunca duplicado).
 // AJUSTE (Correção de Estoque) não é departamento e fica de fora. O saldo não é tocado.
+// --equivalencias="Texto da planilha=DEPARTAMENTO JÁ CADASTRADO;..." vincula esses textos a um
+// departamento existente em vez de cadastrar outro com nome diferente para a mesma coisa.
 //
 // Uso:
-//   npx tsx scripts/vincular-departamentos-importados.ts --lote=1              -> simulação
-//   npx tsx scripts/vincular-departamentos-importados.ts --lote=1 --confirmar  -> grava
+//   npx tsx scripts/vincular-departamentos-importados.ts --lote=1 [--equivalencias="..."]              -> simulação
+//   npx tsx scripts/vincular-departamentos-importados.ts --lote=1 [--equivalencias="..."] --confirmar  -> grava
 import "dotenv/config";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db";
@@ -17,6 +19,9 @@ import { createDepartment } from "../lib/departments";
 const arg = (name: string) => process.argv.find((item) => item.startsWith(`--${name}=`))?.slice(name.length + 3)?.trim();
 const confirm = process.argv.includes("--confirmar");
 const batchId = Number(arg("lote"));
+// Texto da planilha (chave) → chave do departamento já cadastrado.
+const equivalences = new Map((arg("equivalencias") ?? "").split(";").map((pair) => pair.split("=")).filter((pair) => pair.length === 2 && catalogKey(pair[0]) && catalogKey(pair[1]))
+  .map(([from, to]) => [catalogKey(from), catalogKey(to)]));
 
 async function main() {
   if (!Number.isInteger(batchId) || batchId <= 0) throw new Error("Informe --lote.");
@@ -38,13 +43,17 @@ async function main() {
   }
   const existing = await db.select({ id: departments.id, name: departments.name, key: departments.key, active: departments.active }).from(departments).orderBy(asc(departments.name));
   const byKey = new Map(existing.map((item) => [item.key, item]));
+  for (const [from, to] of equivalences) if (!byKey.has(to)) throw new Error(`Equivalência inválida: o departamento de destino de "${from}" não está cadastrado.`);
+  // Departamento que cada grupo vai usar: equivalência > mesmo nome já cadastrado > novo.
+  const targetOf = (key: string) => byKey.get(equivalences.get(key) ?? key) ?? null;
 
   console.log(`\n=== ${confirm ? "CADASTRO E VÍNCULO (grava)" : "SIMULAÇÃO (nada foi gravado)"} — lote #${batchId} ===`);
   console.log(`Departamentos já cadastrados (${existing.length}): ${existing.map((item) => `${item.name}${item.active ? "" : " (inativo)"}`).join(", ") || "nenhum"}`);
   console.log(`Saídas sem departamento vinculado e com texto: ${[...groups.values()].reduce((total, group) => total + group.ids.length, 0)}`);
   for (const [key, group] of [...groups].sort((a, b) => b[1].ids.length - a[1].ids.length)) {
-    const same = byKey.get(key);
-    console.log(`  ${group.name.padEnd(48)} ${String(group.ids.length).padStart(5)} linha(s) · ${same ? `já existe (#${same.id} ${same.name}${same.active ? "" : ", será reativado"})` : "SERÁ CADASTRADO"}`);
+    const same = targetOf(key);
+    const label = !same ? "SERÁ CADASTRADO" : equivalences.has(key) ? `→ equivalente a #${same.id} ${same.name}${same.active ? "" : " (será reativado)"}` : `já existe (#${same.id} ${same.name}${same.active ? "" : ", será reativado"})`;
+    console.log(`  ${group.name.padEnd(48)} ${String(group.ids.length).padStart(5)} linha(s) · ${label}`);
   }
   if (!groups.size) { console.log("Nada a fazer."); process.exit(0); }
   if (!confirm) { console.log("\nRode com --confirmar para gravar."); process.exit(0); }
@@ -54,8 +63,9 @@ async function main() {
   const summary = await db.transaction(async (tx) => {
     const now = new Date().toISOString();
     const result: Array<{ id: number; name: string; created: boolean; rows: number }> = [];
-    for (const group of groups.values()) {
-      const { department, created } = await createDepartment(tx, group.name, userId);
+    for (const [key, group] of groups) {
+      const target = targetOf(key);
+      const { department, created } = await createDepartment(tx, target?.name ?? group.name, userId);
       for (let index = 0; index < group.ids.length; index += 1000) {
         await tx.update(productStockMovements).set({ departmentId: department.id, updatedAt: now }).where(inArray(productStockMovements.id, group.ids.slice(index, index + 1000)));
       }
