@@ -4,6 +4,7 @@ name: Importar movimentações de estoque (histórico do almoxarifado antigo)
 # aba Importar) para product_stock_movements, SÓ como histórico: o saldo dos produtos não muda.
 # Mesmas regras e mesmo serviço da tela Produtos → Importar movimentações. Rode primeiro em dry-run.
 # Produto não encontrado: nome repetido → menor TAG ativa; sugestão ≥ 90% → vincula; resto → cadastra (para revisão).
+# Produto vinculado errado: modo reatribuir (lote + nome da planilha + TAG certa) move as linhas e apaga o produto criado à toa.
 # Para desfazer: Produtos → Importar movimentações → Importações anteriores → Desfazer importação.
 # Pré-requisito: migração 0037 aplicada (workflow "Migrar banco de dados (Drizzle)").
 
@@ -18,10 +19,24 @@ on:
         options:
           - dry-run
           - confirmar
+          - reatribuir-simulacao
+          - reatribuir
       arquivo:
         description: "Planilha (aba Importar)"
         required: true
         default: "importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx"
+      lote:
+        description: "Só em reatribuir: número do lote"
+        required: false
+        default: "1"
+      nome:
+        description: "Só em reatribuir: nome do produto como veio na planilha"
+        required: false
+        default: ""
+      tag:
+        description: "Só em reatribuir: TAG do produto que deve receber as linhas"
+        required: false
+        default: ""
 
 jobs:
   importar:
@@ -49,6 +64,24 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ARQUIVO: ${{ github.event.inputs.arquivo }}
         run: npx tsx scripts/import-movimentacoes-estoque.ts "--arquivo=$ARQUIVO" --confirmar --relatorio=relatorio-importacao.json
+
+      - name: Reatribuir produto de linhas importadas (simulação)
+        if: ${{ github.event.inputs.modo == 'reatribuir-simulacao' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LOTE: ${{ github.event.inputs.lote }}
+          NOME: ${{ github.event.inputs.nome }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: npx tsx scripts/reatribuir-produto-importado.ts "--lote=$LOTE" "--nome=$NOME" "--tag=$TAG"
+
+      - name: Reatribuir produto de linhas importadas (grava)
+        if: ${{ github.event.inputs.modo == 'reatribuir' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LOTE: ${{ github.event.inputs.lote }}
+          NOME: ${{ github.event.inputs.nome }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: npx tsx scripts/reatribuir-produto-importado.ts "--lote=$LOTE" "--nome=$NOME" "--tag=$TAG" --confirmar
 
       - uses: actions/upload-artifact@v4
         if: always()
