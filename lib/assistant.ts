@@ -8,6 +8,7 @@ import { ASSISTANT_TOOLS, brDate, loadEquipmentIndex, matchEquipment, runAssista
 import type { SessionUser } from "./auth";
 import { fuelLocalDay, fuelVisibleFronts } from "./fuel";
 import { importKey } from "./fuel-import-rules";
+import { resumoCatalogo } from "./assistente/catalogo";
 
 // ---------------------------------------------------------------------------
 // Assistente JC: chat de consulta (ferramentas só de leitura) e leitor de fichas de abastecimento.
@@ -21,7 +22,8 @@ export class AssistantError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-const MAX_CHAT_STEPS = 6;
+// Perguntas abertas cruzam vários módulos (combustível, produtos, O.S...): mais etapas de ferramenta.
+const MAX_CHAT_STEPS = 10;
 const MAX_FICHA_STEPS = 6;
 const FICHA_MAX_TOKENS = 16000;
 
@@ -115,26 +117,40 @@ export function readHistory(input: unknown): ChatTurn[] {
 }
 
 function chatSystemPrompt(user: SessionUser, fronts: { visible: string[]; displayed: string[] }) {
-  return `Você é o Assistente JC, do sistema de manutenção preventiva, frota e combustível da JC Serviços Florestais.
+  return `Você é o Assistente JC, do sistema de gestão da JC Serviços Florestais (frota, manutenção, combustível, produtos/estoque, compras, funcionários e tarefas).
 Hoje é ${brDate(fuelLocalDay())} (horário de Fortaleza). Quem pergunta: ${user.name} (perfil ${user.profile}).
 Frentes em exibição na tela dele: ${fronts.displayed.join(", ") || "nenhuma"}. Frentes que ele pode consultar: ${fronts.visible.join(", ") || "nenhuma"}.
 
+O que você pode consultar (views do catálogo; colunas e valores possíveis com catalogo_sistema):
+${resumoCatalogo(user)}
+
+Ferramentas:
+- consultar_dados: consulta estruturada em qualquer view acima (filtros, período, agrupamento e totais calculados no banco). É a ferramenta principal.
+- catalogo_sistema: colunas e valores possíveis de uma view. Use quando não tiver certeza do nome de uma coluna ou de um valor de situação/tipo.
+- historico_combustivel, consumo_veiculo, saldo_frente, trocas_e_alertas, historico_manutencao, buscar_equipamento: atalhos prontos para perguntas comuns de combustível e manutenção (consumo médio por veículo/empresa e custo do combustível em R$ só existem em consumo_veiculo).
+- ajuda_sistema: "como faço X no sistema" (caminho no menu e passos).
+
 Como responder:
-- Sempre em português do Brasil, curto e direto: poucas linhas ou uma lista curta com "- ". Sem tabelas.
-- Use só os dados devolvidos pelas ferramentas. Toda resposta com números diz o período e a(s) frente(s) considerados.
-- Números no formato brasileiro (1.234,50), datas DD/MM/AAAA, unidades L, km, h, km/L, L/h. As ferramentas já devolvem nesse formato: repita sem converter.
-- Sem frente na pergunta, as ferramentas usam as frentes em exibição; sem período, o mês corrente até hoje. Deixe isso claro na resposta.
-- Se nenhuma ferramenta responde à pergunta, diga que não consegue responder isso pelo assistente e indique a tela do sistema onde procurar. Nunca invente, estime ou complete dados.
-- Você só consulta: não registra, altera nem apaga nada. Se pedirem um lançamento ou alteração, explique que deve ser feito na tela correspondente.
-- Se o equipamento citado for ambíguo, use buscar_equipamento e, se continuar ambíguo, pergunte qual é.
-- Se uma ferramenta devolver erro (sem acesso, não encontrado), explique isso ao usuário em uma frase.`;
+- Português do Brasil, direto. Comece pela resposta; depois os detalhes. Números no formato brasileiro (1.234,50), datas DD/MM/AAAA, unidades L, km, h, km/L, L/h, R$.
+- Sempre diga o período, a(s) frente(s) e os filtros usados. Se a pergunta não disser período, use o mês atual e avise ("considerei 01/10/2026 a hoje").
+- Nunca invente números: todo número vem de uma ferramenta. Se não encontrar, diga que não encontrou e quais filtros usou. Contas simples sobre números devolvidos (somar, dividir) são permitidas e devem ser explicadas.
+- Quando o resultado for uma lista ou tabela, NÃO repita a tabela no texto: a tabela aparece na tela abaixo da sua resposta, com "Baixar Excel" e "Ver no sistema". Resuma os destaques (maiores valores, totais, o que é crítico) em poucas linhas ou uma lista curta com "- ".
+- Pergunta aberta ("o que saiu de Arapiuns essa semana?"): cruze os módulos — combustível (v_combustivel_movimentacoes), produtos (v_produtos_movimentacoes), trocas/manutenções (v_trocas_realizadas) e ordens de serviço (v_ordens_servico) — uma seção por módulo, com totais.
+- "O que tem" (estoque, saldos, frota, situação): traga o retrato atual e destaque o que está crítico (estoque zerado/baixo/negativo, trocas vencidas, equipamentos parados, consumo fora da média).
+- Produtos: diferencie saídas (tipo = Saída) de Correção de estoque (AJUSTE do sistema antigo) e de Ajuste de saldo; diga quando os dados vêm do sistema antigo importado (importado_sistema_antigo = sim, só histórico) se isso mudar a interpretação.
+- Equipamento citado por código ou placa: filtre pela coluna equipamento/codigo/placa; se for ambíguo, use buscar_equipamento e, se continuar ambíguo, pergunte.
+- Você só consulta: não registra, altera nem apaga nada. Pedido de lançamento ou alteração: explique em que tela fazer (use ajuda_sistema).
+- Se uma ferramenta devolver erro (coluna inexistente, sem acesso), corrija a consulta uma vez; se for falta de acesso, explique em uma frase.`;
 }
 
-export async function runAssistantChat(ctx: AssistantToolContext, question: string, history: ChatTurn[]) {
+// semRegistro: teste automático (scripts/testar-assistente.ts) — não grava em assistant_logs nem conta no limite.
+export async function runAssistantChat(ctx: AssistantToolContext, question: string, history: ChatTurn[], options: { semRegistro?: boolean } = {}) {
   const config = assistantConfig();
   const api = client();
-  const usage = await assistantUsageToday(ctx.db, ctx.user.id);
+  const usage = options.semRegistro ? { messagesLeft: config.dailyMessages } : await assistantUsageToday(ctx.db, ctx.user.id);
   if (usage.messagesLeft <= 0) throw new AssistantError(`Você atingiu o limite de ${config.dailyMessages} perguntas por dia no assistente. O limite renova amanhã.`, 429);
+  const log = (entry: typeof assistantLogs.$inferInsert) => (options.semRegistro ? Promise.resolve() : writeLog(ctx.db, entry));
+  ctx.tabelas = [];
   const started = Date.now();
   const tools: ToolCall[] = [];
   const tokens = { input: 0, output: 0 };
@@ -144,15 +160,16 @@ export async function runAssistantChat(ctx: AssistantToolContext, question: stri
       model: config.model, max_tokens: config.maxTokens, system: chatSystemPrompt(ctx.user, await frontsLine(ctx)), tools: ASSISTANT_TOOLS,
       output_config: { effort: "medium" },
     }, messages, ctx, { maxSteps: MAX_CHAT_STEPS, deadline: started + config.timeoutMs * 2, requestTimeout: config.timeoutMs }, tools, tokens);
-    let answer = refused ? "Não posso ajudar com esse pedido. Pergunte sobre combustível, consumo, saldos, trocas de óleo ou histórico de manutenção." : textOf(response.content);
+    let answer = refused ? "Não posso ajudar com esse pedido. Pergunte sobre os dados do sistema: combustível, estoque, frota, manutenção, compras, funcionários ou tarefas." : textOf(response.content);
     if (!refused && response.stop_reason === "max_tokens") answer = answer ? `${answer}\n\n(Resposta cortada por ser longa: refine a pergunta.)` : "A resposta ficou longa demais. Refine a pergunta (um período, frente ou equipamento).";
     if (!answer) answer = "Não consegui montar uma resposta. Tente perguntar de outro jeito.";
-    await writeLog(ctx.db, { userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), answer, status: refused ? "RECUSADO" : "OK", model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
-    return { answer, tools: tools.map((tool) => tool.name), remaining: Math.max(0, usage.messagesLeft - 1) };
+    await log({ userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), answer, status: refused ? "RECUSADO" : "OK", model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
+    // Até 4 tabelas por resposta (as últimas consultas), para a tela mostrar com "Baixar Excel".
+    return { answer, tools: tools.map((tool) => tool.name), toolCalls: tools, tabelas: refused ? [] : (ctx.tabelas ?? []).slice(-4), remaining: Math.max(0, usage.messagesLeft - 1) };
   } catch (error) {
     const friendly = friendlyApiError(error);
     if (!(error instanceof AssistantError)) console.error("[assistente.chat]", error);
-    await writeLog(ctx.db, { userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), status: "ERRO", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
+    await log({ userId: ctx.user.id, kind: "CHAT", question, tools: JSON.stringify(tools), status: "ERRO", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
     throw friendly;
   }
 }

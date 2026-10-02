@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { consumirFiltros, type NavegacaoAssistente } from "../lib/assistente-nav";
 import ThirdPartiesView, { METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, useThirdPartyOptions, VehicleFormModal, type ThirdPartyOption, type VehicleOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
@@ -75,7 +76,9 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
   // Importação por planilha: só ADMIN e GESTOR (o servidor confere de novo).
   const canImport = (authUser.profile === "ADMIN" || authUser.profile === "GESTOR") && canRegister;
   const [importOpen, setImportOpen] = useState(false);
-  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(canRegister ? "new" : "history");
+  // Aberto pelo "Ver no sistema" do Assistente JC: já no Histórico com o período/tipo/busca da consulta.
+  const [assistantFilters] = useState(() => (typeof window === "undefined" ? null : consumirFiltros("Combustível")));
+  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(assistantFilters || !canRegister ? "history" : "new");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -162,7 +165,7 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
         : tab === "new" && (canRegister || editing)
         ? <FuelForm key={editing ? `edit-${editing.id}` : "new"} summary={summary} authUser={authUser} editing={editing} onSaved={async (message) => { const wasEditing = Boolean(editing); await afterSave(message); setTab(wasEditing ? "history" : "new"); }} onCancel={editing ? () => { setEditing(null); setTab("history"); } : undefined} />
-        : <FuelHistory key={historyVersion} summary={summary} canManage={canManage} flash={flash}
+        : <FuelHistory key={historyVersion} summary={summary} canManage={canManage} flash={flash} initial={assistantFilters}
           onEdit={(movement) => { setEditing(movement); setTab("new"); }} onDeleted={afterSave} />}
     </>
   );
@@ -664,21 +667,21 @@ function EquipmentPicker({ frontId, frontName, value, onChange, required, histor
   );
 }
 
-function FuelHistory({ summary, canManage, flash, onEdit, onDeleted }: {
+function FuelHistory({ summary, canManage, flash, onEdit, onDeleted, initial }: {
   summary: Summary; canManage: boolean; flash: (message: string) => void;
-  onEdit: (movement: Movement) => void; onDeleted: (message: string) => Promise<void>;
+  onEdit: (movement: Movement) => void; onDeleted: (message: string) => Promise<void>; initial?: NavegacaoAssistente | null;
 }) {
-  const [period, setPeriod] = useState(monthPeriod);
-  const [frontFilter, setFrontFilter] = useState("");
+  const [period, setPeriod] = useState(() => (initial?.de ? { from: initial.de, to: initial.ate ?? initial.de } : monthPeriod()));
+  const [frontFilter, setFrontFilter] = useState(initial?.frenteId ? String(initial.frenteId) : "");
   const [fuelTypeId, setFuelTypeId] = useState("");
-  const [movementType, setMovementType] = useState("");
+  const [movementType, setMovementType] = useState<string>(initial?.tipo ?? "");
   const [location, setLocation] = useState("");
   const [pending, setPending] = useState("");
   const [thirdPartyFilter, setThirdPartyFilter] = useState("");
   const [vehicleFilter, setVehicleFilter] = useState("");
   const thirdPartyOptions = useThirdPartyOptions();
   const filterVehicles = thirdPartyOptions.options.find((item) => String(item.id) === thirdPartyFilter)?.vehicles ?? [];
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initial?.busca ?? "");
   const [dailyOpen, setDailyOpen] = useState(false);
   const [debounced, setDebounced] = useState("");
   const [page, setPage] = useState(1);

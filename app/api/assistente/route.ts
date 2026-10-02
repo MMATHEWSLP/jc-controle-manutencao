@@ -4,6 +4,7 @@ import { AssistantError, assistantUsageToday, readHistory, runAssistantChat } fr
 import { assistantConfig, canUseAssistant } from "../../../lib/assistant-config";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { canImportFuel } from "../../../lib/fuel-import";
+import { assistantDbMode } from "../../../lib/assistente/db";
 
 export const maxDuration = 180;
 
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
     return Response.json({
       allowed: true, configured: config.configured, usage: await assistantUsageToday(await getDb(), user.id),
       canReadSheet: user.permissions.includes("fuel.view"), canImport: canImportFuel(user) && user.permissions.includes("fuel.register"),
+      ...(user.profile === "ADMIN" ? { dbMode: assistantDbMode() } : {}),
     });
   } catch (error) {
     console.error("[assistente.get]", error);
