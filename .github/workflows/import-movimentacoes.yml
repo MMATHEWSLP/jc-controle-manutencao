@@ -5,6 +5,7 @@ name: Importar movimentações de estoque (histórico do almoxarifado antigo)
 # Mesmas regras e mesmo serviço da tela Produtos → Importar movimentações. Rode primeiro em dry-run.
 # Produto não encontrado: nome repetido → menor TAG ativa; sugestão ≥ 90% → vincula; resto → cadastra (para revisão).
 # Produto vinculado errado: modo reatribuir (lote + nome da planilha + TAG certa) move as linhas e apaga o produto criado à toa.
+# Departamentos que vieram como texto: modo departamentos cadastra e vincula as saídas do lote.
 # Para desfazer: Produtos → Importar movimentações → Importações anteriores → Desfazer importação.
 # Pré-requisito: migração 0037 aplicada (workflow "Migrar banco de dados (Drizzle)").
 
@@ -21,12 +22,14 @@ on:
           - confirmar
           - reatribuir-simulacao
           - reatribuir
+          - departamentos-simulacao
+          - departamentos
       arquivo:
         description: "Planilha (aba Importar)"
         required: true
         default: "importacoes/Movimentacoes_Estoque_LIMPO_2026-10-02.xlsx"
       lote:
-        description: "Só em reatribuir: número do lote"
+        description: "Só em reatribuir/departamentos: número do lote"
         required: false
         default: "1"
       nome:
@@ -82,6 +85,20 @@ jobs:
           NOME: ${{ github.event.inputs.nome }}
           TAG: ${{ github.event.inputs.tag }}
         run: npx tsx scripts/reatribuir-produto-importado.ts "--lote=$LOTE" "--nome=$NOME" "--tag=$TAG" --confirmar
+
+      - name: Cadastrar e vincular departamentos (simulação)
+        if: ${{ github.event.inputs.modo == 'departamentos-simulacao' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LOTE: ${{ github.event.inputs.lote }}
+        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE"
+
+      - name: Cadastrar e vincular departamentos (grava)
+        if: ${{ github.event.inputs.modo == 'departamentos' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LOTE: ${{ github.event.inputs.lote }}
+        run: npx tsx scripts/vincular-departamentos-importados.ts "--lote=$LOTE" --confirmar
 
       - uses: actions/upload-artifact@v4
         if: always()
