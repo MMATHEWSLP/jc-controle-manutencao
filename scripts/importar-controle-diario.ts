@@ -30,9 +30,9 @@ async function main() {
   const r = previa.resumo;
   console.log(`== ${previa.label}: importar ${r.importar} · conferir ${r.conferir} · ignoradas ${r.ignoradas} · não importadas ${r.naoImportadas} · a decidir ${r.decidir} · pendências ${r.pendencias} · leituras que sobem ${r.leiturasQueSobem}`);
 
-  const ja = await db.select({ id: dailyImportBatches.id, status: dailyImportBatches.status }).from(dailyImportBatches)
+  const ja = await db.select({ id: dailyImportBatches.id, status: dailyImportBatches.status, gravadas: dailyImportBatches.importedRows, atualizado: dailyImportBatches.updatedAt, resumo: dailyImportBatches.summary }).from(dailyImportBatches)
     .where(and(eq(dailyImportBatches.label, previa.label), sql`${dailyImportBatches.status} <> 'DESFEITO'`));
-  if (ja.length) { console.log(`Já existe lote ${previa.label} (${ja.map((x) => `#${x.id} ${x.status}`).join(", ")}). Nada feito: desfaça na tela antes de importar de novo.`); process.exit(0); }
+  if (ja.length) { console.log(`Já existe lote ${previa.label} (${ja.map((x) => `#${x.id} ${x.status} · ${x.gravadas} linha(s) gravadas · atualizado ${x.atualizado}${x.resumo ? ` · ${x.resumo.slice(0, 300)}` : ""}`).join(", ")}). Nada feito: desfaça na tela antes de importar de novo.`); process.exit(0); }
   if (r.decidir) throw new Error(`Ainda há ${r.decidir} grupo(s) a decidir.`);
   if (!CONFIRMAR) { console.log("Dry-run: nada gravado. Rode com --confirmar para importar."); process.exit(0); }
 
