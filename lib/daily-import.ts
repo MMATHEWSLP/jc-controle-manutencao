@@ -468,7 +468,19 @@ export async function corrigirImportado(user: SessionUser, recordId: number, inp
       previousValue: JSON.stringify({ operatorName: registro.operatorName, fieldOperatorId: registro.fieldOperatorId, start: registro.startReading, end: registro.endReading, review: registro.reviewStatus }),
       newValue: JSON.stringify({ ...operador, start: input.inicial, end: input.final, review: input.conferir ? "CONFERIR" : "OK", outros }), occurredAt: agora });
   });
-  return { outros };
+  // Saiu do "Conferir" com leitura final válida: sobe a leitura atual se for a mais recente e maior.
+  let leituraAtualizada = false;
+  if (!input.conferir && input.final !== null) {
+    const unidade = registro.readingUnit === "KM" ? "KM" : "HOURS";
+    const atual = (await db.select({ hours: equipment.currentHours, km: equipment.currentKm }).from(equipment).where(eq(equipment.id, registro.equipmentId)).limit(1))[0];
+    const [maisNova] = await db.select({ dia: sql<string | null>`max(${meterReadings.readingDate})` }).from(meterReadings).where(eq(meterReadings.equipmentId, registro.equipmentId));
+    const antes = unidade === "KM" ? atual?.km ?? 0 : atual?.hours ?? 0;
+    if (atual && input.final > antes && (!maisNova?.dia || String(maisNova.dia).slice(0, 10) <= registro.recordDate)) {
+      await aplicarLeitura(registro.equipmentId, unidade, input.final, user, `LEITURA ATUALIZADA PELA CORREÇÃO DO CONTROLE DIÁRIO (registro ${recordId})`);
+      leituraAtualizada = true;
+    }
+  }
+  return { outros, leituraAtualizada };
 }
 
 export async function opcoesOperadores() {

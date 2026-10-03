@@ -6,7 +6,8 @@ import type { SessionUser } from "./auth";
 // Pendências de dados: tudo que precisa de correção manual e que antes só aparecia numa auditoria
 // (saídas sem veículo, equipamento sem frente/leitura/plano/QR, leituras suspeitas, estoque
 // negativo, produtos duplicados ou de teste, veículo de terceiro sem capacidade, usuários parados).
-// Só leitura; cada grupo diz em que tela corrigir. Respeita as frentes que a pessoa enxerga.
+// Só leitura, exceto os problemas relatados no Controle Diário, que têm "Resolver" (ver
+// resolverProblemaDiario). Cada grupo diz em que tela corrigir. Respeita as frentes que a pessoa enxerga.
 // ---------------------------------------------------------------------------
 
 export function canSeePendencias(user: SessionUser) {
@@ -17,6 +18,8 @@ type Row = Record<string, unknown>;
 export type PendenciaGroup = {
   key: string; title: string; description: string; where: string; severity: "ALTA" | "MEDIA" | "BAIXA";
   total: number; summary?: string; columns: Array<[string, string]>; rows: Row[];
+  // Grupo com ação por linha: a tela mostra o botão "Resolver" (usa a coluna "id").
+  resolvable?: boolean;
 };
 
 const LIMIT = 200;
@@ -28,7 +31,12 @@ export async function loadPendencias(d1: D1DatabaseLike, user: SessionUser): Pro
   const all = async (query: string, binds: unknown[] = []) => (await d1.prepare(query).bind(...binds).all<Row>()).results;
   const f = [fronts, fronts];
 
-  const [fuel, fuelTotals, noFront, zeroReading, noPlan, noQr, regressions, jumps, negativeStock, duplicates, testProducts, tankless, idleUsers] = await Promise.all([
+  const [dailyProblems, fuel, fuelTotals, noFront, zeroReading, noPlan, noQr, regressions, jumps, negativeStock, duplicates, testProducts, tankless, idleUsers] = await Promise.all([
+    all(`SELECT r.id, r.record_date AS data, e.prefix AS prefixo, sf.name AS frente, coalesce(r.operator_name,'—') AS operador, r.description AS problema,
+        CASE WHEN r.import_batch_id IS NULL THEN 'App' ELSE 'Importação' END AS origem
+      FROM daily_problem_reports r JOIN equipment e ON e.id=r.equipment_id LEFT JOIN service_fronts sf ON sf.id=r.service_front_id
+      WHERE r.status='ABERTO' AND ${scope("coalesce(r.service_front_id, e.service_front_id)")}
+      ORDER BY r.record_date DESC, e.sort_key, r.id LIMIT ${LIMIT}`, f),
     all(`SELECT fm.id, fm.movement_date AS data, round(fm.quantity::numeric,2) AS litros, sf.name AS frente, coalesce(fm.responsible,'—') AS responsavel,
         coalesce(nullif(fm.imported_vehicle,''),'(sem texto do veículo)') AS veiculo_informado
       FROM fuel_movements fm JOIN service_fronts sf ON sf.id=fm.service_front_id
@@ -69,6 +77,9 @@ export async function loadPendencias(d1: D1DatabaseLike, user: SessionUser): Pro
   ]);
 
   const groups: PendenciaGroup[] = [
+    { key: "daily-problems", severity: "ALTA", title: "Problemas relatados no Controle Diário", where: "Aqui mesmo: \"Resolver\" em cada linha (ou Manutenção, se precisar de serviço)",
+      description: "Problemas que o operador relatou no Controle Diário e ainda não foram resolvidos.", total: dailyProblems.length, resolvable: true,
+      columns: [["data", "Data"], ["prefixo", "Equipamento"], ["frente", "Frente"], ["operador", "Operador"], ["problema", "Problema relatado"], ["origem", "Origem"]], rows: dailyProblems },
     { key: "fuel", severity: "ALTA", title: "Saídas de combustível sem veículo", where: "Combustível → Histórico (editar o lançamento e escolher o veículo)",
       description: "Saídas que baixaram o estoque mas não estão ligadas a nenhum equipamento nem terceiro: o consumo por veículo fica errado.",
       total: Number(fuelTotals[0]?.total ?? 0), summary: `${Number(fuelTotals[0]?.litros ?? 0).toLocaleString("pt-BR")} L no total`,
@@ -107,4 +118,22 @@ export async function loadPendencias(d1: D1DatabaseLike, user: SessionUser): Pro
     description: "Contas ativas que não são usadas.", total: idleUsers.length,
     columns: [["nome", "Nome"], ["usuario", "Usuário"], ["perfil", "Perfil"], ["ultimo_acesso", "Último acesso"]], rows: idleUsers });
   return groups.map((group) => ({ ...group, rows: group.rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value === null ? null : typeof value === "object" ? String(value) : value]))) }));
+}
+
+// Marca um problema relatado no Controle Diário como resolvido (com uma observação opcional).
+export async function resolverProblemaDiario(d1: D1DatabaseLike, user: SessionUser, id: number, note: string) {
+  const visible = frentesVisiveis(user);
+  const fronts = visible === "ALL" ? null : visible;
+  const row = await d1.prepare(`SELECT r.id, r.status FROM daily_problem_reports r JOIN equipment e ON e.id=r.equipment_id
+    WHERE r.id=? AND (?::int[] IS NULL OR coalesce(r.service_front_id, e.service_front_id) = ANY(?::int[]))`).bind(id, fronts, fronts).first<{ id: number; status: string }>();
+  if (!row) return { ok: false as const, status: 404, error: "Problema não encontrado." };
+  if (row.status === "RESOLVIDO") return { ok: false as const, status: 409, error: "Este problema já foi resolvido." };
+  const now = new Date().toISOString();
+  const cleanNote = note.trim().slice(0, 500) || null;
+  await d1.batch([
+    d1.prepare(`UPDATE daily_problem_reports SET status='RESOLVIDO', resolved_at=?, resolved_by=?, resolution_note=?, updated_at=? WHERE id=?`).bind(now, user.id, cleanNote, now, id),
+    d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
+      .bind(user.id, "DAILY_PROBLEM", String(id), "PROBLEMA DO CONTROLE DIÁRIO RESOLVIDO", JSON.stringify({ status: "ABERTO" }), JSON.stringify({ status: "RESOLVIDO", note: cleanNote }), now),
+  ]);
+  return { ok: true as const };
 }

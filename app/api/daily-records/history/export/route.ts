@@ -34,9 +34,9 @@ export async function GET(request: Request) {
         generatedAt: formatPdfDate(now.toISOString()), total: rows.length, truncated, filters: labels,
         items: rows.map((row) => ({
           date: formatHistoryDay(row.recordDate), prefix: row.prefix, equipment: row.equipmentModel,
-          operator: row.operator, operatorNote: row.manualEntry ? `Lançamento manual · por ${row.launchedBy}` : "",
+          operator: row.operator, operatorNote: row.imported ? `Importado (${row.origin})` : row.manualEntry ? `Lançamento manual · por ${row.launchedBy}` : "",
           front: row.front ?? "Sem frente", location: row.location ?? "", worked: formatWorked(row.worked, row.readingUnit),
-          status: historyStatusText(row), attention: !row.workedToday || row.inactiveOrProblem,
+          status: historyStatusText(row), attention: !row.workedToday || row.inactiveOrProblem || row.reviewStatus === "CONFERIR",
         })),
       });
       return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="historico-registros-diarios-${stamp}.pdf"`, "Cache-Control": "private, no-store" } });
@@ -69,6 +69,10 @@ export async function GET(request: Request) {
       { header: "Viagens", key: "trips", width: 9 },
       { header: "Toras", key: "logs", width: 9 },
       { header: "Metragem (m)", key: "meters", width: 12 },
+      { header: "Volume no porto (m³)", key: "portVolume", width: 14 },
+      { header: "Diesel informado (L)", key: "diesel", width: 14 },
+      { header: "Origem", key: "origin", width: 26 },
+      { header: "Conferir (motivo)", key: "review", width: 30 },
       { header: "Lançamento manual", key: "manual", width: 14 },
       { header: "Lançado por (conta)", key: "launchedBy", width: 22 },
       { header: "Observações", key: "notes", width: 30 },
@@ -89,7 +93,9 @@ export async function GET(request: Request) {
         problem: row.workedToday ? (row.inactiveOrProblem ? "Sim" : "Não") : "", problemReason: row.inactiveOrProblem ? row.problemReason ?? "" : "",
         fuelingCount: row.fuelingCount, liters: row.fuelingLiters || null,
         production: row.workedToday ? (row.hadProduction ? "Sim" : "Não") : "", productionType: productionLabel(row),
-        trips: row.hadProduction ? row.tripCount : null, logs: row.hadProduction ? row.logsTotal : null, meters: row.hadProduction ? row.metersTotal : null,
+        trips: row.totalTrips ?? (row.hadProduction ? row.tripCount : null), logs: row.hadProduction ? row.logsTotal : null, meters: row.hadProduction ? row.metersTotal : null,
+        portVolume: row.portVolumeM3, diesel: row.reportedDieselLiters, origin: row.imported ? row.origin : "App",
+        review: row.reviewStatus === "CONFERIR" ? row.reviewReason ?? "Conferir" : "",
         manual: row.manualEntry ? "Sim" : "Não", launchedBy: row.launchedBy, notes: row.notes ?? "",
       });
     }
@@ -98,7 +104,7 @@ export async function GET(request: Request) {
       empty.font = { italic: true, color: { argb: "FF5B6F7F" } };
     }
     sheet.getColumn("date").numFmt = "dd/mm/yyyy";
-    for (const key of ["start", "end", "worked", "liters", "meters"]) sheet.getColumn(key).numFmt = "#,##0.##";
+    for (const key of ["start", "end", "worked", "liters", "meters", "portVolume", "diesel"]) sheet.getColumn(key).numFmt = "#,##0.##";
 
     const summary = workbook.addWorksheet("Filtros");
     summary.columns = [{ header: "Filtro", key: "label", width: 32 }, { header: "Valor", key: "value", width: 60 }];
@@ -110,6 +116,9 @@ export async function GET(request: Request) {
       { label: "Frente de serviço", value: labels.front },
       { label: "Colaboradores", value: labels.operators },
       { label: "Busca (equipamento/operador)", value: labels.search },
+      { label: "Local", value: filters.location || "—" },
+      { label: "Origem", value: filters.origin === "APP" ? "Feitos no app" : filters.origin === "IMPORTADO" ? "Importados" : "Todos" },
+      ...(filters.review ? [{ label: "Somente", value: "Registros para conferir" }] : []),
       { label: "Registros exportados", value: rows.length },
       ...(truncated ? [{ label: "Atenção", value: `Limite de ${HISTORY_EXPORT_LIMIT} registros atingido — refine os filtros para exportar o restante.` }] : []),
     ]);

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import LoadWarning from "./LoadWarning";
 import { formatBrDate } from "../lib/date-format";
 
-type Group = { key: string; title: string; description: string; where: string; severity: "ALTA" | "MEDIA" | "BAIXA"; total: number; summary?: string; columns: Array<[string, string]>; rows: Array<Record<string, unknown>> };
+type Group = { key: string; title: string; description: string; where: string; severity: "ALTA" | "MEDIA" | "BAIXA"; total: number; summary?: string; columns: Array<[string, string]>; rows: Array<Record<string, unknown>>; resolvable?: boolean };
 const SEVERITY: Record<Group["severity"], [string, string]> = { ALTA: ["red", "Alta"], MEDIA: ["orange", "Média"], BAIXA: ["gray", "Baixa"] };
 const cell = (value: unknown) => {
   if (value === null || value === undefined || value === "") return "—";
@@ -19,6 +19,8 @@ export default function PendenciasView() {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [resolving, setResolving] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
     setError("");
     try {
@@ -30,14 +32,29 @@ export default function PendenciasView() {
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
+  // "Resolver" de um problema relatado no Controle Diário (observação opcional).
+  async function resolve(id: number) {
+    const note = window.prompt("Como foi resolvido? (opcional)", "");
+    if (note === null) return;
+    setResolving(id); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/pendencias/daily-problems/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nota: note }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível resolver.");
+      setNotice(data.message ?? "Resolvido.");
+      await load();
+    } catch (problem) { setError(problem instanceof Error ? problem.message : "Não foi possível resolver."); }
+    finally { setResolving(null); }
+  }
   const pending = groups?.filter((group) => group.total > 0) ?? [];
   const clean = groups?.filter((group) => group.total === 0) ?? [];
   return <>
     <div className="page-heading module-heading">
-      <div><p className="eyebrow">QUALIDADE DOS DADOS</p><h1>Pendências</h1><span>O que precisa de correção manual nos cadastros e lançamentos. Nada aqui altera dados: cada item diz onde corrigir.</span></div>
+      <div><p className="eyebrow">QUALIDADE DOS DADOS</p><h1>Pendências</h1><span>O que precisa de correção manual nos cadastros e lançamentos. Cada item diz onde corrigir; os problemas relatados no Controle Diário são resolvidos aqui mesmo (“Resolver”).</span></div>
       <div className="heading-actions"><button className="secondary" onClick={load}>Atualizar</button></div>
     </div>
     <LoadWarning message={error} />
+    {notice && <div className="daily-form-success">{notice}</div>}
     {!groups && !error && <div className="page-loading">Carregando...</div>}
     {groups && pending.length === 0 && <div className="empty-state">Nenhuma pendência. Tudo em ordem.</div>}
     <div className="pendencias-list">
@@ -54,8 +71,9 @@ export default function PendenciasView() {
           <p className="table-sub">{group.description}{group.summary ? ` · ${group.summary}` : ""}</p>
           <p className="pendencia-where">Onde corrigir: <b>{group.where}</b></p>
           {expanded && <div className="table-scroll"><table>
-            <thead><tr>{group.columns.map(([, title]) => <th key={title}>{title}</th>)}</tr></thead>
-            <tbody>{group.rows.map((row, index) => <tr key={index}>{group.columns.map(([key]) => <td key={key}>{cell(row[key])}</td>)}</tr>)}</tbody>
+            <thead><tr>{group.columns.map(([, title]) => <th key={title}>{title}</th>)}{group.resolvable && <th />}</tr></thead>
+            <tbody>{group.rows.map((row, index) => <tr key={index}>{group.columns.map(([key]) => <td key={key}>{cell(row[key])}</td>)}
+              {group.resolvable && <td><button type="button" className="secondary" disabled={resolving === Number(row.id)} onClick={() => resolve(Number(row.id))}>{resolving === Number(row.id) ? "..." : "Resolver"}</button></td>}</tr>)}</tbody>
           </table>{group.rows.length < group.total && <p className="table-sub">Mostrando {group.rows.length} de {group.total.toLocaleString("pt-BR")}.</p>}</div>}
         </article>;
       })}

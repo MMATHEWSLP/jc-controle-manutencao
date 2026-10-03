@@ -330,6 +330,13 @@
       "when": 1791055601955,
       "tag": "0046_controle_diario_importacao",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791056524947,
+      "tag": "0047_assistente_controle_diario_views",
+      "breakpoints": true
     }
   ]
 }
