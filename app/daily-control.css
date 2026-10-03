@@ -409,3 +409,59 @@ html[data-theme="dark"] .field-add-row.selected{background:#11352c!important}htm
 html[data-theme="dark"] .field-similar,html[data-theme="dark"] .field-import-row.conferir{background:#2a2419;border-color:#5a4a2a;color:#f0e2c2}
 html[data-theme="dark"] :is(.field-add-row strong,.field-import-row strong,.fleet-modal label.field-add-check,.fleet-modal label.field-add-row,.fleet-modal label.field-add-all,.fleet-modal .field-import-options label){color:#e8e6e3}
 html[data-theme="dark"] .field-codes-list b{color:#72e3b9}
+
+/* Controle Diário → Importar planilha / Relatórios / Corrigir registro importado */
+.daily-import,.daily-reports{display:grid;gap:12px;padding:16px}
+.daily-import-body{display:grid;gap:12px}
+.daily-import-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.daily-import-actions button,.daily-import-actions a{padding:9px 13px;border-radius:6px;font-size:11px}
+.daily-import-columns{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.daily-import-columns li{padding:3px 8px;border:1px solid var(--line);border-radius:10px;font-size:10.5px;color:var(--muted)}
+.daily-import-table{min-width:640px}
+.daily-import-table td,.daily-import-table th{vertical-align:top}
+.daily-import-table tr.warn td{background:#fff6ec}
+.daily-import-table select{min-width:180px;margin:0}
+.daily-import-details{border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.daily-import-details>summary{cursor:pointer;font-weight:800;font-size:12px;padding:4px 0}
+.daily-import-details[open]>summary{margin-bottom:8px}
+.daily-import-problem{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;padding:4px 0}
+.daily-import-problem input{width:auto;margin-top:2px}
+.daily-import-progress{display:grid;gap:4px;padding:6px;border-radius:8px;background:#eef3f5}
+.daily-import-progress>span{display:block;height:10px;min-width:6px;border-radius:6px;background:var(--green);transition:width .3s ease}
+.daily-import-progress small{font-size:11px;color:var(--muted)}
+.daily-import-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.daily-import-list li{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:12px}
+.daily-import-list.daily-import-columns{display:flex}
+.daily-import-list.daily-import-columns li{padding:3px 8px;border-radius:10px;font-size:10.5px}
+.daily-import-link{background:none;border:0;padding:0;color:var(--blue);text-decoration:underline;cursor:pointer;font-size:inherit}
+.daily-reports-tabs{margin:0}
+.daily-reports-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.daily-reports-filters label{display:grid;gap:5px;font-size:11px}
+.daily-reports-filters input,.daily-reports-filters select{margin:0}
+.daily-history-check{display:flex;gap:8px;align-items:center;font-size:12px;align-self:end;padding-bottom:9px}
+.daily-history-check input{width:auto;margin:0}
+.daily-manual-tag.warn{background:#fdecee;border-color:#efc1c5;color:#ad2834;margin-left:6px}
+.daily-form-success{margin:10px 16px 0;padding:10px;border:1px solid #b7e2cf;border-radius:7px;background:#eefaf4;color:#176c51;font-size:11px}
+.daily-fix-modal{width:min(560px,100%);padding:0 0 16px}
+.daily-fix-modal header{flex-direction:column;gap:4px}
+.daily-fix-modal header h3{margin:0;font-size:17px}
+.daily-fix-modal header p{margin:0;color:var(--muted);font-size:11.5px}
+.daily-fix-modal>fieldset,.daily-fix-modal>div,.daily-fix-modal>label,.daily-fix-modal>p{margin:12px 20px 0}
+.daily-fix-operator{display:grid;gap:8px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.daily-fix-operator legend{font-weight:800;font-size:12px;padding:0 4px}
+.daily-fix-operator label,.daily-fix-same{display:flex;gap:8px;align-items:center;font-size:12px}
+.daily-fix-operator input[type=radio],.daily-fix-same input{width:auto;margin:0}
+.daily-fix-pick{display:grid;gap:6px}
+.daily-fix-pick select{height:auto}
+.daily-fix-readings{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.daily-fix-readings label{display:grid;gap:5px;font-size:11px}
+.daily-fix-modal footer{display:flex;justify-content:flex-end;gap:8px;margin:16px 20px 0;padding-top:12px;border-top:1px solid var(--line)}
+.daily-fix-modal footer button{padding:9px 13px;border-radius:6px;font-size:11px}
+@media (max-width:760px){.daily-fix-readings{grid-template-columns:1fr}.daily-import,.daily-reports{padding:12px}}
+html[data-theme="dark"] .daily-import-table tr.warn td{background:#33261a}
+html[data-theme="dark"] .daily-import-progress{background:#25231f}
+html[data-theme="dark"] .daily-manual-tag.warn{background:#3a1d21;border-color:#7a3a40;color:#ff9da2}
+html[data-theme="dark"] .daily-form-success{background:#153329;border-color:#285a48;color:#6bd4aa}
+.daily-import .field-add-check{display:flex;flex-direction:row;align-items:flex-start;gap:8px}
+.daily-import .field-add-check input{flex:none;width:16px;height:16px;min-height:0;margin:2px 0 0;padding:0}
+.daily-fix-modal footer .primary{background:var(--green);border:1px solid #176c51;color:#fff;font-weight:800}

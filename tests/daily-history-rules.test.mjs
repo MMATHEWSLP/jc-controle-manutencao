@@ -6,11 +6,16 @@ import { requiresManualOperator, validateDailyRecord } from "../lib/daily-record
 test("filtros: ida e volta pela URL, datas invertidas e colaboradores sem duplicar", () => {
   const params = new URLSearchParams("q=+cm-19+&de=2026-09-20&ate=2026-09-01&frente=3&colaborador=João&colaborador=João&colaborador=Ana&pagina=2");
   const filters = parseHistoryFilters(params);
-  assert.deepEqual(filters, { q: "cm-19", from: "2026-09-01", to: "2026-09-20", frontId: 3, operators: ["João", "Ana"] });
+  assert.deepEqual(filters, { q: "cm-19", from: "2026-09-01", to: "2026-09-20", frontId: 3, operators: ["João", "Ana"], location: "", origin: "", review: false });
   assert.equal(parseHistoryPage(params), 2);
   assert.deepEqual(parseHistoryFilters(historyFiltersToParams(filters, 2)), filters);
   assert.equal(historyFiltersToParams(filters, 1).has("pagina"), false);
-  assert.deepEqual(parseHistoryFilters(new URLSearchParams("de=ontem&frente=abc")), { q: "", from: "", to: "", frontId: null, operators: [] });
+  assert.deepEqual(parseHistoryFilters(new URLSearchParams("de=ontem&frente=abc")), { q: "", from: "", to: "", frontId: null, operators: [], location: "", origin: "", review: false });
+  // Filtros da importação: local, origem e "só Conferir".
+  const importados = parseHistoryFilters(new URLSearchParams("local=+Concessão+&origem=IMPORTADO&conferir=1"));
+  assert.deepEqual([importados.location, importados.origin, importados.review], ["Concessão", "IMPORTADO", true]);
+  assert.deepEqual(parseHistoryFilters(historyFiltersToParams(importados)), importados);
+  assert.equal(parseHistoryFilters(new URLSearchParams("origem=xyz")).origin, "");
 });
 
 test("busca livre escapa curingas do ILIKE", () => {
@@ -26,6 +31,8 @@ test("trabalhado = final - inicial; nulo quando não trabalhou ou falta leitura"
 test("status: não trabalhou / trabalhou + problema + produção", () => {
   assert.deepEqual(historyStatusTags({ workedToday: false, inactiveOrProblem: false, hadProduction: false, productionType: null }).map((t) => t.key), ["off"]);
   assert.deepEqual(historyStatusTags({ workedToday: true, inactiveOrProblem: true, hadProduction: true, productionType: "PORTO" }).map((t) => t.label), ["Trabalhou", "Inativo/problema", "Produção (Porto)"]);
+  assert.deepEqual(historyStatusTags({ workedToday: true, inactiveOrProblem: false, hadProduction: false, productionType: null, imported: true, reviewStatus: "CONFERIR" }).map((t) => t.label), ["Trabalhou", "Conferir", "Importado"]);
+  assert.deepEqual(historyStatusTags({ workedToday: false, inactiveOrProblem: false, hadProduction: false, productionType: null, imported: true }).map((t) => t.key), ["off", "imported"]);
 });
 
 test("ordenação: data mais recente primeiro; no dia, equipamento (natural) e operador", () => {

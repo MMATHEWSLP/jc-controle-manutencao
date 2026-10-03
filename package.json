@@ -62,6 +62,8 @@
     "test:operadores-regras": "esbuild tests/operadores-regras.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-operadores-regras.mjs && node --test /tmp/manutencao-preventiva-operadores-regras.mjs",
     "test:operadores-terceiros-banco": "tsx --test tests/operadores-terceiros.integration.test.mjs",
     "test:funcionarios-campo-banco": "tsx --test tests/funcionarios-campo.integration.test.mjs",
+    "test:daily-import-rules": "esbuild tests/daily-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-daily-import-rules.mjs && node --test /tmp/manutencao-preventiva-daily-import-rules.mjs",
+    "test:controle-diario-importacao-banco": "tsx --test tests/controle-diario-importacao.integration.test.mjs",
     "test:field-operators-rules": "esbuild tests/field-operators-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-field-operators-rules.mjs && node --test /tmp/manutencao-preventiva-field-operators-rules.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
