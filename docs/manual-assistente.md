@@ -51,6 +51,7 @@ Caminho: EQUIPAMENTOS → Controle Diário (e o login de campo dos operadores).
 O que faz: o operador registra o dia do equipamento: se trabalhou, leitura inicial e final, abastecimentos, viagens/toras (baldeio) ou metros (porto), problemas e fotos. Inclui o checklist pré-uso antes de ligar a máquina.
 Como lançar por outra pessoa: Controle Diário → lançamento manual informando o nome do operador.
 Mudança de frente pedida pelo operador: aparece para aprovação de ADMIN/GESTOR (número no botão do menu).
+Funcionários de campo (aba do Controle Diário): quem entra só com nome + código. "＋ Adicionar" → aba "Da lista de funcionários" (busca no cadastro de Funcionários, filtros de frente e função, "Só motoristas e operadores", vários de uma vez, frentes adicionais e código automático ou digitado) ou "Cadastro manual" (temporário/prestador; avisa nome parecido; "Criar também no cadastro de Funcionários" marcado por padrão). No fim aparecem os códigos uma única vez, com "Imprimir cartões" e "Copiar". Card com "Cadastro de funcionários" segue nome, função e demissão do menu FUNCIONÁRIOS; "Sem cadastro de funcionário" tem o botão "Vincular". ADMIN tem "Importar funcionários" (planilha com Nome, Função sugerida, Frente principal, Outras frentes, PIN e Conferir): prévia sem gravar, decide nomes parecidos e linhas "Conferir", depois "Confirmar importação" (quem já está na tela mantém o código e só completa frentes).
 
 ## Produtos
 Caminho: PRODUTOS → Produtos.

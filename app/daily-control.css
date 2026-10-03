@@ -356,3 +356,56 @@ html[data-theme="dark"] .daily-queue header .secondary,html[data-theme="dark"] .
 html[data-theme="dark"] .operator-pin-digits{background:#163428;color:#fff}
 html[data-theme="dark"] .operators-result{background:#163428;border-color:#2f6b52}
 html[data-theme="dark"] .operators-preview-out{background:#3a3016;border-color:#6b5a22;color:#f3dd9b}
+/* Funcionários de campo: botões do topo (o texto não estoura), filtros, total e vínculo com o cadastro */
+.daily-operators-head>.daily-operators-actions{display:flex;flex-direction:row;align-items:center;flex:0 0 auto;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.daily-operators-actions button{flex:0 0 auto;width:auto;min-height:40px;padding:9px 16px;border-radius:8px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.2}
+.daily-operators-actions .secondary{border:1px solid #cad8df;background:#fff;color:#2b4d61}
+.daily-operators-filters{display:grid;grid-template-columns:minmax(220px,1fr) 170px 140px auto;align-items:end;gap:10px;padding:12px 16px 0}
+.daily-operators-filters .page-search{min-height:42px}.daily-operators-filters>label:not(.page-search){display:grid;gap:4px;font-size:11px;font-weight:800;color:#4a6272}
+.daily-operators-total{margin:0;padding-bottom:10px;color:var(--muted);font-size:12px;white-space:nowrap}.daily-operators-total b{color:var(--ink)}
+.daily-record-link{margin:-2px 0 8px}
+.field-link-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;font-size:10.5px;font-weight:800}
+.field-link-badge.linked{background:#e5f7ef;color:#087451}.field-link-badge.loose{background:#fff1d9;color:#9a5a00}
+.daily-record-actions{display:flex;flex-wrap:wrap;gap:6px}
+/* Modais: Adicionar (lista/manual), códigos, vincular e importar */
+.field-add-modal,.field-import-modal{width:min(980px,96vw)}.field-codes{width:min(680px,96vw)}
+.field-add-tabs{display:flex;gap:6px;padding:10px 20px 0;border-bottom:1px solid #dfe7eb}
+.field-add-tabs button{padding:9px 14px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:transparent;color:#4c6574;font-size:12px;font-weight:800}
+.field-add-tabs button.active{border-color:#dfe7eb;background:var(--surface);color:#0d7455;margin-bottom:-1px}
+.field-add-filters{display:grid;grid-template-columns:minmax(200px,1fr) 160px 200px auto;align-items:end;gap:8px}
+.fleet-modal label.field-add-check,.fleet-modal label.field-add-row,.fleet-modal label.field-add-all,.fleet-modal .field-add-extra label,.fleet-modal .field-import-options label{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;color:#2b4d61}
+.fleet-modal .field-add-check input,.fleet-modal .field-add-row input,.fleet-modal .field-add-all input,.fleet-modal .field-add-extra input,.fleet-modal .field-import-options input{width:auto;min-height:0;margin:0;accent-color:#16835f}
+.field-add-list{display:grid;gap:4px;max-height:42vh;overflow:auto;margin-top:8px;padding:4px;border:1px solid #e2e9ed;border-radius:8px}
+.fleet-modal label.field-add-row{justify-content:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer}.fleet-modal label.field-add-row:hover{background:#f4f8fa}
+.field-add-row.selected{background:#eaf7f2!important}.field-add-row.disabled{opacity:.62;cursor:not-allowed}
+.field-add-row>span:nth-of-type(1){display:grid;gap:2px;flex:1}.field-add-row strong{font-size:12px;color:#173e55}.field-add-row small{font-size:10.5px;color:#6b808c;font-weight:500}
+.fleet-modal label.field-add-all{padding:6px 9px;border-bottom:1px solid #e2e9ed;font-weight:800}
+.field-warning{display:block;color:#b25c00!important;font-size:10.5px;font-weight:700}
+.field-add-selected{margin-top:14px;padding-top:12px;border-top:1px solid #e2e9ed}.field-add-selected h3{margin:0 0 8px;font-size:12px;color:#265067}
+.field-add-selected-row{display:grid;grid-template-columns:minmax(200px,1.3fr) minmax(160px,1.2fr) 130px;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed #e2e9ed}
+.field-add-selected-row>div:first-child{display:grid;gap:2px}.field-add-selected-row strong{font-size:12px}.field-add-selected-row small{font-size:10.5px;color:#6b808c}
+.field-add-extra summary{cursor:pointer;font-size:11px;font-weight:800;color:#0d7455}.field-add-extra>div{display:flex;flex-wrap:wrap;gap:4px 12px;max-height:140px;overflow:auto;margin-top:6px;padding:6px;border:1px solid #e2e9ed;border-radius:6px}
+.field-code-row{display:flex;gap:6px}.field-code-row button{flex:0 0 auto;padding:0 12px;border:1px solid #cad8df;border-radius:7px;background:#fff;font-size:11px;font-weight:800;color:#2b4d61}
+.field-similar{display:grid;gap:6px;margin-top:12px;padding:10px 12px;border:1px solid #f1d29b;border-radius:8px;background:#fff8ea;font-size:12px;color:#5d4615}
+.field-similar>div{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}.field-similar small{color:#7a5e1c}
+.field-similar button{padding:6px 10px;border:1px solid #d9b56a;border-radius:6px;background:#fff;font-size:11px;font-weight:800;color:#7a4b06}
+.fleet-modal label.field-create-employee{display:grid;grid-template-columns:auto 1fr;margin-top:12px}.field-create-employee small{grid-column:2;font-size:10.5px;font-weight:500;color:#6b808c}
+.field-codes-list{display:grid;gap:6px}.field-codes-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #dfe7eb;border-radius:8px}
+.field-codes-list span{display:grid;gap:2px}.field-codes-list small{font-size:10.5px;color:#6b808c}.field-codes-list b{font-size:24px;letter-spacing:.2em;color:#0d7455;font-variant-numeric:tabular-nums}
+.field-import-file{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.field-import-file input{width:auto!important}
+.field-import-file button{min-height:38px;padding:8px 14px;border:1px solid #cad8df;border-radius:7px;background:#fff;font-size:11px;font-weight:800;color:#2b4d61}
+.field-import-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}.field-import-summary span{padding:8px 12px;border:1px solid #dfe7eb;border-radius:8px;font-size:12px;color:#4a6272}.field-import-summary b{font-size:16px;color:var(--ink)}
+.field-import-modal section{margin-top:14px}.field-import-modal h3{margin:0 0 6px;font-size:12px;color:#265067}
+.field-import-row{display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-bottom:1px solid #edf1f3}.field-import-row>div{display:grid;gap:3px;flex:1}
+.field-import-row strong{font-size:12px;color:#173e55}.field-import-row small{font-size:10.5px;color:#6b808c}.field-import-row.conferir{background:#fffaf0}
+.field-import-row.conferir input:not([type=checkbox]){max-width:420px}
+.field-import-options{display:grid;gap:4px;margin-top:4px}.field-import-options small{color:#6b808c}
+.field-import-columns{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0 12px}
+.field-import-result ul{margin:4px 0 10px;padding-left:18px;font-size:12px}.field-import-result h3{margin:12px 0 4px;font-size:12px}
+@media(max-width:820px){.daily-operators-head{flex-direction:column;align-items:stretch}.daily-operators-actions{justify-content:stretch}.daily-operators-actions button{flex:1}.daily-operators-filters,.field-add-filters{grid-template-columns:1fr 1fr}.daily-operators-filters .page-search,.field-add-filters .page-search{grid-column:1/-1}.field-add-selected-row{grid-template-columns:1fr}}
+html[data-theme="dark"] .daily-operators-actions .secondary,html[data-theme="dark"] .field-code-row button,html[data-theme="dark"] .field-import-file button{background:#23211d;border-color:#46433e;color:#e8e6e3}
+html[data-theme="dark"] .field-link-badge.linked{background:#11352c;color:#72e3b9}html[data-theme="dark"] .field-link-badge.loose{background:#3a2c14;color:#f5c26b}
+html[data-theme="dark"] .field-add-row.selected{background:#11352c!important}html[data-theme="dark"] .fleet-modal label.field-add-row:hover{background:#25231f}
+html[data-theme="dark"] .field-similar,html[data-theme="dark"] .field-import-row.conferir{background:#2a2419;border-color:#5a4a2a;color:#f0e2c2}
+html[data-theme="dark"] :is(.field-add-row strong,.field-import-row strong,.fleet-modal label.field-add-check,.fleet-modal label.field-add-row,.fleet-modal label.field-add-all,.fleet-modal .field-import-options label){color:#e8e6e3}
+html[data-theme="dark"] .field-codes-list b{color:#72e3b9}
