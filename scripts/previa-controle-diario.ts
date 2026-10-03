@@ -18,19 +18,11 @@ async function main() {
   const linhas = await lerPlanilhaDiario(arquivo.buffer.slice(arquivo.byteOffset, arquivo.byteOffset + arquivo.byteLength));
   const db = await getDb();
 
-  // 1ª passada sem decisões: quem precisa de decisão.
+  // 1ª passada sem decisões: quem precisa de decisão (decisões combinadas em controle-diario-decisoes.ts).
   const inicial = await montarPrevia(db, linhas, { equipamentos: {}, problemas: [] });
-  const porPrefixo = (inicio: string) => inicial.equipamentosCadastro.filter((item) => item.prefix.toUpperCase().startsWith(inicio));
-  const ajustes: Record<string, number | null> = {};
-  console.log("== Equipamentos a decidir (decisão aplicada)");
-  for (const grupo of inicial.grupos.filter((item) => item.situacao === "DECIDIR")) {
-    let escolha: number | null = grupo.sugestaoId; let regra = "sugestão";
-    if (grupo.codigo === "CA-01") { const cc = porPrefixo("CC-01"); if (cc.length === 1) { escolha = cc[0].id; regra = "combinado: CA-01 é o CC-01"; } }
-    if (grupo.codigo === "CC-02" && grupo.escala === "B") { const hl = porPrefixo("HL-02"); if (hl.length === 1) { escolha = hl[0].id; regra = "combinado: CC-02 em km é o HL-02"; } }
-    ajustes[grupo.chave] = escolha;
-    const alvo = inicial.equipamentosCadastro.find((item) => item.id === escolha);
-    console.log(`  ${grupo.chave}: ${grupo.linhas} linha(s) · ${n(grupo.primeira)} → ${n(grupo.ultima)} · ${grupo.operadores.join(", ")} · ${grupo.motivo}\n     → ${alvo ? `${alvo.prefix} (${alvo.model}, atual ${n(alvo.atual)} ${alvo.unidade === "KM" ? "km" : "h"})` : "NÃO IMPORTAR"} [${regra}]`);
-  }
+  const { decisoesCombinadas } = await import("./controle-diario-decisoes");
+  const { equipamentos: ajustes, linhas: decisoes } = decisoesCombinadas(inicial);
+  console.log("== Equipamentos a decidir (decisão aplicada)\n" + decisoes.join("\n"));
   console.log("== Casados pelo prefixo");
   for (const grupo of inicial.grupos.filter((item) => item.situacao === "CASADO_PELO_PREFIXO")) console.log(`  ${grupo.chave} → ${grupo.motivo} (${grupo.linhas} linha(s))`);
 
