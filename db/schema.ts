@@ -338,15 +338,19 @@ export const meterReadings = pgTable("meter_readings", {
   operator: text("operator"),
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   notes: text("notes"),
-  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE","ASSISTENTE"] }).notNull().default("MANUAL"),
+  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE","ASSISTENTE","CONTROLE_DIARIO"] }).notNull().default("MANUAL"),
   authorizedRegression: boolean("authorized_regression").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
   clientRequestId: text("client_request_id"),
   // Leitura registrada por uma importação de abastecimentos (desfeita junto com o lote).
   fuelImportBatchId: integer("fuel_import_batch_id").references((): AnyPgColumn => fuelImportBatches.id),
+  // Leitura final de um registro do Controle Diário (CONTROLE_DIARIO); importada = com o lote, para o "Desfazer".
+  dailyRecordId: integer("daily_record_id").references((): AnyPgColumn => dailyRecords.id, { onDelete:"set null" }),
+  dailyImportBatchId: integer("daily_import_batch_id").references((): AnyPgColumn => dailyImportBatches.id),
   ...timestamps,
 }, (table) => [
+  index("meter_daily_batch_idx").on(table.dailyImportBatchId),
   index("meter_equipment_date_idx").on(table.equipmentId, table.readingDate), index("meter_front_idx").on(table.serviceFrontId),
   uniqueIndex("meter_readings_client_request_unique").on(table.clientRequestId),
 ]);
@@ -1236,16 +1240,80 @@ export const dailyRecords = pgTable("daily_records", {
   // Lançamento manual ("Lançado por terceiro"): nome digitado da pessoa a quem o registro se refere.
   operatorName: text("operator_name"),
   manualEntry: boolean("manual_entry").notNull().default(false),
+  // Operador vinculado ao cadastro de Funcionários de campo (perfil CAMPO) quando o registro não foi
+  // feito pelo próprio operador (importação; lançamento manual com nome reconhecido).
+  fieldOperatorId: integer("field_operator_id").references(() => users.id),
+  noOperator: boolean("no_operator").notNull().default(false),
+  // Texto do local como veio da planilha ("Local original"); `location` guarda o local padronizado.
+  locationOriginal: text("location_original"),
+  // Totais de produção do dia (a importação só tem os totais; o app também tem o detalhe por viagem).
+  portTrips: integer("port_trips"),
+  portVolumeM3: doublePrecision("port_volume_m3"),
+  portLogs: integer("port_logs"),
+  baldeioTrips: integer("baldeio_trips"),
+  totalTrips: integer("total_trips"),
+  // Diesel informado pelo operador no diário: NÃO é saída de combustível nem mexe em saldo.
+  reportedDieselLiters: doublePrecision("reported_diesel_liters"),
+  dieselFuelMovementId: integer("diesel_fuel_movement_id").references((): AnyPgColumn => fuelMovements.id),
+  dieselNote: text("diesel_note"),
+  // OK ou CONFERIR (leitura fora de sequência: não atualiza a leitura do equipamento).
+  reviewStatus: text("review_status", { enum:["OK","CONFERIR"] }).notNull().default("OK"),
+  reviewReason: text("review_reason"),
+  // APP = feito no sistema; importação = rótulo do lote (ex.: IMPORTACAO_SETEMBRO_2026).
+  origin: text("origin").notNull().default("APP"),
+  importBatchId: integer("import_batch_id").references((): AnyPgColumn => dailyImportBatches.id),
+  sourceRow: integer("source_row"),
   ...timestamps,
 }, (table) => [
   // Um operador não registra o mesmo equipamento duas vezes no mesmo dia (evita envio duplicado).
   // No lançamento manual a mesma conta pode lançar para operadores diferentes: o nome digitado
-  // (sem diferenciar maiúsculas) entra na chave.
-  uniqueIndex("daily_records_user_equipment_date_operator_unique").on(table.userId, table.equipmentId, table.recordDate, sql`coalesce(lower(${table.operatorName}), '')`),
+  // (sem diferenciar maiúsculas) entra na chave. Importados ficam de fora (turnos/viagens do mesmo dia).
+  uniqueIndex("daily_records_user_equipment_date_operator_unique").on(table.userId, table.equipmentId, table.recordDate, sql`coalesce(lower(${table.operatorName}), '')`).where(sql`${table.importBatchId} IS NULL`),
+  index("daily_records_import_batch_idx").on(table.importBatchId),
   index("daily_records_date_idx").on(table.recordDate),
   index("daily_records_equipment_date_idx").on(table.equipmentId, table.recordDate),
   index("daily_records_front_date_idx").on(table.serviceFrontId, table.recordDate),
 ]);
+
+// Lotes de importação do Controle Diário (planilha mensal). "Desfazer" apaga os registros, as leituras
+// e os problemas do lote e devolve a leitura atual dos equipamentos que a importação subiu.
+export const dailyImportBatches = pgTable("daily_import_batches", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+  fileName: text("file_name").notNull(),
+  importedBy: integer("imported_by").notNull().references(() => users.id),
+  registeredBy: integer("registered_by").notNull().references(() => users.id),
+  status: text("status", { enum:["EM_ANDAMENTO","CONCLUIDO","DESFEITO"] }).notNull().default("EM_ANDAMENTO"),
+  totalRows: integer("total_rows").notNull(),
+  importedRows: integer("imported_rows").notNull().default(0),
+  skippedRows: integer("skipped_rows").notNull().default(0),
+  reviewRows: integer("review_rows").notNull().default(0),
+  // Prévia aprovada (linhas resolvidas) e o "antes" das leituras dos equipamentos, para desfazer.
+  plan: text("plan"),
+  summary: text("summary"),
+  finishedAt: text("finished_at"),
+  undoneAt: text("undone_at"),
+  undoneBy: integer("undone_by").references(() => users.id),
+  ...timestamps,
+});
+
+// Problemas relatados no Controle Diário que viraram Pendência (aparecem em Pendências até resolver).
+export const dailyProblemReports = pgTable("daily_problem_reports", {
+  id: serial("id").primaryKey(),
+  dailyRecordId: integer("daily_record_id").references(() => dailyRecords.id, { onDelete:"set null" }),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  recordDate: text("record_date").notNull(),
+  operatorName: text("operator_name"),
+  description: text("description").notNull(),
+  status: text("status", { enum:["ABERTO","RESOLVIDO"] }).notNull().default("ABERTO"),
+  resolvedAt: text("resolved_at"),
+  resolvedBy: integer("resolved_by").references(() => users.id),
+  resolutionNote: text("resolution_note"),
+  importBatchId: integer("import_batch_id").references(() => dailyImportBatches.id),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("daily_problem_reports_status_idx").on(table.status, table.recordDate)]);
 
 export const dailyRecordFuelings = pgTable("daily_record_fuelings", {
   id: serial("id").primaryKey(),

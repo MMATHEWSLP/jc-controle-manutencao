@@ -86,17 +86,19 @@ export function lerLinhaDiario(valores: unknown[], indices: Partial<Record<Colun
 // Conferências
 // ---------------------------------------------------------------------------
 export type MotivoConferir = "FINAL_MENOR_QUE_INICIAL" | "INICIAL_MENOR_QUE_FINAL_ANTERIOR" | "SEM_LEITURA";
-export type AvisoDia = "ZERO_NO_MESMO_DIA" | "LEITURAS_IGUAIS_NO_DIA";
+// Leituras iguais (0 trabalhado, inicial = final do dia anterior) são normais: o equipamento pode não
+// ter rodado. Só um registro idêntico a outro do mesmo dia (com trabalho) é sinalizado.
+export type AvisoDia = "LEITURAS_IGUAIS_NO_DIA";
 export const MOTIVO_ROTULO: Record<MotivoConferir | AvisoDia, string> = {
   FINAL_MENOR_QUE_INICIAL: "Leitura final menor que a inicial", INICIAL_MENOR_QUE_FINAL_ANTERIOR: "Inicial menor que a final do dia anterior", SEM_LEITURA: "Sem leitura inicial/final",
-  ZERO_NO_MESMO_DIA: "0 trabalhado e outro registro no mesmo dia", LEITURAS_IGUAIS_NO_DIA: "Mesmas leituras de outro registro do dia",
+  LEITURAS_IGUAIS_NO_DIA: "Mesmas leituras de outro registro do dia",
 };
 
 type ComLeitura = Pick<LinhaDiario, "linha" | "data" | "leituraInicial" | "leituraFinal">;
 
 // Por equipamento (já separado: o CC-02 dividido em dois vira duas chaves), em ordem de data:
 // final < inicial, ou inicial menor que a maior final de um dia anterior → "Conferir".
-// Mais de um registro no mesmo dia: só sinaliza (0 trabalhado ou leituras iguais a outro do dia).
+// Mais de um registro no mesmo dia: entram separados; só sinaliza o idêntico a outro do dia.
 export function conferirLeituras<T extends ComLeitura>(linhas: T[]) {
   const conferir = new Map<number, MotivoConferir[]>();
   const avisos = new Map<number, AvisoDia[]>();
@@ -121,7 +123,7 @@ export function conferirLeituras<T extends ComLeitura>(linhas: T[]) {
   for (const doDia of porDia.values()) {
     if (doDia.length < 2) continue;
     for (const item of doDia) {
-      if (item.leituraInicial !== null && item.leituraFinal !== null && item.leituraFinal === item.leituraInicial) add(avisos, item.linha, "ZERO_NO_MESMO_DIA");
+      if (item.leituraInicial === null || item.leituraFinal === null || item.leituraFinal === item.leituraInicial) continue;
       if (doDia.some((outro) => outro.linha !== item.linha && outro.leituraInicial === item.leituraInicial && outro.leituraFinal === item.leituraFinal)) add(avisos, item.linha, "LEITURAS_IGUAIS_NO_DIA");
     }
   }
@@ -150,4 +152,41 @@ export function gruposDeEscala<T extends ComLeitura & { operador: string | null 
 export function totaisDiario(linhas: LinhaDiario[]) {
   const soma = (campo: keyof LinhaDiario) => linhas.reduce((total, item) => total + (typeof item[campo] === "number" ? item[campo] as number : 0), 0);
   return { linhas: linhas.length, viagens: soma("totalViagens"), volumePorto: Math.round(soma("volumePorto") * 100) / 100, toras: soma("torasPorto"), diesel: soma("diesel"), trabalhado: soma("trabalhado") };
+}
+
+// Código que não está no cadastro: equipamento cujo prefixo começa pelo código (ex.: HL-02 →
+// "HL-02-QVN6E34"), se for um só.
+export function casarPorPrefixo<E extends { id: number; prefix: string }>(codigo: string, equipamentos: E[]) {
+  const chave = chaveEquipamento(codigo);
+  const achados = equipamentos.filter((item) => chaveEquipamento(item.prefix).startsWith(`${chave}-`) || chaveEquipamento(item.prefix).startsWith(`${chave} `));
+  return achados.length === 1 ? achados[0] : null;
+}
+
+// Leituras de um grupo que não bate com o cadastro (ex.: CA-01 com 280.000 km; CC-02 com 167.000 km):
+// sugere o equipamento de outro código da MESMA planilha cuja faixa de leituras encosta na do grupo
+// (ex.: o CC-02 em km continua no HL-02). Sem nenhum, sugere pelo cadastro (leitura atual mais
+// próxima abaixo da primeira do grupo).
+export function sugerirEquipamento(grupo: { primeira: number; ultima: number }, faixas: Array<{ equipmentId: number; min: number; max: number }>,
+  cadastro: Array<{ id: number; atual: number }>) {
+  // 1º a faixa que contém a do grupo; 2º a que mais se sobrepõe; 3º a que encosta mais perto.
+  const folga = Math.max(500, (grupo.ultima - grupo.primeira) * 0.5);
+  const encostam = faixas.filter((faixa) => faixa.min <= grupo.ultima + folga && faixa.max >= grupo.primeira - folga).map((faixa) => ({
+    id: faixa.equipmentId, contem: faixa.min <= grupo.primeira && faixa.max >= grupo.ultima,
+    sobreposicao: Math.max(0, Math.min(faixa.max, grupo.ultima) - Math.max(faixa.min, grupo.primeira)),
+    distancia: Math.min(Math.abs(faixa.min - grupo.ultima), Math.abs(faixa.max - grupo.primeira)),
+  })).sort((a, b) => Number(b.contem) - Number(a.contem) || b.sobreposicao - a.sobreposicao || a.distancia - b.distancia);
+  if (encostam.length) return encostam[0].id;
+  const abaixo = cadastro.filter((item) => item.atual > 0 && item.atual <= grupo.primeira && grupo.primeira - item.atual < Math.max(5000, grupo.primeira * 0.05))
+    .sort((a, b) => (grupo.primeira - a.atual) - (grupo.primeira - b.atual));
+  return abaixo[0]?.id ?? null;
+}
+
+// Diesel do diário: acima do limite não é lançado (é leitura digitada no campo de litros e afins).
+export const DIESEL_LIMITE_LITROS = 600;
+export function mesDoLote(datas: string[]) {
+  const MESES = ["JANEIRO", "FEVEREIRO", "MARCO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+  const contagem = new Map<string, number>();
+  for (const data of datas) contagem.set(data.slice(0, 7), (contagem.get(data.slice(0, 7)) ?? 0) + 1);
+  const [mes] = [...contagem.entries()].sort((a, b) => b[1] - a[1])[0] ?? ["0000-01"];
+  return `IMPORTACAO_${MESES[Number(mes.slice(5, 7)) - 1]}_${mes.slice(0, 4)}`;
 }

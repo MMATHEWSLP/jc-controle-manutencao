@@ -9,6 +9,9 @@ export type DailyHistoryFilters = {
   to: string;              // YYYY-MM-DD ou ""
   frontId: number | null;  // null = todas as frentes
   operators: string[];     // nomes exibidos dos colaboradores (OR entre eles)
+  location?: string;       // local (parcial, sem caixa)
+  origin?: "" | "APP" | "IMPORTADO";
+  review?: boolean;        // só os registros "Conferir"
 };
 
 export const HISTORY_PAGE_SIZE = 50;
@@ -19,7 +22,7 @@ export const HISTORY_OPERATORS_MAX = 50;
 const isoDate = (value: string | null | undefined) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "");
 
 // Nomes curtos dos parâmetros na URL (a mesma query string serve para a tela, a API e as exportações).
-export const HISTORY_PARAMS = { q: "q", from: "de", to: "ate", front: "frente", operator: "colaborador", page: "pagina" } as const;
+export const HISTORY_PARAMS = { q: "q", from: "de", to: "ate", front: "frente", operator: "colaborador", page: "pagina", location: "local", origin: "origem", review: "conferir" } as const;
 
 export function parseHistoryFilters(params: URLSearchParams): DailyHistoryFilters {
   const front = Number(params.get(HISTORY_PARAMS.front));
@@ -32,6 +35,9 @@ export function parseHistoryFilters(params: URLSearchParams): DailyHistoryFilter
     from, to,
     frontId: Number.isInteger(front) && front > 0 ? front : null,
     operators,
+    location: (params.get(HISTORY_PARAMS.location) ?? "").trim().slice(0, HISTORY_Q_MAX),
+    origin: params.get(HISTORY_PARAMS.origin) === "APP" ? "APP" : params.get(HISTORY_PARAMS.origin) === "IMPORTADO" ? "IMPORTADO" : "",
+    review: params.get(HISTORY_PARAMS.review) === "1",
   };
 }
 
@@ -42,6 +48,9 @@ export function historyFiltersToParams(filters: DailyHistoryFilters, page?: numb
   if (filters.to) params.set(HISTORY_PARAMS.to, filters.to);
   if (filters.frontId) params.set(HISTORY_PARAMS.front, String(filters.frontId));
   for (const name of filters.operators) params.append(HISTORY_PARAMS.operator, name);
+  if (filters.location?.trim()) params.set(HISTORY_PARAMS.location, filters.location.trim());
+  if (filters.origin) params.set(HISTORY_PARAMS.origin, filters.origin);
+  if (filters.review) params.set(HISTORY_PARAMS.review, "1");
   if (page && page > 1) params.set(HISTORY_PARAMS.page, String(page));
   return params;
 }
@@ -54,14 +63,16 @@ export function parseHistoryPage(params: URLSearchParams) {
 // Escapa curingas do ILIKE para a busca livre casar só texto literal.
 export function likePattern(value: string) { return `%${value.replace(/[\\%_]/g, (match) => `\\${match}`)}%`; }
 
-export type HistoryStatusInput = { workedToday: boolean; inactiveOrProblem: boolean; hadProduction: boolean; productionType: "BALDEIO" | "PORTO" | null };
-export type HistoryStatusTag = { key: "worked" | "off" | "problem" | "production"; label: string; tone: "green" | "gray" | "orange" | "blue" };
+export type HistoryStatusInput = { workedToday: boolean; inactiveOrProblem: boolean; hadProduction: boolean; productionType: "BALDEIO" | "PORTO" | null; imported?: boolean; reviewStatus?: "OK" | "CONFERIR" };
+export type HistoryStatusTag = { key: "worked" | "off" | "problem" | "production" | "imported" | "review"; label: string; tone: "green" | "gray" | "orange" | "blue" | "red" };
 
 export function historyStatusTags(row: HistoryStatusInput): HistoryStatusTag[] {
-  if (!row.workedToday) return [{ key: "off", label: "Não trabalhou", tone: "gray" }];
+  if (!row.workedToday) return [{ key: "off", label: "Não trabalhou", tone: "gray" }, ...(row.imported ? [{ key: "imported" as const, label: "Importado", tone: "gray" as const }] : [])];
   const tags: HistoryStatusTag[] = [{ key: "worked", label: "Trabalhou", tone: "green" }];
   if (row.inactiveOrProblem) tags.push({ key: "problem", label: "Inativo/problema", tone: "orange" });
   if (row.hadProduction) tags.push({ key: "production", label: row.productionType === "PORTO" ? "Produção (Porto)" : row.productionType === "BALDEIO" ? "Produção (Baldeio)" : "Teve produção", tone: "blue" });
+  if (row.reviewStatus === "CONFERIR") tags.push({ key: "review", label: "Conferir", tone: "red" });
+  if (row.imported) tags.push({ key: "imported", label: "Importado", tone: "gray" });
   return tags;
 }
 export function historyStatusText(row: HistoryStatusInput) { return historyStatusTags(row).map((tag) => tag.label).join(" · "); }

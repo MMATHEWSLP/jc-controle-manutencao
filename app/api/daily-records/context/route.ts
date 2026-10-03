@@ -25,6 +25,8 @@ export async function GET(request: Request) {
       assignedEquipmentId: equipment.some((item) => item.id === assignedEquipmentId) ? assignedEquipmentId : null,
       defaultServiceFrontId: user.serviceFrontId,
       userId: user.id, canRegister: canRegister(user), canViewAll: canViewAll(user), canManage: canManage(user), canFieldOperators, canFrontRequests,
+      // Importar planilha do Controle Diário: só ADMIN.
+      canImport: user.profile === "ADMIN",
       // Login que não é de campo: o formulário pede o nome do operador (lançamento manual).
       manualOperator: requiresManualOperator(user.profile),
     });
