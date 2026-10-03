@@ -1,10 +1,9 @@
 import { getDb } from "../../../db";
-import { employees, employeeTransfers } from "../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { showsRegistryFrontButtons } from "../../../lib/active-front";
 import { validateEmployee } from "../../../lib/employee-rules";
 import { sincronizarComAviso } from "../../../lib/operadores";
-import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, employeeAlerts, employeeAudit, employeeErrorResponse, employeeScope, employeeToday, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
+import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, employeeAlerts, employeeErrorResponse, employeeScope, employeeToday, insertEmployee, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
 
 // Listagem do módulo Funcionários: frentes em exibição (seletor global) ∩ frentes que a pessoa enxerga.
 export async function GET(request: Request) {
@@ -51,14 +50,7 @@ export async function POST(request: Request) {
     const restricted = await restrictedMatches(db, input);
     if (restricted.length && body.confirmRestricted !== true)
       return Response.json({ error: "Este cadastro confere com um funcionário restrito (não pode ser recontratado).", restricted }, { status: 409 });
-    const { notes, ...fields } = input;
-    const created = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(employees).values({ ...fields, serviceFrontId: input.serviceFrontId!, status: input.status as "ATIVO", notes, createdBy: user.id }).returning({ id: employees.id });
-      // Primeira frente também entra no histórico de frentes (a partir da admissão).
-      await tx.insert(employeeTransfers).values({ employeeId: row.id, previousServiceFrontId: null, newServiceFrontId: input.serviceFrontId!, transferDate: input.admissionDate, transferredBy: user.id, note: "Frente inicial (cadastro)" });
-      return row;
-    });
-    await employeeAudit(db, user.id, created.id, "FUNCIONÁRIO CADASTRADO", undefined, { ...input, restrictedConfirmed: restricted.length > 0 || undefined });
+    const created = { id: await insertEmployee(db, user, input, { restrictedConfirmed: restricted.length > 0 || undefined }) };
     // Função que opera equipamento: o acesso de operador nasce agora e o PIN aparece uma vez.
     const acesso = await sincronizarComAviso(db, created.id, user, { jobTitle: input.jobTitle });
     return Response.json({ id: created.id, message: "Funcionário cadastrado.", ...acesso }, { status: 201 });

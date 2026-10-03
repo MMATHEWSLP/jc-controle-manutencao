@@ -64,6 +64,11 @@ export const users = pgTable("users", {
   // Acesso de operador (perfil CAMPO) criado a partir do cadastro de Funcionários: o acesso segue
   // o funcionário (função que opera equipamento, frente, demissão/readmissão) — lib/operadores.ts.
   employeeId: integer("employee_id").references((): AnyPgColumn => employees.id),
+  // Como o acesso de campo nasceu: FUNCAO = automático pela função "Opera equipamento" (segue a
+  // função e a frente do funcionário); MANUAL = adicionado na tela Funcionários de campo (da lista,
+  // manual ou importação) — segue nome, função e demissão, mas não cai por causa da função e as
+  // frentes são as escolhidas na tela. Nulo = FUNCAO.
+  fieldAccessOrigin: text("field_access_origin", { enum:["FUNCAO","MANUAL"] }),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),

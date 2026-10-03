@@ -289,6 +289,21 @@ export async function requireEmployee(db: Db, user: SessionUser, id: number, acc
   return row;
 }
 
+// Grava um funcionário novo já validado: o cadastro, a frente inicial no histórico de frentes e a
+// auditoria. Usado pelo "＋ Novo funcionário" do menu FUNCIONÁRIOS e pelo "Criar também no cadastro de
+// Funcionários" da tela Funcionários de campo (Controle Diário).
+export async function insertEmployee(db: Db, user: SessionUser, input: ReturnType<typeof parseEmployeeBody>, extraAudit?: Record<string, unknown>) {
+  const { notes, ...fields } = input;
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(employees).values({ ...fields, serviceFrontId: input.serviceFrontId!, status: input.status as "ATIVO", notes, createdBy: user.id }).returning({ id: employees.id });
+    // Primeira frente também entra no histórico de frentes (a partir da admissão).
+    await tx.insert(employeeTransfers).values({ employeeId: row.id, previousServiceFrontId: null, newServiceFrontId: input.serviceFrontId!, transferDate: input.admissionDate, transferredBy: user.id, note: "Frente inicial (cadastro)" });
+    return row;
+  });
+  await employeeAudit(db, user.id, created.id, "FUNCIONÁRIO CADASTRADO", undefined, { ...input, ...extraAudit });
+  return created.id;
+}
+
 export async function employeeAudit(db: Db | Tx, userId: number, employeeId: number, action: string, previousValue?: unknown, newValue?: unknown) {
   await db.insert(auditLogs).values({
     userId, entityType: "EMPLOYEE", entityId: String(employeeId), action,

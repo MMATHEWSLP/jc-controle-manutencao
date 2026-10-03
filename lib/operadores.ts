@@ -76,8 +76,11 @@ export async function sincronizarAcessoOperador(db: Db, employeeId: number, acto
   return db.transaction(async (tx) => {
     const funcionario = await carregarFuncionario(tx, employeeId);
     if (!funcionario) return { acao: "NENHUMA", mensagem: null };
-    const deve = deveTerAcesso(funcionario.status, await funcaoOpera(tx, funcionario.jobTitle)) && funcionario.frontActive === true;
     const usuario = (await tx.select().from(users).where(eq(users.employeeId, employeeId)).limit(1))[0];
+    // Acesso adicionado na tela Funcionários de campo (MANUAL): segue nome, função e demissão, mas
+    // não cai por causa da função e as frentes são as escolhidas lá.
+    const manual = usuario?.fieldAccessOrigin === "MANUAL";
+    const deve = manual ? funcionario.status !== "DEMITIDO" : deveTerAcesso(funcionario.status, await funcaoOpera(tx, funcionario.jobTitle)) && funcionario.frontActive === true;
     const agora = new Date().toISOString();
     if (!deve) {
       if (usuario && usuario.status === "ACTIVE") {
@@ -97,7 +100,7 @@ export async function sincronizarAcessoOperador(db: Db, employeeId: number, acto
       const tag = randomUUID();
       const [row] = await tx.insert(users).values({
         ...dados, email: `operador-${tag}@campo.local`, username: `operador-${tag}`, role: "CAMPO", status: "ACTIVE",
-        accessCodeHash: await hashAccessCode(pin), accessCodeChangedAt: agora, employeeId, createdAt: agora, updatedAt: agora,
+        accessCodeHash: await hashAccessCode(pin), accessCodeChangedAt: agora, employeeId, fieldAccessOrigin: "FUNCAO", createdAt: agora, updatedAt: agora,
       }).returning({ id: users.id });
       await definirFrente(tx, row.id, funcionario.serviceFrontId, agora);
       await auditar(tx, actorId, row.id, "ACESSO DE OPERADOR CRIADO", { employeeId, ...dados });
@@ -106,12 +109,18 @@ export async function sincronizarAcessoOperador(db: Db, employeeId: number, acto
     if (usuario.status !== "ACTIVE") {
       if (!criar) return { acao: "PENDENTE", mensagem: `${funcionario.name} tem acesso de operador desativado (reative em Usuários > Operadores).` };
       const pin = novoPin(funcionario.birthDate?.slice(0, 4));
-      await tx.update(users).set({ ...dados, status: "ACTIVE", accessCodeHash: await hashAccessCode(pin), accessCodeChangedAt: agora, updatedAt: agora }).where(eq(users.id, usuario.id));
-      await definirFrente(tx, usuario.id, funcionario.serviceFrontId, agora);
+      await tx.update(users).set({ ...(manual ? { name: dados.name, jobTitle: dados.jobTitle } : dados), status: "ACTIVE", accessCodeHash: await hashAccessCode(pin), accessCodeChangedAt: agora, updatedAt: agora }).where(eq(users.id, usuario.id));
+      if (!manual) await definirFrente(tx, usuario.id, funcionario.serviceFrontId, agora);
       await auditar(tx, actorId, usuario.id, "ACESSO DE OPERADOR REATIVADO", { employeeId, ...dados });
       return { acao: "REATIVADO", mensagem: `Acesso de operador de ${funcionario.name} reativado com PIN novo.`, acesso: gerado(usuario.id, pin) };
     }
-    // Ativo: acompanha nome, função e frente do cadastro.
+    // Ativo: acompanha nome e função do cadastro (e a frente, no acesso automático).
+    if (manual) {
+      if (usuario.name === dados.name && usuario.jobTitle === dados.jobTitle) return { acao: "NENHUMA", mensagem: null };
+      await tx.update(users).set({ name: dados.name, jobTitle: dados.jobTitle, updatedAt: agora }).where(eq(users.id, usuario.id));
+      await auditar(tx, actorId, usuario.id, "ACESSO DE CAMPO ATUALIZADO PELO CADASTRO", { employeeId, name: dados.name, jobTitle: dados.jobTitle });
+      return { acao: "ATUALIZADO", mensagem: null };
+    }
     if (usuario.name !== dados.name || usuario.jobTitle !== dados.jobTitle || usuario.serviceFrontId !== dados.serviceFrontId) {
       await tx.update(users).set({ ...dados, updatedAt: agora }).where(eq(users.id, usuario.id));
       if (usuario.serviceFrontId !== dados.serviceFrontId) await definirFrente(tx, usuario.id, funcionario.serviceFrontId, agora);

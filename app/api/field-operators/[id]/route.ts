@@ -1,5 +1,5 @@
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { FieldOperatorError, parseFieldOperatorInput, updateFieldOperator } from "../../../../lib/field-operators";
+import { assertCodeNotObvious, FieldOperatorError, parseFieldOperatorInput, updateFieldOperator } from "../../../../lib/field-operators";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -11,8 +11,9 @@ export async function PUT(request: Request, { params }: Context) {
     const id = Number((await params).id);
     if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Funcionário inválido." }, { status: 400 });
     const input = parseFieldOperatorInput(await request.json() as Record<string, unknown>, false);
-    await updateFieldOperator(auth.user!, id, input);
-    return Response.json({ ok: true, message: input.code ? `${input.name} atualizado, com código novo.` : `${input.name} atualizado.` });
+    assertCodeNotObvious(input.code);
+    const { name } = await updateFieldOperator(auth.user!, id, input);
+    return Response.json({ ok: true, message: input.code ? `${name} atualizado, com código novo.` : `${name} atualizado.` });
   } catch (error) {
     if (error instanceof FieldOperatorError) return Response.json({ error: error.message }, { status: error.status });
     console.error("[field-operators.put]", error);
