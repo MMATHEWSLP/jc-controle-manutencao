@@ -1,6 +1,6 @@
 import { getDb } from "../../../../db";
 import { authorize } from "../../../../lib/auth";
-import { employeeHistory, employeeScope, type HistoryFilters } from "../../../../lib/employees";
+import { canSeeSensitive, employeeHistory, employeeScope, type HistoryFilters } from "../../../../lib/employees";
 import { createEmployeeHistoryPdf, formatPdfDate } from "../../../../lib/pdf";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -22,7 +22,8 @@ export async function GET(request: Request) {
     if (filters.from && filters.to && filters.from > filters.to) return Response.json({ error: "O período inicial não pode ser depois do final." }, { status: 400 });
     const db = await getDb();
     const { fronts, scope } = await employeeScope(db, auth.user!, request);
-    const rows = await employeeHistory(db, scope, filters);
+    // Afastamentos: tipo e motivo (podem ser de saúde) só para o ADMIN, na tela e no PDF.
+    const rows = await employeeHistory(db, scope, filters, { showSensitive: canSeeSensitive(auth.user!) });
     if (params.get("formato") !== "pdf") return Response.json({ rows, filters });
     const frontLabel = scope.length === fronts.length && fronts.length > 1 ? "Todas as frentes" : fronts.filter((front) => scope.includes(front.id)).map((front) => front.name).join(", ") || "—";
     const filterText = [frontLabel, filters.name ? `Nome: ${filters.name}` : null, filters.company ? `Empresa: ${filters.company}` : null, filters.from || filters.to ? `Período: ${brDay(filters.from)} a ${brDay(filters.to)}` : "Todo o período"].filter(Boolean).join(" · ");

@@ -23,7 +23,10 @@ export type Employee = {
   id: number; name: string; jobTitle: string; company: string; admissionDate: string; serviceFrontId: number; frontName: string;
   status: Status; statusLabel: string; notes: string | null; registration: string | null; cpf: string | null; birthDate: string | null; city: string | null;
   salary: number | null; cycleWorkDays: number; cycleOffDays: number; currentAbsence: CurrentAbsence | null; cycle: Cycle | null; daysInFront: number;
+  // Situação calculada pelo sistema (lib/employee-rules.ts:computeSituation).
+  atHeadquarters: boolean; situation: Situation; situationLabel: string;
 };
+export type Situation = "TRABALHANDO" | "DE_FOLGA" | "EM_VIAGEM" | "AFASTADO" | "SEDE" | "DESLIGADO";
 export type Restricted = { id: number; name: string; jobTitle: string; company: string; registration: string | null; cpf: string | null; frontName: string; dismissedAt: string; reason: string };
 export type Alerts = { offOverdue: number; workExceeded: number; approaching: number };
 export type User = { permissions: string[] };
@@ -90,11 +93,11 @@ export function AlertChip({ alert }: { alert: CycleAlert | undefined }) {
   return <span className={`employee-alert-chip level-${alert.level}`} title="Dias que faltam para completar o ciclo de trabalho">Faltam {alert.daysLeft}d p/ folga</span>;
 }
 
-export function SituationPills({ item }: { item: Pick<Employee, "status" | "statusLabel" | "currentAbsence"> }) {
-  const tone = item.status === "ATIVO" ? "green" : item.status === "FOLGA" ? "blue" : item.status === "AFASTADO" ? "orange" : "gray";
+const SITUATION_TONE: Record<Situation, string> = { TRABALHANDO: "green", SEDE: "green", DE_FOLGA: "blue", EM_VIAGEM: "blue", AFASTADO: "orange", DESLIGADO: "gray" };
+export function SituationPills({ item }: { item: Pick<Employee, "status" | "statusLabel" | "currentAbsence" | "situation" | "situationLabel"> }) {
   return (
     <div className="employee-situation">
-      <span className={`status-pill ${tone}`}>{item.statusLabel}</span>
+      <span className={`status-pill ${SITUATION_TONE[item.situation] ?? "gray"}`}>{item.situationLabel ?? item.statusLabel}</span>
       {item.currentAbsence?.badge && item.currentAbsence.kind !== "FOLGA" && (
         <span className="employee-absence-badge" title={`${item.currentAbsence.kindLabel} desde ${brDay(item.currentAbsence.startDate)}`}>
           {item.currentAbsence.badge.label}{item.currentAbsence.badge.returnDate ? ` · volta ${brDay(item.currentAbsence.badge.returnDate)}` : " · sem data de retorno"}

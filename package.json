@@ -44,6 +44,8 @@
     "import:abastecimento:confirmar": "node importar-abastecimento.mjs --confirmar",
     "import:movimentacoes:simular": "tsx scripts/import-movimentacoes-estoque.ts",
     "import:movimentacoes:simular:offline": "tsx scripts/import-movimentacoes-estoque.ts --offline",
+    "test:importacao-pessoal-regras": "esbuild tests/personnel-import-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-personnel-import-rules.mjs && node --test /tmp/manutencao-preventiva-personnel-import-rules.mjs",
+    "test:importacao-pessoal-banco": "tsx --test tests/personnel-import.integration.test.mjs",
     "test:third-party-rules": "esbuild tests/third-party-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-third-party-rules.mjs && node --test /tmp/manutencao-preventiva-third-party-rules.mjs",
     "test:local-datetime": "esbuild tests/local-datetime.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-local-datetime.mjs && node --test /tmp/manutencao-preventiva-local-datetime.mjs",
     "test:date-format": "esbuild tests/date-format.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-date-format.mjs && TZ=America/Sao_Paulo node --test /tmp/manutencao-preventiva-date-format.mjs",

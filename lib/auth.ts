@@ -119,7 +119,7 @@ export const PERMISSION_GROUPS = [
   { label:"Funcionários", items:[
     ["employees.view","Visualizar funcionários, transferências e afastamentos"],
     ["employees.manage","Cadastrar, editar, transferir, demitir e controlar o ciclo de folga dos funcionários"],
-    ["employees.salary","Ver e informar o salário de carteira dos funcionários"],
+    ["employees.salary","Salário de carteira dos funcionários (LGPD: na prática só ADMIN vê CPF, nascimento, salário, motivos e afastamentos)"],
     ["employees.companies","Gerenciar a lista de empresas dos funcionários"],
   ]},
   { label:"Usuários", items:[

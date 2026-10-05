@@ -6,13 +6,14 @@ import RegistryFrontButtons, { frontParam } from "./RegistryFrontButtons";
 import { CompaniesModal, EmployeeForm, StepModal, TransferModal } from "./EmployeeForms";
 import { EmployeesHistory, RestrictedList } from "./EmployeesHistory";
 import { JobFunctionsModal } from "./OperatorAccess";
+import PersonnelImportPanel from "./PersonnelImportPanel";
 import {
   AlertChip, api, brDay, dayCount, fold, initials, nextAction, phaseOf, problemText, SituationPills,
   type Alerts, type Company, type CycleStep, type Employee, type Front, type Phase, type User,
 } from "./employees-client";
 
-type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canManageCompanies: boolean; frontButtons?: boolean; changeFrontIds?: number[] | "ALL" };
-type Tab = "painel" | "viagem" | "folga" | "retorno" | "historico" | "restritos";
+type ListResponse = { employees: Employee[]; fronts: Front[]; scopeFrontIds: number[]; companies: Company[]; alerts: Alerts; canManage: boolean; canSeeSalary: boolean; canSeeSensitive?: boolean; canManageCompanies: boolean; frontButtons?: boolean; changeFrontIds?: number[] | "ALL" };
+type Tab = "painel" | "viagem" | "folga" | "retorno" | "historico" | "restritos" | "importar";
 const EMPTY: ListResponse = { employees: [], fronts: [], scopeFrontIds: [], companies: [], alerts: { offOverdue: 0, workExceeded: 0, approaching: 0 }, canManage: false, canSeeSalary: false, canManageCompanies: false };
 
 // Aba → fases que ela mostra e a ação em lote disponível.
@@ -77,7 +78,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
       if (key && !fold(`${item.name} ${item.jobTitle} ${item.company} ${item.registration ?? ""} ${item.city ?? ""}`).includes(key)) return false;
       if (front && item.serviceFrontId !== Number(front)) return false;
       if (company && item.company !== company) return false;
-      if (tab === "painel" && situation && item.status !== situation) return false;
+      if (tab === "painel" && situation && item.situation !== situation) return false;
       if (onlyAlerts && !item.cycle?.summary.alert) return false;
       return true;
     }).sort((a, b) => (onlyAlerts || tab !== "painel" ? alertRank(a) - alertRank(b) : 0) || a.name.localeCompare(b.name, "pt-BR"));
@@ -96,7 +97,7 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
   const toggle = (id: number) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const refreshAfter = async (message: string) => { setEditing(null); setTransferring(null); setStepping(null); setSelected(new Set()); await load(); flash(message); };
   const alertTotal = data.alerts.offOverdue + data.alerts.workExceeded;
-  const listTab = tab !== "historico" && tab !== "restritos";
+  const listTab = tab !== "historico" && tab !== "restritos" && tab !== "importar";
 
   return (
     <>
@@ -130,17 +131,19 @@ export default function EmployeesView({ authUser, flash }: { authUser: User; fla
         <button className={tab === "folga" ? "active" : ""} onClick={() => setTab("folga")}>De folga <b className={`nav-badge ${data.alerts.offOverdue ? "" : "soft"}`}>{counts.folga}</b></button>
         <button className={tab === "retorno" ? "active" : ""} onClick={() => setTab("retorno")}>Viagem de retorno <b className="nav-badge soft">{counts.retorno}</b></button>
         <button className={tab === "historico" ? "active" : ""} onClick={() => setTab("historico")}>Histórico</button>
-        <button className={tab === "restritos" ? "active" : ""} onClick={() => setTab("restritos")}>Restritos</button>
+        {data.canSeeSensitive && <button className={tab === "restritos" ? "active" : ""} onClick={() => setTab("restritos")}>Restritos</button>}
+        {data.canSeeSensitive && <button className={tab === "importar" ? "active" : ""} onClick={() => setTab("importar")}>Importar do sistema de pessoal</button>}
       </div>
       {tab === "historico" && <EmployeesHistory companies={data.companies} open={setDetails} frontQuery={data.frontButtons ? frontParam(moduleFront) : ""} />}
-      {tab === "restritos" && <RestrictedList open={setDetails} />}
+      {tab === "restritos" && data.canSeeSensitive && <RestrictedList open={setDetails} />}
+      {tab === "importar" && data.canSeeSensitive && <PersonnelImportPanel flash={flash} changed={load} />}
       {listTab && (
         <article className="panel module-panel equipment-management-panel">
           <div className="equipment-management-filters employee-filters">
             <label className="page-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar nome, matrícula, função, empresa ou cidade..." /></label>
             {scopeFronts.length > 1 && <label>Frente<select value={front} onChange={(event) => setFront(event.target.value)}><option value="">Todas</option>{scopeFronts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
             <label>Empresa<select value={company} onChange={(event) => setCompany(event.target.value)}><option value="">Todas</option>{data.companies.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
-            {tab === "painel" && <label>Status<select value={situation} onChange={(event) => setSituation(event.target.value)}><option value="">Todos</option><option value="ATIVO">Ativo</option><option value="FOLGA">De folga</option><option value="AFASTADO">Afastado</option>{includeDismissed && <option value="DEMITIDO">Demitido</option>}</select></label>}
+            {tab === "painel" && <label>Status<select value={situation} onChange={(event) => setSituation(event.target.value)}><option value="">Todos</option><option value="TRABALHANDO">Trabalhando</option><option value="DE_FOLGA">De folga</option><option value="EM_VIAGEM">Em viagem</option><option value="AFASTADO">Afastado</option><option value="SEDE">Sede</option>{includeDismissed && <option value="DESLIGADO">Desligado</option>}</select></label>}
             <label className="products-review-toggle"><input type="checkbox" checked={onlyAlerts} onChange={(event) => setOnlyAlerts(event.target.checked)} /><strong>Só com alerta</strong></label>
             {tab === "painel" && <label className="products-review-toggle"><input type="checkbox" checked={includeDismissed} onChange={(event) => setIncludeDismissed(event.target.checked)} /><strong>Mostrar demitidos</strong></label>}
           </div>

@@ -5,7 +5,7 @@ import { auditLogs, companies, employeeAbsences, employeeDismissals, employeeLea
 import { frentesVisiveis, frentesVisiveisCadastro } from "./access";
 import { frentesEmExibicao, frentesEmExibicaoCadastro } from "./active-front";
 import type { SessionUser } from "./auth";
-import { ABSENCE_LABELS, absenceBadge, currentAbsence, EMPLOYEE_STATUS_LABELS, formatCpf, nameKey, onlyDigits, type AbsenceKind } from "./employee-rules";
+import { ABSENCE_LABELS, absenceBadge, computeSituation, currentAbsence, EMPLOYEE_STATUS_LABELS, formatCpf, nameKey, onlyDigits, SITUATION_LABELS, type AbsenceKind } from "./employee-rules";
 import { fuelLocalDay } from "./fuel";
 import { CYCLE_STEP_LABELS, CYCLE_STEPS, cycleTotals, frontStays, openSpan, statusForPhase, summarizeCycle, summarizeStoredCycle, tenure, validateCycleDates, type CycleDates, type CycleStep } from "./leave-cycle";
 
@@ -51,7 +51,17 @@ export async function employeeScope(db: Db, user: SessionUser, request: Request,
   return { fronts, scope: fronts.map((front) => front.id).filter((id) => displayed === "ALL" || displayed.includes(id)) };
 }
 
-export const canSeeSalary = (user: SessionUser) => user.permissions.includes("employees.salary");
+// LGPD: CPF, nascimento, salário, motivos de demissão, tipo/motivo dos afastamentos (inclui saúde) e
+// a lista de restritos são vistos e exportados SOMENTE pelo ADMIN. Os demais perfis veem nome,
+// função, matrícula, frente, empresa e situação (afastamento aparece só como "Afastamento").
+export const canSeeSensitive = (user: SessionUser) => user.profile === "ADMIN";
+export const canSeeSalary = canSeeSensitive;
+
+// Tipo de ausência que quem não é ADMIN pode ver (atestado/afastamento/outro = "Afastamento").
+const PUBLIC_ABSENCE_KIND: Record<AbsenceKind, AbsenceKind> = { FOLGA: "FOLGA", FERIAS: "FERIAS", ATESTADO: "AFASTAMENTO", AFASTAMENTO: "AFASTAMENTO", OUTRO: "AFASTAMENTO" };
+export function maskAbsence<T extends { kind: AbsenceKind; notes?: string | null }>(absence: T, sensitive: boolean): T {
+  return sensitive ? absence : { ...absence, kind: PUBLIC_ABSENCE_KIND[absence.kind], ...("notes" in absence ? { notes: null } : {}) };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Ciclo de folga (a conta de dias é toda de lib/leave-cycle.ts; aqui só se lê/grava o banco).
@@ -192,16 +202,22 @@ const baseColumns = {
   id: employees.id, name: employees.name, jobTitle: employees.jobTitle, company: employees.company, admissionDate: employees.admissionDate,
   serviceFrontId: employees.serviceFrontId, frontName: serviceFronts.name, status: employees.status, notes: employees.notes,
   registration: employees.registration, cpf: employees.cpf, birthDate: employees.birthDate, city: employees.city, salary: employees.salary,
-  cycleWorkDays: employees.cycleWorkDays, cycleOffDays: employees.cycleOffDays,
+  cycleWorkDays: employees.cycleWorkDays, cycleOffDays: employees.cycleOffDays, atHeadquarters: employees.atHeadquarters,
 };
 
-type BaseRow = { salary: number | null; cpf: string | null; status: keyof typeof EMPLOYEE_STATUS_LABELS };
-function present<T extends BaseRow>(row: T, showSalary: boolean) {
-  return { ...row, cpf: row.cpf ? formatCpf(row.cpf) : null, salary: showSalary ? row.salary : null, statusLabel: EMPLOYEE_STATUS_LABELS[row.status] };
+type BaseRow = { salary: number | null; cpf: string | null; birthDate: string | null; status: keyof typeof EMPLOYEE_STATUS_LABELS };
+function present<T extends BaseRow>(row: T, sensitive: boolean) {
+  return { ...row, cpf: sensitive && row.cpf ? formatCpf(row.cpf) : null, birthDate: sensitive ? row.birthDate : null, salary: sensitive ? row.salary : null, statusLabel: EMPLOYEE_STATUS_LABELS[row.status] };
 }
 
-// `salaryFronts`: frentes cujo salário aparece (só as do login, mesmo com a permissão de salário).
-export async function listEmployees(db: Db, frontIds: number[], options: { includeDismissed?: boolean; showSalary?: boolean; salaryFronts?: number[] | "ALL" } = {}) {
+// Situação calculada (Trabalhando, De folga, Em viagem, Afastado, Sede, Desligado) — lib/employee-rules.ts.
+function situationOf(row: { status: string; atHeadquarters: boolean }, absence: { id: number; kind: AbsenceKind; startDate: string; endDate: string | null } | null, phase: string | null) {
+  const situation = computeSituation({ status: row.status, atHeadquarters: row.atHeadquarters, absence, phase });
+  return { situation, situationLabel: SITUATION_LABELS[situation] };
+}
+
+// `showSensitive`: CPF, nascimento, salário e tipo/motivo de afastamento (só ADMIN).
+export async function listEmployees(db: Db, frontIds: number[], options: { includeDismissed?: boolean; showSensitive?: boolean } = {}) {
   if (frontIds.length === 0) return [];
   const rows = await db.select(baseColumns).from(employees).innerJoin(serviceFronts, eq(employees.serviceFrontId, serviceFronts.id))
     .where(and(inArray(employees.serviceFrontId, frontIds), options.includeDismissed ? undefined : ne(employees.status, "DEMITIDO")))
@@ -221,10 +237,14 @@ export async function listEmployees(db: Db, frontIds: number[], options: { inclu
     const employeeCycles = cycles.get(row.id) ?? [];
     const open = openCycle(employeeCycles);
     const arrival = arrivals.find((item) => item.employeeId === row.id && item.frontId === row.serviceFrontId)?.date ?? row.admissionDate;
+    const sensitive = Boolean(options.showSensitive);
+    const shown = current ? maskAbsence(current, sensitive) : null;
+    const cycle = open ? cycleView(open, today) : null;
     return {
-      ...present(row, Boolean(options.showSalary) && (options.salaryFronts === undefined || options.salaryFronts === "ALL" || options.salaryFronts.includes(row.serviceFrontId))),
-      currentAbsence: current ? { ...current, kindLabel: ABSENCE_LABELS[current.kind], badge: absenceBadge(current) } : null,
-      cycle: open ? cycleView(open, today) : null,
+      ...present(row, sensitive),
+      ...situationOf(row, current, cycle?.summary.phase ?? null),
+      currentAbsence: shown ? { ...shown, kindLabel: ABSENCE_LABELS[shown.kind], badge: absenceBadge(shown) } : null,
+      cycle,
       cycleCount: employeeCycles.length,
       daysInFront: openSpan(arrival, null, today),
     };
@@ -243,7 +263,7 @@ const previousFront = alias(serviceFronts, "previous_front");
 const newFront = alias(serviceFronts, "new_front");
 const rehiredByUser = alias(users, "rehired_by_user");
 
-export async function employeeDetail(db: Db, id: number, options: { showSalary?: boolean } = {}) {
+export async function employeeDetail(db: Db, id: number, options: { showSensitive?: boolean } = {}) {
   const [employee] = await db.select({ ...baseColumns, createdAt: employees.createdAt }).from(employees).innerJoin(serviceFronts, eq(employees.serviceFrontId, serviceFronts.id)).where(eq(employees.id, id)).limit(1);
   if (!employee) return null;
   const [transfers, absences, cycles, dismissals] = await Promise.all([
@@ -264,15 +284,20 @@ export async function employeeDetail(db: Db, id: number, options: { showSalary?:
   const stays = frontStays(transfers, today);
   const current = currentAbsence(absences, today);
   const totals = cycleTotals(employeeCycles, today);
+  const sensitive = Boolean(options.showSensitive);
+  const shown = current ? maskAbsence(current, sensitive) : null;
+  const openView = open ? cycleView(open, today) : null;
   return {
-    ...present(employee, Boolean(options.showSalary)),
-    currentAbsence: current ? { ...current, kindLabel: ABSENCE_LABELS[current.kind], badge: absenceBadge(current) } : null,
-    cycle: open ? cycleView(open, today) : null,
+    ...present(employee, sensitive),
+    ...situationOf(employee, current, openView?.summary.phase ?? null),
+    currentAbsence: shown ? { ...shown, kindLabel: ABSENCE_LABELS[shown.kind], badge: absenceBadge(shown) } : null,
+    cycle: openView,
     cycles: views.reverse(),
     transfers: stays,
     daysInFront: stays.find((stay) => stay.current)?.days ?? openSpan(employee.admissionDate, null, today),
-    absences: absences.map((absence) => ({ ...absence, kindLabel: ABSENCE_LABELS[absence.kind as AbsenceKind], days: openSpan(absence.startDate, absence.endDate, today) + 1 })),
-    dismissals,
+    absences: absences.map((absence) => maskAbsence(absence, sensitive)).map((absence) => ({ ...absence, kindLabel: ABSENCE_LABELS[absence.kind as AbsenceKind], days: openSpan(absence.startDate, absence.endDate, today) + 1 })),
+    // Motivo da demissão: só ADMIN.
+    dismissals: dismissals.map((dismissal) => (sensitive ? dismissal : { ...dismissal, reason: null })),
     counters: {
       workedDaysCurrentCycle: open ? cycleView(open, today).summary.workedDays : null,
       totalOffDays: totals.offDays, totalTravelDays: totals.travelDays, cycles: totals.cycles,
@@ -304,11 +329,19 @@ export async function insertEmployee(db: Db, user: SessionUser, input: ReturnTyp
   return created.id;
 }
 
+// LGPD: a auditoria registra QUE o campo mudou, nunca o valor de CPF, nascimento, salário, motivos
+// (demissão/afastamento) e observações.
+const AUDIT_PROTECTED = new Set(["cpf", "birthDate", "salary", "reason", "notes"]);
+export function auditSafe(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, AUDIT_PROTECTED.has(key) && item !== null && item !== undefined && item !== "" ? "[protegido]" : item]));
+}
+
 export async function employeeAudit(db: Db | Tx, userId: number, employeeId: number, action: string, previousValue?: unknown, newValue?: unknown) {
   await db.insert(auditLogs).values({
     userId, entityType: "EMPLOYEE", entityId: String(employeeId), action,
-    previousValue: previousValue === undefined ? null : JSON.stringify(previousValue),
-    newValue: newValue === undefined ? null : JSON.stringify(newValue),
+    previousValue: previousValue === undefined ? null : JSON.stringify(auditSafe(previousValue)),
+    newValue: newValue === undefined ? null : JSON.stringify(auditSafe(newValue)),
   });
 }
 
@@ -365,7 +398,7 @@ export async function restrictedMatches(db: Db, input: { name: string; cpf: stri
 
 export type HistoryFilters = { name: string; company: string; type: "FOLGA" | "AFASTAMENTO"; from: string | null; to: string | null };
 
-export async function employeeHistory(db: Db, frontIds: number[], filters: HistoryFilters) {
+export async function employeeHistory(db: Db, frontIds: number[], filters: HistoryFilters, options: { showSensitive?: boolean } = {}) {
   if (frontIds.length === 0) return [];
   const today = employeeToday();
   const people = await db.select({ id: employees.id, name: employees.name, company: employees.company, frontName: serviceFronts.name, status: employees.status })
@@ -380,7 +413,7 @@ export async function employeeHistory(db: Db, frontIds: number[], filters: Histo
   };
   if (filters.type === "AFASTAMENTO") {
     const rows = selected.length ? await db.select().from(employeeAbsences).where(inArray(employeeAbsences.employeeId, selected.map((person) => person.id))).orderBy(desc(employeeAbsences.startDate)) : [];
-    return rows.filter((row) => overlaps(row.startDate, row.endDate)).map((row) => {
+    return rows.filter((row) => overlaps(row.startDate, row.endDate)).map((raw) => maskAbsence(raw, Boolean(options.showSensitive))).map((row) => {
       const person = byId.get(row.employeeId)!;
       return { kind: "AFASTAMENTO" as const, id: row.id, employeeId: row.employeeId, name: person.name, company: person.company, frontName: person.frontName, absenceKind: ABSENCE_LABELS[row.kind as AbsenceKind], startDate: row.startDate, endDate: row.endDate, days: openSpan(row.startDate, row.endDate, today) + 1, notes: row.notes };
     });

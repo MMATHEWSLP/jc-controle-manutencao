@@ -3,7 +3,7 @@ import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { showsRegistryFrontButtons } from "../../../lib/active-front";
 import { validateEmployee } from "../../../lib/employee-rules";
 import { sincronizarComAviso } from "../../../lib/operadores";
-import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, employeeAlerts, employeeErrorResponse, employeeScope, employeeToday, insertEmployee, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
+import { assertUniqueDocuments, canSeeEmployeeFront, employeeChangeFronts, canSeeSalary, canSeeSensitive, employeeAlerts, employeeErrorResponse, employeeScope, employeeToday, insertEmployee, listCompanies, listEmployees, parseEmployeeBody, requireCompany, restrictedMatches } from "../../../lib/employees";
 
 // Listagem do módulo Funcionários: frentes em exibição (seletor global) ∩ frentes que a pessoa enxerga.
 export async function GET(request: Request) {
@@ -15,12 +15,12 @@ export async function GET(request: Request) {
     const db = await getDb();
     const { fronts, scope } = await employeeScope(db, user, request);
     const [items, companies] = await Promise.all([
-      listEmployees(db, scope, { includeDismissed: url.searchParams.get("includeDismissed") === "1", showSalary: canSeeSalary(user), salaryFronts: employeeChangeFronts(user) }),
+      listEmployees(db, scope, { includeDismissed: url.searchParams.get("includeDismissed") === "1", showSensitive: canSeeSensitive(user) }),
       listCompanies(db, { includeInactive: user.permissions.includes("employees.companies") }),
     ]);
     return Response.json({
       employees: items, fronts, scopeFrontIds: scope, companies, today: employeeToday(), alerts: employeeAlerts(items), frontButtons: showsRegistryFrontButtons(user), changeFrontIds: employeeChangeFronts(user),
-      canManage: user.permissions.includes("employees.manage"), canSeeSalary: canSeeSalary(user), canManageCompanies: user.permissions.includes("employees.companies"),
+      canManage: user.permissions.includes("employees.manage"), canSeeSalary: canSeeSalary(user), canSeeSensitive: canSeeSensitive(user), canManageCompanies: user.permissions.includes("employees.companies"),
     });
   } catch (error) {
     console.error("[employees.get]", error);
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     const user = auth.user!;
     const body = (await request.json()) as Record<string, unknown>;
     const input = parseEmployeeBody(body);
-    if (!canSeeSalary(user)) input.salary = null;
+    // LGPD: CPF, nascimento e salário só pelo ADMIN.
+    if (!canSeeSensitive(user)) { input.salary = null; input.cpf = null; input.birthDate = null; }
     // "De folga" vem do ciclo e "Demitido" do botão Demitir: o cadastro nasce Ativo ou Afastado.
     if (input.status !== "AFASTADO") input.status = "ATIVO";
     const problem = validateEmployee(input, { requireFront: true, today: employeeToday() });
@@ -48,6 +49,9 @@ export async function POST(request: Request) {
     await requireCompany(db, input.company);
     await assertUniqueDocuments(db, input);
     const restricted = await restrictedMatches(db, input);
+    // A lista de restritos (com motivo) é só do ADMIN: os demais são barrados e orientados a falar com ele.
+    if (restricted.length && !canSeeSensitive(user))
+      return Response.json({ error: "Este cadastro confere com um funcionário restrito (não pode ser recontratado). Fale com o ADMIN." }, { status: 409 });
     if (restricted.length && body.confirmRestricted !== true)
       return Response.json({ error: "Este cadastro confere com um funcionário restrito (não pode ser recontratado).", restricted }, { status: 409 });
     const created = { id: await insertEmployee(db, user, input, { restrictedConfirmed: restricted.length > 0 || undefined }) };

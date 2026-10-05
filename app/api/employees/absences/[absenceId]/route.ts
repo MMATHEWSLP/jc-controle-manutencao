@@ -3,7 +3,7 @@ import { getDb } from "../../../../../db";
 import { employeeAbsences } from "../../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { validateAbsence } from "../../../../../lib/employee-rules";
-import { employeeAudit, employeeErrorResponse, requireEmployee } from "../../../../../lib/employees";
+import { canSeeSensitive, employeeAudit, employeeErrorResponse, maskAbsence, requireEmployee } from "../../../../../lib/employees";
 
 type Context = { params: Promise<{ absenceId: string }> };
 
@@ -28,7 +28,10 @@ export async function PUT(request: Request, { params }: Context) {
     const input = { kind: String(body.kind ?? absence.kind), startDate: String(body.startDate ?? absence.startDate), endDate: typeof body.endDate === "string" && body.endDate ? body.endDate : null };
     const problem = validateAbsence(input);
     if (problem) return Response.json({ error: problem }, { status: 400 });
-    const notes = typeof body.notes === "string" ? body.notes.trim() || null : absence.notes;
+    const sensitive = canSeeSensitive(user);
+    // Quem não é ADMIN vê o afastamento sem tipo e sem motivo: muda só as datas.
+    if (!sensitive && input.kind === maskAbsence(absence, false).kind) input.kind = absence.kind;
+    const notes = sensitive && typeof body.notes === "string" ? body.notes.trim() || null : absence.notes;
     await db.update(employeeAbsences).set({ kind: input.kind as "FOLGA", startDate: input.startDate, endDate: input.endDate, notes, updatedAt: new Date().toISOString() }).where(eq(employeeAbsences.id, absence.id));
     await employeeAudit(db, user.id, absence.employeeId, "AUSÊNCIA EDITADA", absence, { ...input, notes });
     return Response.json({ message: "Ausência atualizada." });

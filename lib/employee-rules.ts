@@ -122,3 +122,19 @@ export function nextDay(day: string) {
 export function nameKey(value: string) {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
+
+// Situação calculada pelo sistema (tela, alertas e Assistente JC) a partir das datas — nunca
+// digitada nem importada como texto. Prioridade: Desligado > Afastado (situação ou ausência de
+// afastamento/atestado em andamento) > Sede ("Fica na sede") > fase do ciclo de folga.
+export const SITUATIONS = ["TRABALHANDO", "DE_FOLGA", "EM_VIAGEM", "AFASTADO", "SEDE", "DESLIGADO"] as const;
+export type Situation = typeof SITUATIONS[number];
+export const SITUATION_LABELS: Record<Situation, string> = { TRABALHANDO: "Trabalhando", DE_FOLGA: "De folga", EM_VIAGEM: "Em viagem", AFASTADO: "Afastado", SEDE: "Sede", DESLIGADO: "Desligado" };
+
+export function computeSituation(input: { status: string; atHeadquarters: boolean; absence: AbsencePeriod | null; phase: string | null }): Situation {
+  if (input.status === "DEMITIDO") return "DESLIGADO";
+  if (input.status === "AFASTADO" || (input.absence && input.absence.kind !== "FOLGA" && input.absence.kind !== "FERIAS")) return "AFASTADO";
+  if (input.atHeadquarters) return "SEDE";
+  if (input.phase === "FOLGA") return "DE_FOLGA";
+  if (input.phase === "VIAGEM_IDA" || input.phase === "VIAGEM_VOLTA") return "EM_VIAGEM";
+  return "TRABALHANDO";
+}

@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { employeeLeaveCycles, employees } from "../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { validateEmployee } from "../../../../lib/employee-rules";
-import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSalary, employeeAudit, employeeDetail, employeeErrorResponse, employeeToday, parseEmployeeBody, requireCompany, requireEmployee } from "../../../../lib/employees";
+import { assertUniqueDocuments, canSeeEmployeeFront, canSeeSensitive, employeeAudit, employeeDetail, employeeErrorResponse, employeeToday, parseEmployeeBody, requireCompany, requireEmployee } from "../../../../lib/employees";
 import { statusForPhase, summarizeStoredCycle } from "../../../../lib/leave-cycle";
 import { sincronizarComAviso } from "../../../../lib/operadores";
 
@@ -16,9 +16,10 @@ export async function GET(request: Request, { params }: Context) {
     const db = await getDb();
     const id = Number((await params).id);
     const row = await requireEmployee(db, auth.user!, id, "VIEW");
-    // De outra frente: consulta e transferência; salário e demais alterações só na frente do login.
+    // De outra frente: consulta e transferência; as demais alterações só na frente do login.
+    // CPF, nascimento, salário, motivos e afastamentos detalhados: só ADMIN (LGPD).
     const canChange = canSeeEmployeeFront(auth.user!, row.serviceFrontId, "CHANGE");
-    return Response.json({ employee: { ...await employeeDetail(db, id, { showSalary: canSeeSalary(auth.user!) && canChange }), canChange } });
+    return Response.json({ employee: { ...await employeeDetail(db, id, { showSensitive: canSeeSensitive(auth.user!) }), canChange } });
   } catch (error) {
     const known = employeeErrorResponse(error); if (known) return known;
     console.error("[employees.id.get]", error);
@@ -39,7 +40,8 @@ export async function PUT(request: Request, { params }: Context) {
     await requireEmployee(db, user, id);
     const current = (await db.select().from(employees).where(eq(employees.id, id)).limit(1))[0];
     const input = parseEmployeeBody((await request.json()) as Record<string, unknown>);
-    if (!canSeeSalary(user)) input.salary = current.salary;
+    // Quem não é ADMIN não vê CPF, nascimento e salário: o que está gravado continua como está.
+    if (!canSeeSensitive(user)) { input.salary = current.salary; input.cpf = current.cpf; input.birthDate = current.birthDate; }
     const today = employeeToday();
     const open = (await db.select().from(employeeLeaveCycles).where(and(eq(employeeLeaveCycles.employeeId, id), isNull(employeeLeaveCycles.frontArrival), isNull(employeeLeaveCycles.endedAt))).limit(1))[0];
     let status: string = current.status;
@@ -62,8 +64,7 @@ export async function PUT(request: Request, { params }: Context) {
       if (open && (open.workDaysTarget !== input.cycleWorkDays || open.offDaysTarget !== input.cycleOffDays))
         await tx.update(employeeLeaveCycles).set({ workDaysTarget: input.cycleWorkDays, offDaysTarget: input.cycleOffDays, updatedAt: new Date().toISOString() }).where(eq(employeeLeaveCycles.id, open.id));
     });
-    const hide = (value: typeof current) => (canSeeSalary(user) ? value : { ...value, salary: undefined });
-    await employeeAudit(db, user.id, id, "FUNCIONÁRIO EDITADO", hide(current), hide({ ...current, ...next }));
+    await employeeAudit(db, user.id, id, "FUNCIONÁRIO EDITADO", current, { ...current, ...next });
     // Mudou para função que opera equipamento: cria o acesso (PIN uma vez); para uma que não opera: desativa.
     const acesso = await sincronizarComAviso(db, id, user, { jobTitle: input.jobTitle });
     return Response.json({ message: "Cadastro atualizado.", ...acesso });

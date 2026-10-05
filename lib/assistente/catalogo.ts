@@ -277,15 +277,16 @@ export const CATALOGO: readonly ViewCatalogo[] = [
   },
   {
     view: "v_funcionarios", titulo: "Funcionários", modulo: "Funcionários", escopo: "frente", permissoes: ["employees.view"], tela: "Funcionários",
-    descricao: "Funcionários com função, empresa, frente e situação (sem CPF, nascimento e salário).", padrao: ["nome", "funcao", "empresa", "frente", "situacao", "admissao"],
-    colunas: [n("funcionario_id", "Id"), t("nome", "Nome"), t("funcao", "Função"), t("empresa", "Empresa"), d("admissao", "Admissão"), ...frente, t("situacao", "Situação", ["Ativo", "De folga", "Afastado", "Demitido"]),
+    descricao: "Funcionários com função, empresa, frente e situação calculada pelo sistema (sem CPF, nascimento, salário, motivos de demissão/afastamento e restrição).", padrao: ["nome", "funcao", "empresa", "frente", "situacao", "admissao"],
+    dica: "Situação: Trabalhando, De folga, Em viagem (saiu da frente ou voltando), Afastado, Sede (fica na sede) ou Desligado. Motivos de afastamento, de demissão e a lista de restrição não ficam disponíveis aqui (LGPD) — oriente a falar com o ADMIN.",
+    colunas: [n("funcionario_id", "Id"), t("nome", "Nome"), t("funcao", "Função"), t("empresa", "Empresa"), d("admissao", "Admissão"), ...frente, t("situacao", "Situação", ["Trabalhando", "De folga", "Em viagem", "Afastado", "Sede", "Desligado"]),
       t("matricula", "Matrícula"), t("cidade", "Cidade"), n("ciclo_dias_trabalho", "Dias de trabalho do ciclo"), n("ciclo_dias_folga", "Dias de folga do ciclo")],
   },
   {
     view: "v_ausencias_funcionarios", titulo: "Ausências de funcionários", modulo: "Funcionários", escopo: "frente", colunaData: "inicio", eventos: true, permissoes: ["employees.view"], tela: "Funcionários",
-    descricao: "Folgas, férias, atestados e afastamentos.", padrao: ["funcionario", "frente", "tipo", "inicio", "fim", "em_aberto"],
-    colunas: [n("ausencia_id", "Id"), n("funcionario_id", "Id do funcionário"), t("funcionario", "Funcionário"), ...frente, t("tipo", "Tipo", ["Folga", "Férias", "Atestado médico", "Afastamento", "Outro"]),
-      d("inicio", "Início"), d("fim", "Fim"), b("em_aberto", "Sem data de retorno"), t("observacao", "Observação")],
+    descricao: "Períodos de férias e afastamentos (sem tipo detalhado nem motivo — LGPD).", padrao: ["funcionario", "frente", "tipo", "inicio", "fim", "em_aberto"],
+    colunas: [n("ausencia_id", "Id"), n("funcionario_id", "Id do funcionário"), t("funcionario", "Funcionário"), ...frente, t("tipo", "Tipo", ["Folga", "Férias", "Afastamento"]),
+      d("inicio", "Início"), d("fim", "Fim"), b("em_aberto", "Sem data de retorno")],
   },
   {
     view: "v_tarefas", titulo: "Tarefas", modulo: "Tarefas", escopo: "usuario", colunasUsuario: ["responsavel_id", "criado_por_id"], colunaData: "prazo", permissoes: ["tasks.view"], tela: "Tarefas",
