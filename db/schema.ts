@@ -1468,13 +1468,21 @@ export const employees = pgTable("employees", {
   cycleWorkDays: integer("cycle_work_days").notNull().default(90),
   cycleOffDays: integer("cycle_off_days").notNull().default(10),
   notes: text("notes"),
+  // "Fica na sede": trabalha na sede (não entra no ciclo de folga da frente). Situação "Sede".
+  atHeadquarters: boolean("at_headquarters").notNull().default(false),
+  // Origem externa (Importar do sistema de pessoal): externalId = "ID sistema" da exportação. É a
+  // chave que liga as abas da exportação e que faz a reimportação só atualizar, sem duplicar.
+  externalSource: text("external_source"),
+  externalId: text("external_id"),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
 }, (table) => [
   index("employees_front_idx").on(table.serviceFrontId, table.status),
   index("employees_name_idx").on(table.name),
-  uniqueIndex("employees_registration_unique").on(table.registration),
+  // A matrícula é única dentro da empresa empregadora (JC e RCA repetem números).
+  uniqueIndex("employees_company_registration_unique").on(table.company, table.registration),
   uniqueIndex("employees_cpf_unique").on(table.cpf),
+  uniqueIndex("employees_external_unique").on(table.externalSource, table.externalId),
 ]);
 
 // Empresas dos funcionários (lista do dropdown do cadastro, editável pelo ADMIN).
@@ -1496,6 +1504,15 @@ export const jobFunctions = pgTable("job_functions", {
   ...timestamps,
 }, (table) => [uniqueIndex("job_functions_name_unique").on(table.name)]);
 
+// Outras grafias da mesma função (ex.: "MOT. DE CAMINHAO NIVEL III" → "MOTORISTA DE CAMINHAO NIVEL III"),
+// usadas pela importação do sistema de pessoal para não duplicar funções.
+export const jobFunctionAliases = pgTable("job_function_aliases", {
+  id: serial("id").primaryKey(),
+  alias: text("alias").notNull(),
+  jobFunctionId: integer("job_function_id").notNull().references(() => jobFunctions.id, { onDelete:"cascade" }),
+  ...timestamps,
+}, (table) => [uniqueIndex("job_function_aliases_alias_unique").on(table.alias)]);
+
 // Ciclo de folga: cada linha é um ciclo do funcionário, com as 5 datas lançadas à mão. Toda a conta
 // de dias (trabalhados, viagem, folga, atraso) é feita em lib/leave-cycle.ts — nunca aqui nem na tela.
 // O ciclo "aberto" é o que ainda não tem frontArrival; ao registrar a chegada na frente, o próximo
@@ -1510,8 +1527,13 @@ export const employeeLeaveCycles = pgTable("employee_leave_cycles", {
   homeArrival: text("home_arrival"),
   homeDeparture: text("home_departure"),
   frontArrival: text("front_arrival"),
-  // Ciclo encerrado sem chegada na frente (demissão): a conta de dias para nesta data.
+  // Ciclo encerrado sem chegada na frente (demissão ou folga vendida): a conta de dias para nesta data.
   endedAt: text("ended_at"),
+  // USUFRUIDA = folga tirada (viagem → casa → retorno); VENDIDA = folga vendida (o ciclo fecha em
+  // endedAt sem viagem e o próximo começa em seguida).
+  leaveKind: text("leave_kind", { enum:["USUFRUIDA","VENDIDA"] }).notNull().default("USUFRUIDA"),
+  // Chave do registro na origem (importação do sistema de pessoal), para reimportar sem duplicar.
+  externalKey: text("external_key"),
   // Metas do ciclo no momento em que ele começou (mudar o ciclo do funcionário não reescreve o passado).
   workDaysTarget: integer("work_days_target").notNull(),
   offDaysTarget: integer("off_days_target").notNull(),
@@ -1520,6 +1542,7 @@ export const employeeLeaveCycles = pgTable("employee_leave_cycles", {
   ...timestamps,
 }, (table) => [
   uniqueIndex("employee_leave_cycles_number_unique").on(table.employeeId, table.cycleNumber),
+  uniqueIndex("employee_leave_cycles_external_unique").on(table.employeeId, table.externalKey),
   index("employee_leave_cycles_employee_idx").on(table.employeeId, table.frontArrival),
 ]);
 
@@ -1534,9 +1557,13 @@ export const employeeDismissals = pgTable("employee_dismissals", {
   previousAdmissionDate: text("previous_admission_date"),
   rehiredAt: text("rehired_at"),
   rehiredBy: integer("rehired_by").references(() => users.id),
+  externalKey: text("external_key"),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
-}, (table) => [index("employee_dismissals_employee_idx").on(table.employeeId, table.dismissedAt)]);
+}, (table) => [
+  index("employee_dismissals_employee_idx").on(table.employeeId, table.dismissedAt),
+  uniqueIndex("employee_dismissals_external_unique").on(table.employeeId, table.externalKey),
+]);
 
 export const employeeTransfers = pgTable("employee_transfers", {
   id: serial("id").primaryKey(),
@@ -1546,8 +1573,12 @@ export const employeeTransfers = pgTable("employee_transfers", {
   transferDate: text("transfer_date").notNull(),
   transferredBy: integer("transferred_by").references(() => users.id),
   note: text("note"),
+  externalKey: text("external_key"),
   ...timestamps,
-}, (table) => [index("employee_transfers_employee_idx").on(table.employeeId, table.transferDate)]);
+}, (table) => [
+  index("employee_transfers_employee_idx").on(table.employeeId, table.transferDate),
+  uniqueIndex("employee_transfers_external_unique").on(table.employeeId, table.externalKey),
+]);
 
 export const employeeAbsences = pgTable("employee_absences", {
   id: serial("id").primaryKey(),
@@ -1557,9 +1588,45 @@ export const employeeAbsences = pgTable("employee_absences", {
   // NULL = em aberto (sem data de retorno prevista).
   endDate: text("end_date"),
   notes: text("notes"),
+  externalKey: text("external_key"),
   createdBy: integer("created_by").references(() => users.id),
   ...timestamps,
-}, (table) => [index("employee_absences_employee_idx").on(table.employeeId, table.startDate)]);
+}, (table) => [
+  index("employee_absences_employee_idx").on(table.employeeId, table.startDate),
+  uniqueIndex("employee_absences_external_unique").on(table.employeeId, table.externalKey),
+]);
+
+// ---------------------------------------------------------------------------
+// Importar do sistema de pessoal (FUNCIONÁRIOS, só ADMIN). Cada lote guarda, em
+// personnel_import_changes, o que criou (INSERT) e o valor anterior do que alterou (UPDATE) — é o
+// que permite o "Desfazer importação". Só ADMIN acessa (tem CPF/salário anteriores).
+// ---------------------------------------------------------------------------
+export const personnelImportBatches = pgTable("personnel_import_batches", {
+  id: serial("id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  fileHash: text("file_hash").notNull(),
+  // Data mais recente encontrada na exportação (referência de "exportação de dd/mm/aaaa").
+  exportDate: text("export_date"),
+  status: text("status", { enum:["EM_ANDAMENTO","CONCLUIDO","DESFEITO"] }).notNull().default("EM_ANDAMENTO"),
+  // Totais por aba (sem dados pessoais).
+  summary: text("summary"),
+  importedBy: integer("imported_by").notNull().references(() => users.id),
+  finishedAt: text("finished_at"),
+  undoneAt: text("undone_at"),
+  undoneBy: integer("undone_by").references(() => users.id),
+  ...timestamps,
+});
+
+export const personnelImportChanges = pgTable("personnel_import_changes", {
+  id: serial("id").primaryKey(),
+  batchId: integer("batch_id").notNull().references(() => personnelImportBatches.id, { onDelete:"cascade" }),
+  tableName: text("table_name").notNull(),
+  rowId: integer("row_id").notNull(),
+  action: text("action", { enum:["INSERT","UPDATE"] }).notNull(),
+  // UPDATE: colunas alteradas com o valor de antes (JSON, nomes do banco).
+  previous: text("previous"),
+  createdAt: text("created_at").notNull().default(isoNow),
+}, (table) => [index("personnel_import_changes_batch_idx").on(table.batchId, table.id)]);
 
 // ---------------------------------------------------------------------------
 // Solicitação de Pedidos (Compras externas). Número exibido PED-000123 (lib/purchases.ts). Cada

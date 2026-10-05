@@ -118,12 +118,18 @@ export function validateCycleDates(dates: CycleDates, today: string): string | n
   return null;
 }
 
-// Ciclo gravado: um ciclo encerrado sem chegada na frente (demissão) para de contar na data do
-// encerramento e não gera alerta.
-export type StoredCycle = CycleDates & CycleTargets & { endedAt?: string | null };
+// Ciclo gravado: um ciclo encerrado sem chegada na frente (demissão ou folga vendida) para de contar
+// na data do encerramento e não gera alerta.
+export type StoredCycle = CycleDates & CycleTargets & { endedAt?: string | null; leaveKind?: "USUFRUIDA" | "VENDIDA" | null };
 export function summarizeStoredCycle(cycle: StoredCycle, today: string): CycleSummary {
   if (!cycle.endedAt) return summarizeCycle(cycle, cycle, today);
-  const summary = summarizeCycle(cycle, cycle, cycle.endedAt < today ? cycle.endedAt : today);
+  const until = cycle.endedAt < today ? cycle.endedAt : today;
+  if (cycle.leaveKind === "VENDIDA") {
+    // Folga vendida: trabalhou do início até o encerramento, sem viagem nem folga.
+    const summary = summarizeCycle({ ...cycle, frontDeparture: null, homeArrival: null, homeDeparture: null, frontArrival: null }, cycle, until);
+    return { ...summary, phase: "FECHADO", phaseLabel: "Folga vendida", nextStep: null, daysToLeave: null, overdueOffDays: 0, alert: null };
+  }
+  const summary = summarizeCycle(cycle, cycle, until);
   return { ...summary, phaseLabel: "Encerrado (demissão)", daysToLeave: null, overdueOffDays: 0, alert: null };
 }
 

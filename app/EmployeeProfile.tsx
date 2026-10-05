@@ -75,7 +75,7 @@ export default function EmployeeProfile({ id, canManage: canManageModule, canSee
             {dismissed && lastDismissal && (
               <div className={`employee-dismissed-banner ${lastDismissal.rehireAllowed ? "" : "restricted"}`}>
                 <strong>Demitido em {brDay(lastDismissal.dismissedAt)}{lastDismissal.rehireAllowed ? " · pode ser recontratado" : " · FUNCIONÁRIO RESTRITO (não pode ser recontratado)"}</strong>
-                <span>Motivo: {lastDismissal.reason}</span>
+                {lastDismissal.reason && <span>Motivo: {lastDismissal.reason}</span>}
               </div>
             )}
             <div className="employee-counters">
@@ -114,11 +114,12 @@ export default function EmployeeProfile({ id, canManage: canManageModule, canSee
                 <div className="sheet-card-head"><h3>Dados do funcionário</h3><span>♙</span></div>
                 <dl>
                   <div><dt>Matrícula</dt><dd>{detail.registration ?? "—"}</dd></div>
-                  <div><dt>CPF</dt><dd>{detail.cpf ?? "—"}</dd></div>
+                  {canSeeSalary && <div><dt>CPF</dt><dd>{detail.cpf ?? "—"}</dd></div>}
                   <div><dt>Função</dt><dd>{detail.jobTitle}</dd></div>
-                  <div><dt>Empresa</dt><dd>{detail.company}</dd></div>
+                  <div><dt>Empresa (vínculo)</dt><dd>{detail.company}</dd></div>
                   <div><dt>Admissão</dt><dd>{brDay(detail.admissionDate)}</dd></div>
-                  <div><dt>Nascimento</dt><dd>{brDay(detail.birthDate)}</dd></div>
+                  {canSeeSalary && <div><dt>Nascimento</dt><dd>{brDay(detail.birthDate)}</dd></div>}
+                  <div><dt>Situação</dt><dd>{detail.situationLabel}{detail.atHeadquarters ? " · fica na sede" : ""}</dd></div>
                   <div><dt>Cidade</dt><dd>{detail.city ?? "—"}</dd></div>
                   {canSeeSalary && <div><dt>Salário de carteira</dt><dd>{money(detail.salary)}</dd></div>}
                   <div><dt>Ciclo configurado</dt><dd>{detail.cycleWorkDays} trabalhados / {detail.cycleOffDays} de folga</dd></div>

@@ -19,7 +19,8 @@ export function EmployeeForm({ item, fronts, companies, canSeeSalary, close, sav
   const [registration, setRegistration] = useState(item?.registration ?? "");
   const [restricted, setRestricted] = useState<Restricted[]>([]);
   const [showRestricted, setShowRestricted] = useState(false);
-  useEffect(() => { if (!item) api<{ restricted: Restricted[] }>("/api/employees/restricted").then((result) => setRestricted(result.restricted)).catch(() => setRestricted([])); }, [item]);
+  // Lista de restritos (LGPD): só o ADMIN carrega; os demais são avisados pelo servidor ao salvar.
+  useEffect(() => { if (!item && canSeeSalary) api<{ restricted: Restricted[] }>("/api/employees/restricted").then((result) => setRestricted(result.restricted)).catch(() => setRestricted([])); }, [item, canSeeSalary]);
   const matches = useMemo(() => {
     const key = nameKey(name);
     return restricted.filter((row) => (key.split(" ").length >= 2 && nameKey(row.name) === key) || (onlyDigits(cpf).length === 11 && row.cpf && onlyDigits(row.cpf) === onlyDigits(cpf)) || (registration && row.registration === registration));
@@ -55,11 +56,11 @@ export function EmployeeForm({ item, fronts, companies, canSeeSalary, close, sav
         {item ? <label>Frente de serviço atual<input value={item.frontName} disabled /></label> : (
           <label>Frente de serviço *<select name="serviceFrontId" required defaultValue={fronts.length === 1 ? String(fronts[0].id) : ""}><option value="">Selecione a frente</option>{fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
         )}
-        <label>Empresa *<select name="company" required defaultValue={item?.company ?? ""}><option value="">Selecione a empresa</option>{companyOptions.map((company) => <option key={company.id} value={company.name}>{company.name}{company.active ? "" : " (desativada)"}</option>)}</select></label>
+        <label>Empresa (vínculo) *<select name="company" required defaultValue={item?.company ?? ""}><option value="">Selecione a empresa</option>{companyOptions.map((company) => <option key={company.id} value={company.name}>{company.name}{company.active ? "" : " (desativada)"}</option>)}</select></label>
         <label>Admissão *<input name="admissionDate" type="date" required defaultValue={item?.admissionDate} max={localToday()} /></label>
-        <label>Nascimento<input name="birthDate" type="date" defaultValue={item?.birthDate ?? ""} max={localToday()} /></label>
+        {canSeeSalary && <label>Nascimento<input name="birthDate" type="date" defaultValue={item?.birthDate ?? ""} max={localToday()} /></label>}
         <label>Cidade<input name="city" defaultValue={item?.city ?? ""} style={{ textTransform: "uppercase" }} /></label>
-        <label>CPF<input name="cpf" inputMode="numeric" value={cpf} onChange={(event) => setCpf(event.target.value.replace(/[^\d.-]/g, "").slice(0, 14))} placeholder="000.000.000-00" autoComplete="off" /></label>
+        {canSeeSalary && <label>CPF<input name="cpf" inputMode="numeric" value={cpf} onChange={(event) => setCpf(event.target.value.replace(/[^\d.-]/g, "").slice(0, 14))} placeholder="000.000.000-00" autoComplete="off" /></label>}
         {canSeeSalary && <label>Salário de carteira (R$)<input name="salary" type="number" min="0" step="0.01" defaultValue={item?.salary ?? ""} placeholder="0,00" /></label>}
         <label>Status *
           <select name="status" required defaultValue={item?.status ?? "ATIVO"} disabled={!manualStatus}>
@@ -73,7 +74,7 @@ export function EmployeeForm({ item, fronts, companies, canSeeSalary, close, sav
           <small>Padrão 90 trabalhados / 10 de folga. A folga só conta a partir da chegada em casa.</small>
         </fieldset>
         <label className="full">Observações<textarea name="notes" rows={2} defaultValue={item?.notes ?? ""} /></label>
-        {!item && (
+        {!item && canSeeSalary && (
           <div className="employee-restricted-box full">
             {matches.length > 0 && <div className="employee-restricted-match"><strong>⚠ Confere com Funcionário Restrito (não pode ser recontratado):</strong>{matches.map((row) => <span key={row.id}>{row.name} · {row.company} · demitido em {brDay(row.dismissedAt)} — {row.reason}</span>)}</div>}
             <button type="button" className="link-button" onClick={() => setShowRestricted((value) => !value)}>{showRestricted ? "Ocultar" : "Ver"} lista de Funcionários Restritos ({restricted.length})</button>

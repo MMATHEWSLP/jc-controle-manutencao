@@ -337,6 +337,20 @@
       "when": 1791056524947,
       "tag": "0047_assistente_controle_diario_views",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791227485327,
+      "tag": "0048_importacao_pessoal",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791227514137,
+      "tag": "0049_assistente_funcionarios_situacao",
+      "breakpoints": true
     }
   ]
 }

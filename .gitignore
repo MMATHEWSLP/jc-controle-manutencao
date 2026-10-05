@@ -55,3 +55,8 @@ next-env.d.ts
 # fotos de equipamentos enviadas pelos usuários (armazenamento local do
 # servidor — nunca deve ser versionado; em produção vive fora do build)
 /uploads/
+
+# Exportação do sistema de pessoal: tem CPF, salário e motivos de saúde (LGPD) — nunca no repositório.
+# A importação é feita pela tela FUNCIONÁRIOS → Importar do sistema de pessoal.
+importacoes/colaboradores_exportacao*.xlsx
+*colaboradores_exportacao*.xlsx
