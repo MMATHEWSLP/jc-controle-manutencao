@@ -428,7 +428,9 @@ export async function runAssistantTool(ctx: AssistantToolContext, name: string, 
   try {
     const result = await handler(ctx, input && typeof input === "object" ? (input as Input) : {});
     const json = JSON.stringify(result);
-    return { ok: true, content: json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (resultado cortado; peça um filtro menor)` : json };
+    // Corte sem partir um caractere em dois (metade de um par UTF-16 faz a API recusar o pedido).
+    const cut = json.length > MAX_RESULT_CHARS ? json.slice(0, /[\uD800-\uDBFF]/.test(json[MAX_RESULT_CHARS - 1]) ? MAX_RESULT_CHARS - 1 : MAX_RESULT_CHARS) : json;
+    return { ok: true, content: cut === json ? json : `${cut}… (resultado cortado; peça um filtro menor)` };
   } catch (error) {
     if (error instanceof AssistantToolError || error instanceof FerramentaError) return { ok: false, content: error.message };
     console.error(`[assistente.tool.${name}]`, error);
