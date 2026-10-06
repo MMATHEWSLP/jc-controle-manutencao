@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         direction: transfer.direction === "ENVIADA" ? "Enviada" : "Recebida", liters: litersMessage(transfer.liters),
         place: `${transfer.direction === "ENVIADA" ? "para" : "de"} ${transfer.place}`, responsible: transfer.responsible ?? "—", notes: transfer.notes ?? "—",
       })),
-      rows: summary.exits.map((row) => [row.equipment, row.plate ?? "—", DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
+      rows: summary.exits.map((row) => [row.equipment, DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
       totalLiters: litersMessage(summary.exitsLiters), totalValue: priced.length ? brl(totalCost) : undefined, count: summary.exits.length,
     });
     const name = `resumo-combustivel-${summary.front.name.replace(/[^\w-]+/g, "-")}-${date}.pdf`;

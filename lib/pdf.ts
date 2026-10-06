@@ -459,8 +459,8 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
   // Bloco das transferências (página 1, abaixo dos cards): título + uma linha por transferência (até 8).
   const transfers=(input.transfers??[]).slice(0,8);const hiddenTransfers=(input.transfers??[]).length-transfers.length;
   const transferBlock=transfers.length?16+(transfers.length+(hiddenTransfers>0?1:0))*13:0;
-  const columns=[{x:34,label:"EQUIPAMENTO",max:18},{x:128,label:"PLACA",max:10},{x:184,label:"TIPO",max:10},{x:236,label:"EMPRESA",max:20},{x:362,label:"LITROS",max:11,align:"right" as const},
-    {x:412,label:"VALOR",max:14,align:"right" as const},{x:482,label:"LEITURA",max:14},{x:556,label:"RESPONSÁVEL",max:22},{x:672,label:"OBSERVAÇÃO",max:28}];
+  const columns=[{x:34,label:"EQUIPAMENTO",max:22},{x:150,label:"TIPO",max:10},{x:204,label:"EMPRESA",max:24},{x:346,label:"LITROS",max:11,align:"right" as const},
+    {x:398,label:"VALOR",max:14,align:"right" as const},{x:470,label:"LEITURA",max:14},{x:548,label:"RESPONSÁVEL",max:26},{x:684,label:"OBSERVAÇÃO",max:30}];
   const firstPage=Math.max(1,14-Math.ceil(transferBlock/22));const perPage=19;
   const pageCount=Math.max(1,1+Math.ceil(Math.max(0,input.rows.length-firstPage)/perPage));
   const pages=Array.from({length:pageCount},(_,pageIndex)=>{
@@ -499,8 +499,8 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
     if(pageIndex===pageCount-1){
       const y=headerY-16-(rows.length*22)-10;
       content+=`0.90 0.95 0.93 rg 28 ${y-8} 786 24 re f\n`;
-      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(362,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
-      if(input.totalValue)content+=text(412,y,8.5,input.totalValue,true,"0.08 0.38 0.29");
+      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(346,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
+      if(input.totalValue)content+=text(398,y,8.5,input.totalValue,true,"0.08 0.38 0.29");
     }
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Mesma consulta da mensagem do WhatsApp. Saídas = frota + terceiros + prestadores do estoque escolhido. Valor = custo médio do diesel no estoque (entradas com R$/L) × litros.",false,"0.42 0.51 0.58");
     return content;
