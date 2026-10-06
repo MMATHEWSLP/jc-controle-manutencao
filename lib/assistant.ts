@@ -53,13 +53,32 @@ function client() {
   return new Anthropic({ timeout: config.timeoutMs, maxRetries: 1 });
 }
 
-// Mensagem amigável para falhas da API (nunca repassa detalhes técnicos ao usuário).
-export function friendlyApiError(error: unknown) {
+// Motivo devolvido pela API (ex.: "400 messages.3.content.0: ... (request req_...)"), para o log e o ADMIN.
+export function apiErrorDetail(error: unknown) {
+  if (error instanceof Anthropic.APIError) {
+    const body = error.error as { error?: { message?: unknown } } | undefined;
+    const message = typeof body?.error?.message === "string" ? body.error.message : error.message;
+    return `${error.status ?? ""} ${message}${error.requestID ? ` (request ${error.requestID})` : ""}`.trim();
+  }
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+// Mensagem amigável para falhas da API. Detalhe técnico só para o ADMIN (para diagnosticar sem abrir o log).
+export function friendlyApiError(error: unknown, kind: "CHAT" | "FICHA" = "CHAT", admin = false) {
   if (error instanceof AssistantError) return error;
+  const friendly = friendlyApiMessage(error, kind);
+  if (admin && error instanceof Anthropic.APIError) return new AssistantError(`${friendly.message}\n\nDetalhe técnico (visível só para ADMIN): ${apiErrorDetail(error)}`, friendly.status);
+  return friendly;
+}
+
+function friendlyApiMessage(error: unknown, kind: "CHAT" | "FICHA") {
   if (error instanceof Anthropic.APIConnectionTimeoutError) return new AssistantError("A consulta demorou demais e foi interrompida. Tente de novo ou faça uma pergunta mais específica.", 504);
   if (error instanceof Anthropic.RateLimitError) return new AssistantError("O assistente está recebendo muitas perguntas agora. Aguarde um minuto e tente de novo.", 429);
   if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) return new AssistantError("A chave da API do assistente é inválida ou está sem permissão. Avise o administrador.", 503);
-  if (error instanceof Anthropic.BadRequestError) return new AssistantError("O assistente não conseguiu processar este pedido (conteúdo ou imagem inválida). Tente de novo com outra pergunta ou outra foto.", 400);
+  if (error instanceof Anthropic.NotFoundError) return new AssistantError("O modelo configurado para o assistente não existe ou não está liberado para esta chave (ASSISTANT_MODEL). Avise o administrador.", 503);
+  if (error instanceof Anthropic.BadRequestError) return kind === "FICHA"
+    ? new AssistantError("O assistente não conseguiu processar estas fotos (imagem inválida ou ilegível). Tente de novo com outras fotos.", 400)
+    : new AssistantError("O assistente não conseguiu processar esta pergunta. Tente de novo; se continuar, avise o administrador.", 400);
   if (error instanceof Anthropic.APIConnectionError) return new AssistantError("Sem conexão com o serviço do assistente agora. Tente de novo em instantes.", 503);
   if (error instanceof Anthropic.APIError) return new AssistantError("O serviço do assistente está instável agora. Tente de novo em instantes.", 503);
   return new AssistantError("Não foi possível responder agora. Tente de novo em instantes.", 500);
@@ -67,11 +86,45 @@ export function friendlyApiError(error: unknown) {
 
 const textOf = (content: Anthropic.ContentBlock[]) => content.filter((block): block is Anthropic.TextBlock => block.type === "text").map((block) => block.text).join("\n").trim();
 
+const semRaciocinio = (messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] => messages.map((message) => (
+  message.role === "assistant" && Array.isArray(message.content) ? { ...message, content: message.content.filter((block) => block.type !== "thinking" && block.type !== "redacted_thinking") } : message
+));
+
+// Recusa (400) que dá para contornar repetindo a chamada uma vez de outro jeito, em vez de perder a pergunta:
+//  - modelo sem suporte a "effort" (ASSISTANT_MODEL antigo): segue sem output_config.effort;
+//  - bloco de raciocínio (thinking) recusado: segue sem os blocos de raciocínio já devolvidos.
+// O ajuste vale para o resto do laço (as próximas etapas dariam o mesmo erro).
+type Ajustes = { semEffort: boolean; semRaciocinio: boolean };
+function ajusteParaRecusa(error: unknown, ajustes: Ajustes, params: Omit<Anthropic.MessageCreateParamsNonStreaming, "messages">, messages: Anthropic.MessageParam[]): keyof Ajustes | null {
+  if (!(error instanceof Anthropic.BadRequestError)) return null;
+  const detail = apiErrorDetail(error).toLowerCase();
+  if (!ajustes.semEffort && params.output_config?.effort && detail.includes("effort")) return "semEffort";
+  const temRaciocinio = messages.some((message) => message.role === "assistant" && Array.isArray(message.content) && message.content.some((block) => block.type === "thinking" || block.type === "redacted_thinking"));
+  if (!ajustes.semRaciocinio && temRaciocinio && /thinking|signature/.test(detail)) return "semRaciocinio";
+  return null;
+}
+
 // Roda o laço de ferramentas até o modelo terminar (ou o limite de passos/tempo).
 async function runLoop(api: Anthropic, params: Omit<Anthropic.MessageCreateParamsNonStreaming, "messages">, messages: Anthropic.MessageParam[], ctx: AssistantToolContext, limits: { maxSteps: number; deadline: number; requestTimeout: number }, tools: ToolCall[], usage: { input: number; output: number }) {
+  const ajustes: Ajustes = { semEffort: false, semRaciocinio: false };
+  const create = () => {
+    const { output_config: outputConfig, ...rest } = params;
+    const config = outputConfig ? { ...outputConfig } : undefined;
+    if (config && ajustes.semEffort) delete config.effort;
+    return api.messages.create({ ...rest, ...(config && Object.keys(config).length ? { output_config: config } : {}), messages: ajustes.semRaciocinio ? semRaciocinio(messages) : messages }, { timeout: limits.requestTimeout });
+  };
   for (let step = 0; step < limits.maxSteps; step++) {
     if (Date.now() > limits.deadline) throw new AssistantError("A consulta demorou demais e foi interrompida. Tente uma pergunta mais específica.", 504);
-    const response = await api.messages.create({ ...params, messages }, { timeout: limits.requestTimeout });
+    let response: Anthropic.Message;
+    try { response = await create(); }
+    catch (error) {
+      const ajuste = ajusteParaRecusa(error, ajustes, params, messages);
+      if (!ajuste) throw error;
+      console.warn(`[assistente] ${ajuste} após recusa da API: ${apiErrorDetail(error)}`);
+      ajustes[ajuste] = true;
+      step--;
+      continue;
+    }
     usage.input += response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0) + (response.usage.cache_creation_input_tokens ?? 0);
     usage.output += response.usage.output_tokens;
     if (response.stop_reason === "refusal") return { refused: true, response };
@@ -193,9 +246,9 @@ export async function runAssistantChat(ctx: AssistantToolContext, question: stri
       ...(ctx.pendentesAlterados && ctx.pendentes ? { pendentes: ctx.pendentes } : {}),
     };
   } catch (error) {
-    const friendly = friendlyApiError(error);
-    if (!(error instanceof AssistantError)) console.error("[assistente.chat]", error);
-    await log({ userId: ctx.user.id, kind: "CHAT", question, viaVoz, tools: JSON.stringify(tools), status: "ERRO", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
+    const friendly = friendlyApiError(error, "CHAT", ctx.user.profile === "ADMIN");
+    if (!(error instanceof AssistantError)) console.error("[assistente.chat]", apiErrorDetail(error), error);
+    await log({ userId: ctx.user.id, kind: "CHAT", question, viaVoz, tools: JSON.stringify(tools), status: "ERRO", error: apiErrorDetail(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started });
     throw friendly;
   }
 }
@@ -265,11 +318,11 @@ export async function readFuelSheet(ctx: AssistantToolContext, images: FichaImag
     });
     return { ...result, remainingPhotos: Math.max(0, usage.photosLeft - images.length) };
   } catch (error) {
-    const friendly = friendlyApiError(error);
-    if (!(error instanceof AssistantError)) console.error("[assistente.ficha]", error);
+    const friendly = friendlyApiError(error, "FICHA", ctx.user.profile === "ADMIN");
+    if (!(error instanceof AssistantError)) console.error("[assistente.ficha]", apiErrorDetail(error), error);
     await writeLog(ctx.db, {
       userId: ctx.user.id, kind: "FICHA", question, imageCount: images.length, imageNames: images.map((image) => image.name).join(", "), tools: JSON.stringify(tools), status: "ERRO",
-      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started,
+      error: apiErrorDetail(error), model: config.model, inputTokens: tokens.input, outputTokens: tokens.output, durationMs: Date.now() - started,
     });
     throw friendly;
   }
