@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
-import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, employees, jobFunctions, serviceFronts, userServiceFronts, userSessions, users } from "../db/schema";
+import { auditLogs, employees, equipment, jobFunctions, serviceFronts, userServiceFronts, userSessions, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { validateEmployee } from "./employee-rules";
@@ -24,7 +24,9 @@ export class FieldOperatorError extends Error {
 type Db = Awaited<ReturnType<typeof getDb>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type FieldOperatorInput = { name: string; jobTitle: string; code: string | null; serviceFrontIds: number[]; active: boolean };
+// convoyFuelRegister/convoyEquipmentId: "Registra abastecimento (comboio)" e o comboio que dirige
+// (só identificação — o diesel sai do saldo da frente no sistema, depois da aprovação).
+export type FieldOperatorInput = { name: string; jobTitle: string; code: string | null; serviceFrontIds: number[]; active: boolean; convoyFuelRegister: boolean; convoyEquipmentId: number | null };
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "");
 const ids = (value: unknown) => (Array.isArray(value) ? [...new Set(value.map(Number).filter((id) => Number.isInteger(id) && id > 0))] : []);
@@ -38,7 +40,9 @@ export function parseFieldOperatorInput(body: Record<string, unknown>, creating:
   if (!jobTitle) throw new FieldOperatorError("Informe a função do funcionário.");
   if ((creating || code) && !ACCESS_CODE_PATTERN.test(code)) throw new FieldOperatorError("O código deve ter de 4 a 8 números.");
   if (!serviceFrontIds.length) throw new FieldOperatorError("Selecione pelo menos uma frente de serviço.");
-  return { name, jobTitle, code: code || null, serviceFrontIds, active: body.active !== false };
+  const convoyFuelRegister = body.convoyFuelRegister === true;
+  const convoyEquipmentId = convoyFuelRegister ? Number(body.convoyEquipmentId) || null : null;
+  return { name, jobTitle, code: code || null, serviceFrontIds, active: body.active !== false, convoyFuelRegister, convoyEquipmentId };
 }
 
 function assertFronts(actor: SessionUser, frontIds: number[]) {
@@ -52,7 +56,8 @@ export async function listFieldOperators(actor: SessionUser) {
   const rows = await db.select({
     id: users.id, name: users.name, jobTitle: users.jobTitle, status: users.status, serviceFrontId: users.serviceFrontId, lastAccessAt: users.lastAccessAt,
     employeeId: users.employeeId, origin: users.fieldAccessOrigin, registration: employees.registration, employeeStatus: employees.status, employeeName: employees.name,
-  }).from(users).leftJoin(employees, eq(employees.id, users.employeeId)).where(eq(users.role, "CAMPO")).orderBy(asc(users.name));
+    convoyFuelRegister: users.convoyFuelRegister, convoyEquipmentId: users.convoyEquipmentId, convoyPrefix: equipment.prefix,
+  }).from(users).leftJoin(employees, eq(employees.id, users.employeeId)).leftJoin(equipment, eq(equipment.id, users.convoyEquipmentId)).where(eq(users.role, "CAMPO")).orderBy(asc(users.name));
   const links = rows.length ? await db.select().from(userServiceFronts).where(inArray(userServiceFronts.userId, rows.map((row) => row.id))) : [];
   const fronts = frentesVisiveis(actor);
   return rows.map((row) => {
@@ -60,8 +65,23 @@ export async function listFieldOperators(actor: SessionUser) {
     return {
       id: row.id, name: row.name, jobTitle: row.jobTitle, active: row.status === "ACTIVE", serviceFrontIds: frontIds, lastAccessAt: row.lastAccessAt,
       employeeId: row.employeeId, registration: row.registration, employeeStatus: row.employeeStatus, origin: row.origin ?? "FUNCAO",
+      convoyFuelRegister: row.convoyFuelRegister, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix,
     };
   }).filter((row) => fronts === "ALL" || row.serviceFrontIds.some((id) => fronts.includes(id)));
+}
+
+async function validateConvoyEquipment(db: Db, equipmentId: number | null) {
+  if (!equipmentId) return;
+  if (!(await db.select({ id: equipment.id }).from(equipment).where(eq(equipment.id, equipmentId)).limit(1))[0]) throw new FieldOperatorError("Comboio não encontrado no cadastro de equipamentos.");
+}
+
+// Comboios para o cadastro: equipamentos ativos (os do tipo/modelo "comboio" primeiro).
+export async function convoyEquipmentOptions() {
+  const db = await getDb();
+  const rows = await db.select({ id: equipment.id, prefix: equipment.prefix, type: equipment.type, model: equipment.model, sortKey: equipment.sortKey })
+    .from(equipment).where(and(isNull(equipment.soldAt), ne(equipment.status, "INACTIVE"))).orderBy(asc(equipment.sortKey));
+  const isConvoy = (row: (typeof rows)[number]) => /comboio/i.test(`${row.type} ${row.model}`);
+  return [...rows.filter(isConvoy), ...rows.filter((row) => !isConvoy(row))].map((row) => ({ id: row.id, label: `${row.prefix} · ${row.type}${row.model ? ` ${row.model}` : ""}`, convoy: isConvoy(row) }));
 }
 
 async function validateFrontsExist(db: Db | Tx, frontIds: number[]) {
@@ -91,7 +111,12 @@ export async function createFieldOperator(actor: SessionUser, input: FieldOperat
   assertFronts(actor, input.serviceFrontIds);
   const db = await getDb();
   await validateFrontsExist(db, input.serviceFrontIds);
-  return db.transaction((tx) => inserirAcesso(tx, actor, { name: input.name, jobTitle: input.jobTitle, frontIds: input.serviceFrontIds, code: input.code!, employeeId: null, active: input.active, origin: "MANUAL", via: "manual" }));
+  await validateConvoyEquipment(db, input.convoyEquipmentId);
+  return db.transaction(async (tx) => {
+    const id = await inserirAcesso(tx, actor, { name: input.name, jobTitle: input.jobTitle, frontIds: input.serviceFrontIds, code: input.code!, employeeId: null, active: input.active, origin: "MANUAL", via: "manual" });
+    if (input.convoyFuelRegister) await tx.update(users).set({ convoyFuelRegister: true, convoyEquipmentId: input.convoyEquipmentId }).where(eq(users.id, id));
+    return id;
+  });
 }
 
 export async function updateFieldOperator(actor: SessionUser, id: number, input: FieldOperatorInput) {
@@ -105,10 +130,12 @@ export async function updateFieldOperator(actor: SessionUser, id: number, input:
   if (vinculado && input.active && vinculado.status === "DEMITIDO") throw new FieldOperatorError(`${vinculado.name} está demitido no cadastro de Funcionários: o acesso fica inativo.`);
   const name = vinculado?.name ?? input.name;
   const jobTitle = vinculado?.jobTitle ?? input.jobTitle;
+  await validateConvoyEquipment(db, input.convoyEquipmentId);
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.update(users).set({
       name, jobTitle, status: input.active ? "ACTIVE" : "INACTIVE", serviceFrontId: input.serviceFrontIds[0], updatedAt: now,
+      convoyFuelRegister: input.convoyFuelRegister, convoyEquipmentId: input.convoyEquipmentId,
       ...(input.code ? { accessCodeHash: await hashAccessCode(input.code), accessCodeChangedAt: now } : {}),
     }).where(and(eq(users.id, id), eq(users.role, "CAMPO")));
     // Inativar ou trocar o código derruba na hora quem estiver logado com o acesso antigo.
@@ -117,7 +144,7 @@ export async function updateFieldOperator(actor: SessionUser, id: number, input:
     await tx.insert(userServiceFronts).values(input.serviceFrontIds.map((serviceFrontId) => ({ userId: id, serviceFrontId, createdAt: now, updatedAt: now })));
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(id), action: "FUNCIONÁRIO DE CAMPO ALTERADO",
       previousValue: JSON.stringify(current), occurredAt: now,
-      newValue: JSON.stringify({ name, jobTitle, serviceFrontIds: input.serviceFrontIds, active: input.active, codeChanged: Boolean(input.code) }) });
+      newValue: JSON.stringify({ name, jobTitle, serviceFrontIds: input.serviceFrontIds, active: input.active, codeChanged: Boolean(input.code), convoyFuelRegister: input.convoyFuelRegister, convoyEquipmentId: input.convoyEquipmentId }) });
   });
   return { name };
 }

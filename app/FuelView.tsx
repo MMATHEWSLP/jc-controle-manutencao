@@ -7,6 +7,7 @@ import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
 import FuelImportModal from "./FuelImportView";
 import FuelDailySummaryModal from "./FuelDailySummary";
+import ConvoyApprovalView from "./ConvoyApprovalView";
 import QueuedRequests from "./QueuedRequests";
 import { enqueueRequest } from "../lib/offline-queue";
 import { FUEL_PURPOSE_LABELS, FUEL_PURPOSES, METER_PHRASES as METER_PHRASE, type FuelPurpose, type ThirdPartyDestination } from "../lib/third-party-rules";
@@ -18,7 +19,8 @@ type Front = { id: number; name: string };
 type FuelType = { id: number; code: string; name: string; unit: string };
 type Totals = { balance: number; entries: number; exits: number };
 type LocationTotals = Totals & { byLocation: Record<Location, Totals> };
-type Balance = LocationTotals & { fuelTypeId: number; code: string; name: string; unit: string; byFront: Array<LocationTotals & { serviceFrontId: number; name: string }> };
+type ConvoyPending = { liters: number; count: number };
+type Balance = LocationTotals & { fuelTypeId: number; code: string; name: string; unit: string; convoyPending?: ConvoyPending; byFront: Array<LocationTotals & { serviceFrontId: number; name: string; convoyPending?: ConvoyPending }> };
 type Summary = {
   today: string; period: { from: string; to: string }; fuelTypes: FuelType[]; fronts: Front[]; destinationFronts: Front[];
   scopeFrontIds: number[]; allFronts: boolean; multiFront: boolean; defaultFrontId: number | null; balances: Balance[];
@@ -39,6 +41,8 @@ type Movement = {
   // Destino da saída para terceiro: veículo ou funcionário da empresa (com a finalidade).
   thirdPartyEmployeeId: number | null; thirdPartyEmployeeName: string | null; thirdPartyDestination: ThirdPartyDestination | null;
   purpose: FuelPurpose | null; purposeNote: string | null; destinationLabel: string | null; purposeLabel: string | null;
+  // Saída aprovada de um abastecimento do comboio (foto, comboio, quem registrou e aprovou).
+  convoy: { recordId: number; convoy: string | null; registeredBy: string | null; approvedBy: string | null; hasMeterPhoto: boolean; hasPumpPhoto: boolean; noPhoto: boolean } | null;
 };
 type Totals2 = { count: number; liters: number };
 type HistorySummary = {
@@ -76,12 +80,16 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
+  const canApproveConvoy = authUser.permissions.includes("fuel.convoy_approve");
+  const [convoyPending, setConvoyPending] = useState(0);
+  const loadConvoyCount = useCallback(() => { if (canApproveConvoy) api<{ pending: number }>("/api/fuel/convoy/count").then((result) => setConvoyPending(result.pending)).catch(() => undefined); }, [canApproveConvoy]);
+  useEffect(() => { loadConvoyCount(); }, [loadConvoyCount]);
   // Importação por planilha: só ADMIN e GESTOR (o servidor confere de novo).
   const canImport = (authUser.profile === "ADMIN" || authUser.profile === "GESTOR") && canRegister;
   const [importOpen, setImportOpen] = useState(false);
   // Aberto pelo "Ver no sistema" do Assistente JC: já no Histórico com o período/tipo/busca da consulta.
   const [assistantFilters] = useState(() => (typeof window === "undefined" ? null : consumirFiltros("Combustível")));
-  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(assistantFilters || !canRegister ? "history" : "new");
+  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank" | "convoy">(assistantFilters || !canRegister ? "history" : "new");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -131,7 +139,8 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
           <article key={balance.fuelTypeId} className={`fuel-balance-card fuel-${balance.code.toLowerCase().replace(/_/g, "-")} ${balance.balance < 0 ? "negative" : ""}`}>
             <header>
               <div><p>{balance.name.toUpperCase()}</p><small>{scopeLabel}</small></div>
-              <div className="fuel-balance-total"><strong>{liters(balance.balance)}</strong><small>saldo atual</small></div>
+              <div className="fuel-balance-total"><strong>{liters(balance.balance)}</strong><small>saldo atual</small>
+                {balance.convoyPending && balance.convoyPending.liters > 0 && <small className="fuel-balance-forecast" title="Saldo atual menos os abastecimentos do comboio ainda pendentes de aprovação">Saldo previsto {liters(balance.balance - balance.convoyPending.liters)} · {liters(balance.convoyPending.liters)} pendentes ({balance.convoyPending.count})</small>}</div>
             </header>
             <div className="fuel-balance-locations">
               {LOCATIONS.map(([key, label]) => (
@@ -146,7 +155,7 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
               <ul className="fuel-balance-fronts" aria-label="Saldo por frente (Frente / Porto)">
                 {balance.byFront.map((front) => (
                   <li key={front.serviceFrontId}>
-                    <span>{front.name}</span>
+                    <span>{front.name}{front.convoyPending && front.convoyPending.liters > 0 && <small className="fuel-balance-forecast">previsto {liters(front.balance - front.convoyPending.liters)}</small>}</span>
                     {LOCATIONS.map(([key, label]) => <b key={key} title={label} className={front.byLocation[key].balance < 0 ? "negative" : ""}><i>{label[0]}</i>{liters(front.byLocation[key].balance)}</b>)}
                   </li>
                 ))}
@@ -161,9 +170,11 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <button className={tab === "third-parties" ? "active" : ""} onClick={() => setTab("third-parties")}>Terceiros</button>
         <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
         <button className={tab === "tank" ? "active" : ""} onClick={() => setTab("tank")}>Tanque (régua)</button>
+        {canApproveConvoy && <button className={tab === "convoy" ? "active" : ""} onClick={() => { setTab("convoy"); loadConvoyCount(); }}>Aprovação do comboio{convoyPending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{convoyPending}</b>}</button>}
       </div>
       {canRegister && <QueuedRequests userId={authUser.id} kind="FUEL" title="Lançamentos guardados no celular" />}
-      {tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
+      {tab === "convoy" && canApproveConvoy ? <ConvoyApprovalView fronts={summary.fronts} fuelTypes={summary.fuelTypes} flash={flash} onChanged={() => { void loadSummary(); setHistoryVersion((value) => value + 1); loadConvoyCount(); window.dispatchEvent(new Event("jc:convoy-changed")); }} />
+        : tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
         : tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
         : tab === "new" && (canRegister || editing)
@@ -839,7 +850,8 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted, initial }: 
                     </td>
                     <td>{movement.frontName}</td>
                     <td>{originText(movement)}{movement.origin && <small className="fuel-transfer"> · {movement.origin}</small>}{!movement.originConfirmed && <span className="fuel-pending-badge origin" title="Origem assumida na importação do histórico">a confirmar</span>}</td>
-                    <td>{movement.vehiclePending && !movement.equipmentPrefix ? <span className="fuel-pending-badge" title="Abastecimento importado sem veículo identificado">A identificar{movement.importedVehicle ? ` · ${movement.importedVehicle}` : ""}</span> : movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}</td>
+                    <td>{movement.vehiclePending && !movement.equipmentPrefix ? <span className="fuel-pending-badge" title="Abastecimento importado sem veículo identificado">A identificar{movement.importedVehicle ? ` · ${movement.importedVehicle}` : ""}</span> : movement.thirdParty && movement.thirdPartyKind === "PRESTADOR" ? <span className="fuel-provider"><strong>{movement.providerCompany ?? "—"}</strong> <small>{movement.providerEquipment}</small></span> : movement.thirdParty ? <span className="fuel-third-party">{movement.thirdPartyDescription ?? "—"}</span> : movement.equipmentPrefix ? <><strong>{movement.equipmentPrefix}</strong> <small>{movement.equipmentModel}</small></> : "—"}
+                      {movement.convoy && <span className="fuel-convoy-info">{movement.convoy.hasMeterPhoto ? <a className="fuel-convoy-cam" href={`/api/fuel/convoy/photo/${movement.convoy.recordId}`} target="_blank" rel="noopener noreferrer" title="Foto do KM/horímetro">📷</a> : <span className="fuel-pending-badge" title="Registrado sem foto do medidor">sem foto</span>}{movement.convoy.hasPumpPhoto && <a className="fuel-convoy-cam" href={`/api/fuel/convoy/photo/${movement.convoy.recordId}?tipo=bomba`} target="_blank" rel="noopener noreferrer" title="Foto da bomba/totalizador">⛽</a>}<small className="fuel-created-by">Comboio{movement.convoy.convoy ? ` ${movement.convoy.convoy}` : ""} · registrou {movement.convoy.registeredBy ?? "—"} · aprovou {movement.convoy.approvedBy ?? "—"}</small></span>}</td>
                     <td>{movement.destinationLabel ?? "—"}</td>
                     <td>{movement.purposeLabel ?? "—"}</td>
                     <td>{movement.meterReading === null ? "—" : `${movement.meterReading.toLocaleString("pt-BR")} ${movement.meterUnit === "KM" ? "km" : "h"}`}</td>

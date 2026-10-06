@@ -14,7 +14,7 @@ type Totals = { previous: number; entries: number; transfersIn: number; transfer
 type Settings = { greeting: string; title: string; balanceLabel: string; configured: boolean };
 type Exit = { id: number; equipment: string; plate: string | null; kind: "FROTA" | "TERCEIRO" | "PRESTADOR"; company: string | null; liters: number; reading: number | null; readingUnit: "KM" | "HOURS" | null; responsible: string | null; notes: string | null };
 type Transfer = { id: number; direction: "ENVIADA" | "RECEBIDA"; liters: number; place: string; responsible: string | null; notes: string | null };
-type Result = { date: string; totals: Totals; exits: Exit[]; transfers?: Transfer[]; exitsLiters: number; ledgerBalance: number; message: string; settings: Settings; canEditSettings: boolean; front: Front; fuel: { id: number; name: string } };
+type Result = { date: string; totals: Totals; exits: Exit[]; transfers?: Transfer[]; convoyPending?: { liters: number; count: number }; exitsLiters: number; ledgerBalance: number; message: string; settings: Settings; canEditSettings: boolean; front: Front; fuel: { id: number; name: string } };
 
 const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"], ["TODOS", "Frente + Porto"]];
 const KIND: Record<Exit["kind"], string> = { FROTA: "Frota", TERCEIRO: "Terceiro", PRESTADOR: "Prestador" };
@@ -111,6 +111,7 @@ export default function FuelDailySummaryModal({ today, fronts, fuelTypes, defaul
                 {transfer.responsible ? <small> · {transfer.responsible}</small> : null}{transfer.notes ? <small> · {transfer.notes}</small> : null}
               </li>)}
             </ul>}
+            {result.convoyPending && result.convoyPending.liters > 0 && <div className="fuel-daily-convoy-pending">⏳ Comboio: {liters(result.convoyPending.liters)} pendentes de aprovação neste dia ({result.convoyPending.count} registro(s)). Só entram nas saídas e no saldo depois de aprovados.</div>}
             {result.ledgerBalance !== t.final && <div className="fuel-import-note"><p><b>Atenção:</b> o saldo final ({liters(t.final)}) difere do saldo do formulário para esta data ({liters(result.ledgerBalance)}). Avise o administrador.</p></div>}
             <div className="fuel-daily-grid">
               <div className="fuel-daily-message">

@@ -12,7 +12,9 @@ export const FIELD_SESSION_SECONDS = 60 * 60 * 12;
 // AVISO DE SEGURANÇA: login sem senha = quem souber nome + código entra no lugar do colega.
 // Contrapartidas: bloqueio por tentativas (lib/field-auth.ts), código só em hash, sessão de
 // 12 h, acesso restrito a estas rotas e todo registro guarda quem lançou.
-const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping"];
+// "/api/fuel/convoy/field": tela "Abastecimentos" do motorista do comboio (também exige a permissão
+// fuel.convoy_register, que só existe para quem tem a opção marcada no cadastro de campo).
+const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field"];
 // Cloudflare Workers Web Crypto accepts PBKDF2 iteration counts up to 100,000.
 // Keep the maximum supported cost so hashing works identically in production.
 const PASSWORD_ITERATIONS = 100_000;
@@ -112,6 +114,8 @@ export const PERMISSION_GROUPS = [
     ["fuel.view","Visualizar saldos e histórico de combustível"],
     ["fuel.register","Registrar lançamento de combustível"],
     ["fuel.manage","Editar e excluir lançamentos de combustível"],
+    ["fuel.convoy_approve","Aprovar, corrigir e rejeitar abastecimentos do comboio"],
+    ["fuel.convoy_register","Registrar abastecimento do comboio (app de campo)"],
   ]},
   { label:"Terceiros", items:[
     ["third_parties.manage","Cadastrar, editar e inativar terceiros (prestadores, terceirizadas, pessoas físicas) e os veículos deles; aceitar leitura menor que a última com justificativa"],
@@ -149,10 +153,13 @@ export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
   ADMIN:[...ALL_PERMISSIONS],
   GESTOR:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","alerts.share","whatsapp.view","whatsapp.send","fleet.view","fleet.update","fleet.report","materials.view","materials.manage","tasks.view","tasks.create","tasks.edit","products.view","products.create","products.edit","suppliers.view","suppliers.create","suppliers.edit","daily.field_operators","daily.front_requests",
     // Terceiros: o administrador pediu explicitamente que GESTOR cadastre/edite/inative terceiros.
-    "third_parties.manage"],
+    "third_parties.manage",
+    // Aprovação do comboio: o administrador pediu explicitamente ADMIN e GESTOR (configurável por usuário).
+    "fuel.convoy_approve"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
-  // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados).
+  // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados). Quem tem
+  // "Registra abastecimento (comboio)" no cadastro de campo ganha também fuel.convoy_register.
   CAMPO:["daily.register"],
   ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","products.view","suppliers.view"],
 };
@@ -278,7 +285,12 @@ export async function destroySession(request:Request) {
 
 export async function effectivePermissions(userId:number,profile:Profile) {
   if(profile==="ADMIN")return [...ALL_PERMISSIONS];
-  if(profile==="CAMPO")return [...PROFILE_DEFAULTS.CAMPO];
+  if(profile==="CAMPO"){
+    const db=await getDb();
+    // Antes da migração 0051 a coluna não existe: o acesso de campo segue só com o Controle Diário.
+    const row=(await db.select({convoy:users.convoyFuelRegister}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
+    return row?.convoy?[...PROFILE_DEFAULTS.CAMPO,"fuel.convoy_register" as Permission]:[...PROFILE_DEFAULTS.CAMPO];
+  }
   const db=await getDb();
   const overrides=await db.select({permission:userPermissions.permission,enabled:userPermissions.enabled}).from(userPermissions).where(eq(userPermissions.userId,userId));
   const values=new Set<Permission>(PROFILE_DEFAULTS[profile]??[]);

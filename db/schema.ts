@@ -69,6 +69,11 @@ export const users = pgTable("users", {
   // manual ou importação) — segue nome, função e demissão, mas não cai por causa da função e as
   // frentes são as escolhidas na tela. Nulo = FUNCAO.
   fieldAccessOrigin: text("field_access_origin", { enum:["FUNCAO","MANUAL"] }),
+  // Só para perfil CAMPO: registra abastecimentos do comboio (tela "Abastecimentos" do app de campo).
+  // Os registros ficam pendentes de aprovação (convoy_fuel_records) e só baixam o saldo da frente
+  // depois de aprovados. convoyEquipmentId = comboio que ele dirige (só identificação, sem saldo próprio).
+  convoyFuelRegister: boolean("convoy_fuel_register").notNull().default(false),
+  convoyEquipmentId: integer("convoy_equipment_id").references((): AnyPgColumn => equipment.id),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
@@ -338,7 +343,7 @@ export const meterReadings = pgTable("meter_readings", {
   operator: text("operator"),
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   notes: text("notes"),
-  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE","ASSISTENTE","CONTROLE_DIARIO"] }).notNull().default("MANUAL"),
+  source: text("source", { enum:["MANUAL","EXCEL_IMPORT","QR_CODE","MAINTENANCE","ASSISTENTE","CONTROLE_DIARIO","COMBOIO"] }).notNull().default("MANUAL"),
   authorizedRegression: boolean("authorized_regression").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   // Id gerado no celular a cada envio: reenviar (fila offline, resposta perdida) não duplica.
@@ -1150,8 +1155,12 @@ export const fuelMovements = pgTable("fuel_movements", {
   thirdPartyEmployeeId: integer("third_party_employee_id").references((): AnyPgColumn => thirdPartyEmployees.id),
   purpose: text("purpose", { enum:["MOTOSSERRA","GERADOR","GALAO","MAQUINA_NAO_CADASTRADA","OUTROS"] }),
   purposeNote: text("purpose_note"),
-  // ASSISTENTE = lançado pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); null = tela/importação.
-  createdVia: text("created_via", { enum:["ASSISTENTE"] }),
+  // ASSISTENTE = lançado pelo "Lançar tudo" do Assistente JC (createdBy = quem confirmou); COMBOIO =
+  // aprovação de um abastecimento registrado pelo motorista do comboio (createdBy = quem aprovou);
+  // null = tela/importação.
+  createdVia: text("created_via", { enum:["ASSISTENTE","COMBOIO"] }),
+  // Registro do comboio que originou esta saída (fotos, comboio, quem registrou e quem aprovou).
+  convoyRecordId: integer("convoy_record_id").references((): AnyPgColumn => convoyFuelRecords.id),
   ...timestamps,
 }, (table) => [
   index("fuel_movements_front_date_idx").on(table.serviceFrontId, table.movementDate),
@@ -1163,6 +1172,86 @@ export const fuelMovements = pgTable("fuel_movements", {
   index("fuel_movements_third_party_vehicle_idx").on(table.thirdPartyVehicleId, table.movementDate),
   index("fuel_movements_third_party_idx").on(table.thirdPartyId), index("fuel_movements_fuel_type_idx").on(table.fuelTypeId), index("fuel_movements_responsible_employee_idx").on(table.responsibleEmployeeId),
 ]);
+
+// ---------------------------------------------------------------------------
+// Abastecimentos do comboio (app de campo, offline). O motorista do comboio registra no celular
+// (UUID gerado lá: client_uuid, único — o reenvio da fila nunca duplica) com foto do KM/horímetro.
+// Status: PENDENTE (aguarda aprovação) → APROVADO (gravado como saída de Frota em fuel_movements com a
+// mesma função do formulário; só então baixa o saldo e atualiza a leitura) / REJEITADO (motivo) /
+// CORRECAO (o aprovador pediu correção ao motorista). Nada aqui mexe em saldo, leitura ou consumo.
+// ---------------------------------------------------------------------------
+export const convoyFuelRecords = pgTable("convoy_fuel_records", {
+  id: serial("id").primaryKey(),
+  clientUuid: text("client_uuid").notNull(),
+  status: text("status", { enum:["PENDENTE","APROVANDO","APROVADO","REJEITADO","CORRECAO"] }).notNull().default("PENDENTE"),
+  registeredBy: integer("registered_by").notNull().references(() => users.id),
+  convoyEquipmentId: integer("convoy_equipment_id").references(() => equipment.id),
+  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  // Frente do equipamento abastecido quando o registro chegou (base do "Saldo previsto").
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  fuelTypeId: integer("fuel_type_id").references(() => fuelTypes.id),
+  // Motorista/operador do equipamento (cadastro de Funcionários); nome guardado como foi escolhido.
+  operatorEmployeeId: integer("operator_employee_id").references(() => employees.id),
+  operatorName: text("operator_name").notNull(),
+  liters: doublePrecision("liters").notNull(),
+  reading: doublePrecision("reading"),
+  readingUnit: text("reading_unit", { enum:["HOURS","KM"] }).notNull(),
+  // Última leitura que o celular conhecia (cadastro baixado) — os avisos da hora foram contra ela.
+  deviceLastReading: doublePrecision("device_last_reading"),
+  // Data/hora do abastecimento no celular (ISO) e o dia (AAAA-MM-DD, horário de Fortaleza).
+  recordedAt: text("recorded_at").notNull(),
+  recordDate: text("record_date").notNull(),
+  // Data do dia anterior: justificativa obrigatória.
+  dateJustification: text("date_justification"),
+  noPhoto: boolean("no_photo").notNull().default(false),
+  noPhotoReason: text("no_photo_reason", { enum:["OPERADOR_AUSENTE","EQUIPAMENTO_FECHADO","PAINEL_DEFEITO","OUTRO"] }),
+  noPhotoNote: text("no_photo_note"),
+  // Chaves das fotos no armazenamento privado (lib/convoy-storage.ts).
+  meterPhotoKey: text("meter_photo_key"),
+  pumpPhotoKey: text("pump_photo_key"),
+  photoTakenAt: text("photo_taken_at"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  gpsAccuracy: doublePrecision("gps_accuracy"),
+  notes: text("notes"),
+  // Avisos da hora (JSON: ["LEITURA_MENOR","SALTO_ALTO","LITRAGEM_ALTA",...]) que vieram do celular.
+  deviceWarnings: text("device_warnings"),
+  receivedAt: text("received_at").notNull(),
+  // Conferência automática da foto (Assistente JC): número lido e se diverge do digitado.
+  aiReading: doublePrecision("ai_reading"),
+  aiStatus: text("ai_status", { enum:["CONFERE","DIVERGE","ILEGIVEL","ERRO"] }),
+  aiCheckedAt: text("ai_checked_at"),
+  // Correções do aprovador ou do motorista: JSON [{campo, de, para, por, porId, em}].
+  corrections: text("corrections"),
+  correctionNote: text("correction_note"),
+  correctionRequestedBy: integer("correction_requested_by").references(() => users.id),
+  correctionRequestedAt: text("correction_requested_at"),
+  rejectionReason: text("rejection_reason"),
+  rejectedBy: integer("rejected_by").references(() => users.id),
+  rejectedAt: text("rejected_at"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: text("approved_at"),
+  fuelMovementId: integer("fuel_movement_id").references((): AnyPgColumn => fuelMovements.id),
+  // Resultado da atualização da leitura do equipamento na aprovação (ex.: "atualizada", "não é a mais recente").
+  readingUpdateNote: text("reading_update_note"),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("convoy_fuel_records_client_uuid_unique").on(table.clientUuid),
+  index("convoy_fuel_records_status_idx").on(table.status, table.serviceFrontId),
+  index("convoy_fuel_records_registered_idx").on(table.registeredBy, table.recordDate),
+  index("convoy_fuel_records_equipment_idx").on(table.equipmentId, table.recordedAt),
+]);
+
+// Configuração do comboio (linha única, id = 1). ADMIN altera na aba "Aprovação do comboio". Quem
+// aprova é quem tem a permissão fuel.convoy_approve (ADMIN e GESTOR por padrão; Usuários → Permissões).
+export const convoyFuelSettings = pgTable("convoy_fuel_settings", {
+  id: integer("id").primaryKey().default(1),
+  pumpPhotoRequired: boolean("pump_photo_required").notNull().default(false),
+  // Conferência automática da foto pelo Assistente JC (usa a chave ANTHROPIC_API_KEY já configurada).
+  aiPhotoCheck: boolean("ai_photo_check").notNull().default(false),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+});
 
 // ---------------------------------------------------------------------------
 // Conciliação do tanque. fuel_tanks: um tanque por frente + local (Frente/Porto) + combustível,

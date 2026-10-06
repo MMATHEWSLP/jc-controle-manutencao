@@ -4,6 +4,7 @@ import { serviceFronts } from "../../../db/schema";
 import { frentesEmExibicao, seesMultipleFronts } from "../../../lib/active-front";
 import { authorize } from "../../../lib/auth";
 import { activeFuelTypes, fuelBalances, fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, monthStart, resolveFuelFront } from "../../../lib/fuel";
+import { pendingConvoyLiters } from "../../../lib/convoy";
 
 // Cards de saldo do topo do módulo e os dados de apoio do formulário. Os cards NÃO seguem o filtro
 // do Histórico: saldo atual acumulado + entradas/saídas do mês corrente, separados em Frente e Porto.
@@ -23,7 +24,12 @@ export async function GET(request: Request) {
     const visibleIds = fronts.map((front) => front.id);
     const displayed = frentesEmExibicao(user, request);
     const scope = fuelScopeFronts(visibleIds, displayed, null);
-    const balances = await fuelBalances(db, scope, period.from, period.to);
+    const [balances, convoyPending] = await Promise.all([fuelBalances(db, scope, period.from, period.to), pendingConvoyLiters(db, scope).catch(() => [])]);
+    // Abastecimentos do comboio ainda não aprovados: não baixaram o saldo. Saldo previsto = saldo − pendentes.
+    const pendingOf = (fuelTypeId: number, frontId?: number) => {
+      const rows = convoyPending.filter((row) => row.fuelTypeId === fuelTypeId && (frontId === undefined || row.serviceFrontId === frontId));
+      return { liters: Math.round(rows.reduce((sum, row) => sum + row.liters, 0) * 100) / 100, count: rows.reduce((sum, row) => sum + row.count, 0) };
+    };
     const frontName = new Map(fronts.map((front) => [front.id, front.name]));
     return Response.json({
       today,
@@ -42,11 +48,11 @@ export async function GET(request: Request) {
         const locations = (value?: { byLocation: Record<"FRENTE" | "PORTO", typeof empty> }) => ({ FRENTE: value?.byLocation.FRENTE ?? empty, PORTO: value?.byLocation.PORTO ?? empty });
         return {
           fuelTypeId: type.id, code: type.code, name: type.name, unit: type.unit,
-          balance: balance?.balance ?? 0, entries: balance?.entries ?? 0, exits: balance?.exits ?? 0,
+          balance: balance?.balance ?? 0, entries: balance?.entries ?? 0, exits: balance?.exits ?? 0, convoyPending: pendingOf(type.id),
           byLocation: locations(balance),
           byFront: scope.map((id) => {
             const front = balance?.byFront.get(id);
-            return { serviceFrontId: id, name: frontName.get(id) ?? "—", balance: front?.balance ?? 0, entries: front?.entries ?? 0, exits: front?.exits ?? 0, byLocation: locations(front) };
+            return { serviceFrontId: id, name: frontName.get(id) ?? "—", balance: front?.balance ?? 0, entries: front?.entries ?? 0, exits: front?.exits ?? 0, byLocation: locations(front), convoyPending: pendingOf(type.id, id) };
           }),
         };
       }),

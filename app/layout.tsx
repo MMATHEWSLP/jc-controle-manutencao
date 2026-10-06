@@ -11,6 +11,7 @@ import "./products-fuel.css";
 import "./app-runtime.css";
 import "./stock-modules.css";
 import "./compact-tables.css";
+import "./convoy.css";
 import "./ui-fixes.css";
 import "./assistant.css";
 import AppRuntime from "./AppRuntime";

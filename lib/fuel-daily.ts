@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { getDb } from "../db";
 import { equipment, fuelDailySettings, fuelMovements, fuelTypes, serviceFronts, thirdParties, thirdPartyVehicles } from "../db/schema";
 import { computeFuelBalances } from "./fuel-rules";
+import { pendingConvoyForDay } from "./convoy";
 import { DEFAULT_DAILY_SETTINGS, dailyMessage, dailyTotals, transferPlace, type DailyLocation, type DailyMessageSettings, type DailyMovement, type DailyTransfer } from "./fuel-daily-rules";
 
 // ---------------------------------------------------------------------------
@@ -77,10 +78,12 @@ export async function fuelDailySummary(db: Db, input: { date: string; frontId: n
     ...transfer, place: transferPlace(transfer, frontNames), responsible: transferInfo.get(transfer.id)?.responsible ?? null, notes: transferInfo.get(transfer.id)?.notes ?? null,
   }));
 
+  // Abastecimentos do comboio do dia ainda não aprovados: não entram nas saídas nem no saldo.
+  const convoyPending = await pendingConvoyForDay(db, input.frontId, input.date, input.fuelTypeId).catch(() => ({ liters: 0, count: 0 }));
   const settings = await dailySettings(db, input.frontId);
   const exitsLiters = Math.round(exits.reduce((sum, row) => sum + row.liters, 0) * 1000) / 1000;
   return {
-    date: input.date, location: input.location, front, fuel, totals, exits, exitsLiters, transfers, settings,
+    date: input.date, location: input.location, front, fuel, totals, exits, exitsLiters, transfers, settings, convoyPending,
     // Deve ser sempre igual a totals.final (e a totals.consumption no caso das saídas).
     ledgerBalance: Math.round(ledgerBalance * 1000) / 1000,
     message: dailyMessage({ settings, frontName: front.name, fuelName: fuel.name, date: input.date, totals, frontNames }),

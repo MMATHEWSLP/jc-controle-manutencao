@@ -3,7 +3,7 @@ import { buildAlertStatements,loadEquipmentCore,loadPlansForEquipment,loadThresh
 import { recalculateMaintenanceCycles } from "./maintenance-recalculation";
 import { toLocalWallTime } from "./local-datetime";
 
-export type ReadingSource="MANUAL"|"EXCEL_IMPORT"|"QR_CODE"|"MAINTENANCE"|"ASSISTENTE";
+export type ReadingSource="MANUAL"|"EXCEL_IMPORT"|"QR_CODE"|"MAINTENANCE"|"ASSISTENTE"|"COMBOIO";
 export type SaveReadingInput={equipmentId:number;readingDate:string;hours:number|null;km:number|null;operator:string;notes:string|null;serviceFrontId?:number|null;authorizeRegression?:boolean;clientRequestId?:string|null;fuelImportBatchId?:number|null;actor:{id:number;name:string;profile:string};source:ReadingSource};
 
 export class ReadingOperationError extends Error{

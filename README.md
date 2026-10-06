@@ -42,6 +42,9 @@ código (`cloudflare:workers`, D1, R2, `vinext`, `wrangler` foram removidos).
 | `ASSISTANT_MAX_TOKENS` | Não | Teto de tokens de saída por resposta do chat. Padrão `4000` |
 | `ASSISTANT_TIMEOUT_SECONDS` | Não | Tempo máximo de cada chamada à API. Padrão `60` (leitura de ficha: o dobro) |
 | `ASSISTANT_LAUNCH_PROFILES` | Não | Perfis que podem usar "Lançar tudo" nos lançamentos pendentes do assistente. Padrão `ADMIN,GESTOR` |
+| `SUPABASE_URL` | Recomendado (comboio) | URL do projeto Supabase (Settings → API). Com ela e a chave abaixo, as fotos dos abastecimentos do comboio vão para o Supabase Storage, num bucket privado, e são abertas só por link temporário. Sem elas, ficam na pasta privada `uploads/convoy` do servidor |
+| `SUPABASE_SERVICE_ROLE_KEY` | Recomendado (comboio) | Chave `service_role` do Supabase (Settings → API). Só no servidor, nunca no navegador |
+| `SUPABASE_CONVOY_BUCKET` | Não | Nome do bucket privado das fotos do comboio. Padrão `comboio` (criado na primeira foto) |
 
 ## Como rodar pela primeira vez
 

@@ -455,11 +455,14 @@ export function createEmployeeHistoryPdf(input:EmployeeHistoryPdfInput){
 export type FuelDailyPdfTransfer={direction:string;liters:string;place:string;responsible:string;notes:string};
 export type FuelDailyPdfInput={frontName:string;date:string;fuelName:string;locationLabel:string;generatedAt:string;generatedBy:string;
   cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray";detail?:string}>;transfers?:FuelDailyPdfTransfer[];rows:string[][];totalLiters:string;
-  totalValue?:string;averagePrice?:string;withoutPrice?:number;count:number};
+  totalValue?:string;averagePrice?:string;withoutPrice?:number;count:number;
+  // Abastecimentos do comboio ainda pendentes de aprovação (não entram nas saídas nem no saldo).
+  pendingNotice?:string|null};
 export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
   // Bloco das transferências (página 1, abaixo dos cards): título + uma linha por transferência (até 8).
   const transfers=(input.transfers??[]).slice(0,8);const hiddenTransfers=(input.transfers??[]).length-transfers.length;
-  const transferBlock=transfers.length?16+(transfers.length+(hiddenTransfers>0?1:0))*13:0;
+  const noticeBlock=input.pendingNotice?16:0;
+  const transferBlock=(transfers.length?16+(transfers.length+(hiddenTransfers>0?1:0))*13:0)+noticeBlock;
   // Colunas da linha: equipamento, tipo, empresa, litros, R$/L, valor, leitura, responsável, observação.
   const columns=[{x:34,label:"EQUIPAMENTO",max:20},{x:138,label:"TIPO",max:9},{x:184,label:"EMPRESA",max:22},{x:314,label:"LITROS",max:11,align:"right" as const},
     {x:362,label:"R$/L",max:10,align:"right" as const},{x:414,label:"VALOR",max:14,align:"right" as const},{x:486,label:"LEITURA",max:13},{x:556,label:"RESPONSÁVEL",max:24},{x:684,label:"OBSERVAÇÃO",max:30}];
@@ -485,15 +488,16 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
         content+=text(x+11,487,7,card.label.toUpperCase(),true,"0.34 0.47 0.56");content+=text(x+11,card.detail?467:463,card.detail?13:15,card.value,true,toneColor[card.tone]);
         if(card.detail)content+=text(x+11,457,6.8,truncate(card.detail,Math.floor(width/3.6)),false,"0.31 0.46 0.55");});
       headerY=410;
+      if(input.pendingNotice){content+=`0.99 0.96 0.88 rg 28 ${432} 786 14 re f\n`;content+=text(34,436,7.5,truncate(input.pendingNotice,150),true,"0.48 0.29 0");}
       if(transfers.length){
-        content+=text(34,438,7,"TRANSFERÊNCIAS DO DIA",true,toneColor.blue);
-        transfers.forEach((transfer,index)=>{const y=425-index*13;
+        content+=text(34,438-noticeBlock,7,"TRANSFERÊNCIAS DO DIA",true,toneColor.blue);
+        transfers.forEach((transfer,index)=>{const y=425-noticeBlock-index*13;
           content+=text(34,y,7.5,transfer.direction,true,toneColor.blue);content+=text(96,y,7.5,transfer.liters,true);
           content+=text(160,y,7.5,truncate(transfer.place,46),true);content+=text(400,y,7,truncate(`Resp.: ${transfer.responsible}`,40),false,"0.31 0.46 0.55");
           content+=text(600,y,7,truncate(`Obs.: ${transfer.notes}`,42),false,"0.31 0.46 0.55");});
-        if(hiddenTransfers>0)content+=text(34,425-transfers.length*13,7,`… e mais ${hiddenTransfers} transferência(s) — veja no Histórico.`,false,"0.31 0.46 0.55");
+        if(hiddenTransfers>0)content+=text(34,425-noticeBlock-transfers.length*13,7,`… e mais ${hiddenTransfers} transferência(s) — veja no Histórico.`,false,"0.31 0.46 0.55");
         headerY-=transferBlock;
-      }
+      }else if(noticeBlock)headerY-=noticeBlock;
     }
     content+=`0.06 0.25 0.36 rg 28 ${headerY} 786 22 re f\n`;
     for(const column of columns)content+=text(column.align==="right"?column.x-4:column.x,headerY+8,6.5,column.label,true,"1 1 1");
