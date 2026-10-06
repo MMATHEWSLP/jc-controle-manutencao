@@ -43,6 +43,10 @@ export async function GET(request: Request) {
     const pdf = createFuelDailySummaryPdf({
       frontName: summary.front.name, date: brDay(date), fuelName: summary.fuel.name, locationLabel: DAILY_LOCATION_LABELS[location],
       generatedAt: formatPdfDate(new Date().toISOString()), generatedBy: user.name, cards,
+      transfers: summary.transfers.map((transfer) => ({
+        direction: transfer.direction === "ENVIADA" ? "Enviada" : "Recebida", liters: litersMessage(transfer.liters),
+        place: `${transfer.direction === "ENVIADA" ? "para" : "de"} ${transfer.place}`, responsible: transfer.responsible ?? "—", notes: transfer.notes ?? "—",
+      })),
       rows: summary.exits.map((row) => [row.equipment, row.plate ?? "—", DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
       totalLiters: litersMessage(summary.exitsLiters), count: summary.exits.length,
     });

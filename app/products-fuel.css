@@ -355,6 +355,8 @@ html[data-theme="dark"] .fuel-history-summary .saldo.negativo strong{color:#ff9b
 .fuel-daily-cards .green{border-left-color:#16835f}.fuel-daily-cards .green strong{color:#16835f}
 .fuel-daily-cards .red{border-left-color:#c83e43}.fuel-daily-cards .red strong{color:#c83e43}
 .fuel-daily-cards .blue{border-left-color:#1f6b9c}.fuel-daily-cards .blue strong{color:#1f6b9c}
+.fuel-daily-transfers{display:grid;gap:4px;margin:0;padding:8px 12px;border:1px solid var(--line);border-left:4px solid #1f6b9c;border-radius:9px;background:var(--surface);list-style:none;font-size:12.5px}
+.fuel-daily-transfers small{color:var(--muted)}
 .fuel-daily-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;align-items:start}
 .fuel-daily-message{display:grid;gap:8px}
 .fuel-daily-message>label{display:grid;gap:4px;font-size:12px;font-weight:700}
@@ -373,4 +375,6 @@ html[data-theme="dark"] .fuel-history-summary .saldo.negativo strong{color:#ff9b
 .fuel-daily-exits .num{text-align:right;white-space:nowrap}
 .fuel-daily-exits small{color:var(--muted)}
 .link-button{justify-self:start;padding:0;border:0;background:none;color:#1f6b9c;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:underline}
-@media (max-width:760px){.fuel-daily-filters{grid-template-columns:1fr 1fr}.fuel-daily-grid{grid-template-columns:1fr}}
+@media (max-width:760px){.fuel-daily-filters{grid-template-columns:1fr 1fr}.fuel-daily-transfers{display:grid;gap:4px;margin:0;padding:8px 12px;border:1px solid var(--line);border-left:4px solid #1f6b9c;border-radius:9px;background:var(--surface);list-style:none;font-size:12.5px}
+.fuel-daily-transfers small{color:var(--muted)}
+.fuel-daily-grid{grid-template-columns:1fr}}
