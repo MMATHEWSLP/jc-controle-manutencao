@@ -1,0 +1,17 @@
+# Nunca vão para o repositório (ele é público): chave de assinatura e senhas.
+*.jks
+*.keystore
+*.p12
+keystore.properties
+chave-jc-sistema/
+ANDROID_KEYSTORE_BASE64.txt
+
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/

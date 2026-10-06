@@ -60,3 +60,6 @@ next-env.d.ts
 # A importação é feita pela tela FUNCIONÁRIOS → Importar do sistema de pessoal.
 importacoes/colaboradores_exportacao*.xlsx
 *colaboradores_exportacao*.xlsx
+
+# App Android: APK/versao.json publicados no servidor (nunca no repositório)
+/android-releases/

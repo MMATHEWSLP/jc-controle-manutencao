@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="jc_green">#16835F</color>
+    <color name="jc_dark">#123550</color>
+    <color name="jc_text">#1D2B35</color>
+    <color name="jc_muted">#5D7282</color>
+    <color name="white">#FFFFFF</color>
+</resources>
