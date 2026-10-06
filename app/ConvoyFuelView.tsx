@@ -40,7 +40,6 @@ export default function ConvoyFuelView({ userId, flash }: { userId: number; flas
   const [catalogError, setCatalogError] = useState("");
   const [online, setOnline] = useState(isKnownOnline());
   const [queue, setQueue] = useState<ConvoyQueueItem[]>([]);
-  const [tab, setTab] = useState<"register" | "mine">("register");
   const [records, setRecords] = useState<MyRecord[] | null>(null);
   const [recordsSavedAt, setRecordsSavedAt] = useState<string | null>(null);
 
@@ -114,29 +113,121 @@ export default function ConvoyFuelView({ userId, flash }: { userId: number; flas
     return () => window.removeEventListener("beforeunload", warn);
   }, [pending]);
 
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 60_000); return () => window.clearInterval(timer); }, []);
+  const today = fortalezaDay(now);
+  const yesterdayDay = previousDay(today);
+  const [dayChoice, setDayChoice] = useState<"today" | "yesterday">("today");
+  const [justification, setJustification] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [correcting, setCorrecting] = useState<MyRecord | null>(null);
+  const day = dayChoice === "yesterday" ? yesterdayDay : today;
+
+  // Tudo do motorista num lugar: o que está no celular (ainda não enviado) + o que o servidor já tem.
+  const items = useMemo(() => buildItems(queue, records ?? []), [queue, records]);
+  const ofDay = (date: string) => items.filter((item) => item.date === date);
+  const needCorrection = (records ?? []).filter((record) => record.status === "CORRECAO");
+  const pastDays = [...new Set(items.map((item) => item.date))].filter((date) => date !== today && date !== yesterdayDay).sort().reverse();
+  const card = (item: DayItem) => <RecordCard key={item.key} item={item} correctionQueued={Boolean(item.record && queue.some((entry) => entry.kind === "CORRECAO" && entry.targetUuid === item.record!.clientUuid && entry.status !== "ENVIADO"))}
+    correcting={Boolean(item.record && correcting?.id === item.record.id)} onCorrect={setCorrecting} correctionForm={item.record && correcting?.id === item.record.id && catalog ? <CorrectionForm userId={userId} catalog={catalog} record={item.record} close={() => setCorrecting(null)} flash={flash} /> : null} />;
+
   return <section className="convoy-app">
     <header className="convoy-head">
       <div>
         <p className="eyebrow">COMBOIO{catalog?.convoy ? ` · ${catalog.convoy.prefix}` : ""}</p>
-        <h1>Abastecimentos</h1>
-        <span>{catalog ? `Cadastro do celular: ${brTime(catalog.generatedAt)}` : "Cadastro ainda não baixado"}</span>
+        <h1>Abastecimentos do dia</h1>
+        <span>{catalog ? `Cadastro do celular: ${brTime(catalog.generatedAt)}` : "Cadastro ainda não baixado"}{recordsSavedAt ? ` · situação atualizada ${brTime(recordsSavedAt)}` : ""}</span>
       </div>
       <div className="convoy-status">
         <b className={`convoy-online ${online ? "on" : "off"}`}>{online ? "● Online" : "● Offline"}</b>
         {pending > 0 && <b className="convoy-pending">{pending} aguardando envio</b>}
-        <button type="button" className="secondary" onClick={() => void downloadCatalog(true)} disabled={!online}>⟳ Atualizar cadastro</button>
+        <button type="button" className="secondary" onClick={() => { void downloadCatalog(true); void loadRecords(); }} disabled={!online}>⟳ Atualizar</button>
       </div>
     </header>
     {catalogError && <p className="convoy-error">! {catalogError}</p>}
-    <div className="convoy-tabs">
-      <button type="button" className={tab === "register" ? "active" : ""} onClick={() => setTab("register")}>Registrar</button>
-      <button type="button" className={tab === "mine" ? "active" : ""} onClick={() => { setTab("mine"); void loadRecords(); }}>Meus abastecimentos{records?.some((item) => item.status === "REJEITADO" || item.status === "CORRECAO") ? " ●" : ""}</button>
-    </div>
     {catalogState === "loading" && !catalog ? <div className="page-loading"><span /><p>Carregando o cadastro...</p></div>
-      : !catalog ? <div className="convoy-card"><strong>Cadastro não baixado neste celular.</strong><p>Conecte à internet uma vez e toque em &quot;Atualizar cadastro&quot; para poder registrar sem sinal.</p></div>
-      : tab === "register" ? <ConvoyForm catalog={catalog} userId={userId} queue={queue} />
-      : <MyRecords userId={userId} catalog={catalog} queue={queue} records={records} savedAt={recordsSavedAt} flash={flash} />}
+      : !catalog ? <div className="convoy-card"><strong>Cadastro não baixado neste celular.</strong><p>Conecte à internet uma vez e toque em &quot;Atualizar&quot; para poder registrar sem sinal.</p></div>
+      : <>
+        {needCorrection.length > 0 && <div className="convoy-list convoy-attention"><h3>⚠ Precisa de correção ({needCorrection.length})</h3>{items.filter((item) => item.record?.status === "CORRECAO").map(card)}</div>}
+        <div className="convoy-tabs" role="tablist" aria-label="Dia dos abastecimentos">
+          <button type="button" role="tab" aria-selected={dayChoice === "today"} className={dayChoice === "today" ? "active" : ""} onClick={() => setDayChoice("today")}>Hoje · {brDay(today).slice(0, 5)}</button>
+          <button type="button" role="tab" aria-selected={dayChoice === "yesterday"} className={dayChoice === "yesterday" ? "active" : ""} onClick={() => setDayChoice("yesterday")}>Ontem · {brDay(yesterdayDay).slice(0, 5)}</button>
+        </div>
+        {dayChoice === "yesterday" && <label className="convoy-field convoy-yesterday">Por que está lançando os de ontem só agora? *<input value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Ex.: sem sinal e celular descarregado" /><small>Vale para todos os abastecimentos de ontem que você adicionar agora.</small></label>}
+        <DaySummary items={ofDay(day)} label={dayChoice === "today" ? "Total de hoje" : "Total de ontem"} />
+        {adding ? <ConvoyForm catalog={catalog} userId={userId} queue={queue} recordDate={day} yesterday={dayChoice === "yesterday"} justification={justification} done={() => setAdding(false)} />
+          : <button type="button" className="primary convoy-save" onClick={() => setAdding(true)}>＋ Adicionar abastecimento</button>}
+        <div className="convoy-list">
+          <h3>{dayChoice === "today" ? "Abastecimentos de hoje" : "Abastecimentos de ontem"}</h3>
+          {records === null && !ofDay(day).length ? <p>Carregando...</p> : !ofDay(day).length ? <p className="convoy-empty">Nenhum abastecimento lançado {dayChoice === "today" ? "hoje" : "ontem"}.</p> : ofDay(day).map(card)}
+        </div>
+        {pastDays.length > 0 && <div className="convoy-list"><h3>Dias anteriores <small>· últimos 45 dias</small></h3>
+          {pastDays.map((date) => { const list = ofDay(date); const totals = dayTotals(list); return <details key={date} className="convoy-day" open={list.some((item) => item.tone === "error" || item.tone === "warning")}>
+            <summary><strong>{brDay(date)}</strong><span>{totals.count} abastecimento(s) · {formatNumber(totals.liters, 2)} L</span>{totals.rejected > 0 && <b className="convoy-badge rejected">{totals.rejected} rejeitado(s)</b>}{totals.waiting > 0 && <b className="convoy-badge">{totals.waiting} aguardando</b>}</summary>
+            {list.map(card)}
+          </details>; })}
+        </div>}
+        <p className="convoy-footnote">Fica guardado no celular e é enviado sozinho quando houver sinal. Só baixa o saldo de diesel da frente depois de aprovado.</p>
+      </>}
   </section>;
+}
+
+// ---------------------------------------------------------------------------
+// Lista do dia: itens do celular + do servidor, total de litros e situação
+// ---------------------------------------------------------------------------
+const QUEUE_LABEL: Record<ConvoyQueueItem["status"], string> = { PENDENTE_ENVIO: "No celular — a enviar", ENVIADO: "Enviado", ERRO: "Com erro" };
+type DayItem = {
+  key: string; date: string; at: string; equipment: string; liters: number; operator: string; reading: number | null; unit: ConvoyUnit; noPhoto: boolean;
+  label: string; tone: "ok" | "error" | "warning" | "waiting" | "local"; rejected: boolean; record: MyRecord | null; local: ConvoyQueueItem | null;
+};
+
+function buildItems(queue: ConvoyQueueItem[], records: MyRecord[]): DayItem[] {
+  const local = queue.filter((item) => item.kind === "NOVO" && (item.status !== "ENVIADO" || !records.some((record) => record.clientUuid === item.clientUuid))).map((item): DayItem => {
+    const payload = item.payload as { recordDate?: string; recordedAt?: string };
+    return {
+      key: `q-${item.clientUuid}`, date: payload.recordDate ?? item.createdAt.slice(0, 10), at: payload.recordedAt ?? item.createdAt, equipment: item.summary.equipment, liters: item.summary.liters,
+      operator: item.summary.operator, reading: item.summary.reading, unit: item.summary.unit as ConvoyUnit, noPhoto: item.summary.noPhoto,
+      label: item.status === "ENVIADO" ? "Aguardando aprovação" : QUEUE_LABEL[item.status], tone: item.status === "ERRO" ? "error" : item.status === "ENVIADO" ? "waiting" : "local", rejected: false, record: null, local: item,
+    };
+  });
+  const server = records.map((record): DayItem => ({
+    key: `r-${record.id}`, date: record.recordDate, at: record.recordedAt, equipment: record.equipment, liters: record.liters, operator: record.operatorName, reading: record.reading, unit: record.readingUnit, noPhoto: record.noPhoto,
+    label: CONVOY_STATUS_LABELS[record.status], tone: record.status === "REJEITADO" ? "error" : record.status === "CORRECAO" ? "warning" : record.status === "APROVADO" ? "ok" : "waiting", rejected: record.status === "REJEITADO", record, local: null,
+  }));
+  return [...local, ...server].sort((a, b) => b.at.localeCompare(a.at));
+}
+
+function dayTotals(items: DayItem[]) {
+  const valid = items.filter((item) => !item.rejected);
+  return {
+    count: valid.length, liters: valid.reduce((sum, item) => sum + item.liters, 0), local: items.filter((item) => item.tone === "local" || (item.local && item.tone === "error")).length,
+    waiting: items.filter((item) => item.tone === "waiting" || item.tone === "warning").length, approved: items.filter((item) => item.tone === "ok").length, rejected: items.filter((item) => item.rejected).length,
+  };
+}
+
+function DaySummary({ items, label }: { items: DayItem[]; label: string }) {
+  const totals = dayTotals(items);
+  return <div className="convoy-day-summary">
+    <div><span>{label}</span><strong>{formatNumber(totals.liters, 2)} L</strong><small>{totals.count} abastecimento(s){totals.rejected ? ` · ${totals.rejected} rejeitado(s) fora do total` : ""}</small></div>
+    <div className="convoy-day-chips">
+      {totals.local > 0 && <b className="convoy-badge local">{totals.local} no celular</b>}
+      {totals.waiting > 0 && <b className="convoy-badge">{totals.waiting} aguardando aprovação</b>}
+      {totals.approved > 0 && <b className="convoy-badge approved">{totals.approved} aprovado(s)</b>}
+    </div>
+  </div>;
+}
+
+function RecordCard({ item, correctionQueued, correcting, onCorrect, correctionForm }: { item: DayItem; correctionQueued: boolean; correcting: boolean; onCorrect: (record: MyRecord) => void; correctionForm: React.ReactNode }) {
+  const record = item.record;
+  return <article className={`convoy-item ${item.tone === "local" ? "waiting" : item.tone}`}>
+    <header><strong>{item.equipment} · {formatNumber(item.liters, 2)} L</strong><span className="convoy-badge">{item.label}</span></header>
+    <p>{item.operator} · {item.reading !== null ? `${formatNumber(item.reading)} ${unitSuffix(item.unit)}` : "sem leitura"}{item.noPhoto ? " · SEM FOTO" : ""} · {brTime(item.at)}</p>
+    {item.local?.status === "ERRO" && <><p className="convoy-error">Não enviado: {item.local.error}</p><div className="convoy-actions"><button type="button" className="secondary" onClick={() => void retryConvoy(item.local!.clientUuid).then(() => syncConvoyQueue())}>Tentar de novo</button><button type="button" className="danger-action" onClick={() => { if (window.confirm("Descartar este registro guardado no celular?")) void discardConvoy(item.local!.clientUuid); }}>Descartar</button></div></>}
+    {record?.status === "REJEITADO" && <p className="convoy-error">Rejeitado: {record.rejectionReason}</p>}
+    {record?.status === "CORRECAO" && <><p className="convoy-warning">Correção pedida: {record.correctionNote}</p>
+      {correctionQueued ? <p>Correção guardada, aguardando envio.</p> : !correcting && <button type="button" className="primary" onClick={() => onCorrect(record)}>Corrigir</button>}</>}
+    {correctionForm}
+  </article>;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +242,8 @@ function PhotoButton({ label, photo, onPick, onClear, required }: { label: strin
   </div>;
 }
 
-function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: number; queue: ConvoyQueueItem[] }) {
+// Fica aberto depois de salvar: o motorista lança um equipamento atrás do outro e toca "Concluir".
+function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justification, done }: { catalog: Catalog; userId: number; queue: ConvoyQueueItem[]; recordDate: string; yesterday: boolean; justification: string; done: () => void }) {
   const [equipment, setEquipment] = useState<CatalogEquipment | null>(null);
   const [equipmentQuery, setEquipmentQuery] = useState("");
   const [operator, setOperator] = useState<Operator | null>(null);
@@ -164,8 +256,9 @@ function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: numb
   const [noPhotoReason, setNoPhotoReason] = useState<NoPhotoReason | "">("");
   const [noPhotoNote, setNoPhotoNote] = useState("");
   const [notes, setNotes] = useState("");
-  const [yesterday, setYesterday] = useState(false);
-  const [justification, setJustification] = useState("");
+  const [savedCount, setSavedCount] = useState(0);
+  const top = useRef<HTMLDivElement>(null);
+  const equipmentInput = useRef<HTMLInputElement>(null);
   const [gps, setGps] = useState<GpsPosition | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -174,7 +267,6 @@ function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: numb
   useEffect(() => { void currentPosition().then((position) => { if (position) setGps(position); }); const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
 
   const today = fortalezaDay(now);
-  const recordDate = yesterday ? previousDay(today) : today;
   const equipmentMatches = useMemo(() => equipmentQuery.trim() ? catalog.equipment.filter((item) => matchesSearch(equipmentQuery, item.prefix, item.code, item.plate, item.model, item.type)).slice(0, 8) : [], [catalog.equipment, equipmentQuery]);
   const operatorMatches = useMemo(() => operatorQuery.trim().length >= 2 ? catalog.employees.filter((item) => matchesSearch(operatorQuery, item.name)).slice(0, 8) : [], [catalog.employees, operatorQuery]);
   // Última leitura: a do cadastro ou a de um registro deste equipamento ainda guardado no celular (maior).
@@ -221,7 +313,7 @@ function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: numb
     if (meterPhoto) URL.revokeObjectURL(meterPhoto.url);
     if (pumpPhoto) URL.revokeObjectURL(pumpPhoto.url);
     setEquipment(null); setEquipmentQuery(""); setOperator(null); setOperatorQuery(""); setLiters(""); setReading(""); setMeterPhoto(null); setPumpPhoto(null);
-    setNoPhoto(false); setNoPhotoReason(""); setNoPhotoNote(""); setNotes(""); setYesterday(false); setJustification("");
+    setNoPhoto(false); setNoPhotoReason(""); setNoPhotoNote(""); setNotes("");
   }
 
   async function save() {
@@ -248,26 +340,27 @@ function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: numb
       });
       const prefix = equipment!.prefix;
       clear();
-      setSaved(`Registrado — aguardando aprovação. ${prefix} · ${formatNumber(payload.liters, 2)} L${isKnownOnline() ? "" : " (será enviado quando houver sinal)"}`);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setSaved(`${prefix} · ${formatNumber(payload.liters, 2)} L guardado — aguardando aprovação${isKnownOnline() ? "" : " (será enviado quando houver sinal)"}. Pode lançar o próximo.`);
+      setSavedCount((count) => count + 1);
+      top.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => equipmentInput.current?.focus({ preventScroll: true }), 400);
       void syncConvoyQueue();
     } catch {
       setError("Não foi possível guardar no celular. Libere espaço e tente de novo.");
     } finally { setBusy(false); }
   }
 
-  return <div className="convoy-form">
-    {saved && <div className="convoy-saved" role="status">✓ {saved}</div>}
+  return <div className="convoy-form convoy-card convoy-adding" ref={top}>
     <div className="convoy-when">
-      <span>{yesterday ? <>Data: <b>{brDay(recordDate)}</b> (dia anterior)</> : <>Hoje, <b>{now.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></>}</span>
-      <button type="button" className="link-button" onClick={() => setYesterday(!yesterday)}>{yesterday ? "Voltar para hoje" : "Foi ontem?"}</button>
+      <span>{yesterday ? <>Abastecimento de <b>ontem, {brDay(recordDate)}</b></> : <>Hoje, <b>{now.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></>}</span>
+      {savedCount > 0 && <b className="convoy-badge approved">{savedCount} lançado(s) agora</b>}
     </div>
-    {yesterday && <label className="convoy-field">Justificativa (abastecimento de ontem) *<input value={justification} onChange={(event) => setJustification(event.target.value)} placeholder="Ex.: sem sinal e celular descarregado" /></label>}
+    {saved && <div className="convoy-saved" role="status">✓ {saved}</div>}
 
     <div className="convoy-field">
       <span>Equipamento abastecido *</span>
       {equipment ? <div className="convoy-chosen"><div><strong>{equipment.prefix}</strong><small>{[equipment.model, equipment.plate, equipment.front].filter(Boolean).join(" · ")}</small></div><button type="button" className="secondary" onClick={() => { setEquipment(null); setReading(""); }}>Trocar</button></div>
-        : <><input className="convoy-big" value={equipmentQuery} onChange={(event) => setEquipmentQuery(event.target.value)} placeholder="Código ou placa (ex.: PC20, CM-35)" autoComplete="off" />
+        : <><input ref={equipmentInput} className="convoy-big" value={equipmentQuery} onChange={(event) => setEquipmentQuery(event.target.value)} placeholder="Código ou placa (ex.: PC20, CM-35)" autoComplete="off" />
           {equipmentQuery.trim() && <ul className="convoy-options">{equipmentMatches.map((item) => <li key={item.id}><button type="button" onClick={() => chooseEquipment(item)}><strong>{item.prefix}</strong><small>{[item.model, item.plate, item.front].filter(Boolean).join(" · ")}</small></button></li>)}
             {!equipmentMatches.length && <li className="convoy-empty">Nenhum equipamento encontrado no cadastro do celular.</li>}</ul>}</>}
     </div>
@@ -301,36 +394,11 @@ function ConvoyForm({ catalog, userId, queue }: { catalog: Catalog; userId: numb
 
     {warnings.length > 0 && <ul className="convoy-warnings">{warnings.map((warning) => <li key={warning.code}>⚠ {warning.message}</li>)}<li className="hint">Confira. Se estiver certo, pode salvar: vai com aviso para a aprovação.</li></ul>}
     {error && <p className="convoy-error">! {error}</p>}
-    <button type="button" className="primary convoy-save" disabled={busy} onClick={() => void save()}>{busy ? "Guardando..." : "Salvar abastecimento"}</button>
-    <p className="convoy-footnote">Fica guardado no celular e é enviado sozinho quando houver sinal. Só baixa o saldo de diesel da frente depois de aprovado.</p>
-  </div>;
-}
-
-// ---------------------------------------------------------------------------
-// Meus abastecimentos: fila do celular + status no servidor (rejeitado com motivo, correção pedida)
-// ---------------------------------------------------------------------------
-const QUEUE_LABEL: Record<ConvoyQueueItem["status"], string> = { PENDENTE_ENVIO: "Pendente de envio", ENVIADO: "Enviado", ERRO: "Com erro" };
-
-function MyRecords({ userId, catalog, queue, records, savedAt, flash }: { userId: number; catalog: Catalog; queue: ConvoyQueueItem[]; records: MyRecord[] | null; savedAt: string | null; flash: (message: string) => void }) {
-  const [correcting, setCorrecting] = useState<MyRecord | null>(null);
-  const local = queue.filter((item) => item.status !== "ENVIADO" || !records?.some((record) => record.clientUuid === item.clientUuid));
-  return <div className="convoy-list">
-    {local.length > 0 && <><h3>No celular</h3>{local.map((item) => <article key={item.clientUuid} className={`convoy-item ${item.status === "ERRO" ? "error" : item.status === "ENVIADO" ? "ok" : "waiting"}`}>
-      <header><strong>{item.kind === "CORRECAO" ? "Correção · " : ""}{item.summary.equipment} · {formatNumber(item.summary.liters, 2)} L</strong><span className="convoy-badge">{QUEUE_LABEL[item.status]}</span></header>
-      <p>{item.summary.operator} · {item.summary.reading !== null ? `${formatNumber(item.summary.reading)} ${unitSuffix(item.summary.unit as ConvoyUnit)}` : "sem leitura"}{item.summary.noPhoto ? " · SEM FOTO" : ""} · {brTime(item.createdAt)}</p>
-      {item.status === "ERRO" && <><p className="convoy-error">Não enviado: {item.error}</p><div className="convoy-actions"><button type="button" className="secondary" onClick={() => void retryConvoy(item.clientUuid).then(() => syncConvoyQueue())}>Tentar de novo</button><button type="button" className="danger-action" onClick={() => { if (window.confirm("Descartar este registro guardado no celular?")) void discardConvoy(item.clientUuid); }}>Descartar</button></div></>}
-    </article>)}</>}
-    <h3>Enviados{savedAt ? <small> · atualizado {brTime(savedAt)}</small> : null}</h3>
-    {records === null ? <p>Carregando...</p> : !records.length ? <p className="convoy-empty">Nenhum abastecimento enviado nos últimos 45 dias.</p>
-      : records.map((record) => <article key={record.id} className={`convoy-item ${record.status === "REJEITADO" ? "error" : record.status === "CORRECAO" ? "warning" : record.status === "APROVADO" ? "ok" : "waiting"}`}>
-        <header><strong>{record.equipment} · {formatNumber(record.liters, 2)} L</strong><span className="convoy-badge">{CONVOY_STATUS_LABELS[record.status]}</span></header>
-        <p>{record.operatorName} · {record.reading !== null ? `${formatNumber(record.reading)} ${unitSuffix(record.readingUnit)}` : "sem leitura"}{record.noPhoto ? " · SEM FOTO" : ""} · {brTime(record.recordedAt)}</p>
-        {record.status === "REJEITADO" && <p className="convoy-error">Rejeitado: {record.rejectionReason}</p>}
-        {record.status === "CORRECAO" && <><p className="convoy-warning">Correção pedida: {record.correctionNote}</p>
-          {queue.some((item) => item.kind === "CORRECAO" && item.targetUuid === record.clientUuid && item.status !== "ENVIADO") ? <p>Correção guardada, aguardando envio.</p>
-            : <button type="button" className="primary" onClick={() => setCorrecting(record)}>Corrigir</button>}</>}
-      </article>)}
-    {correcting && <CorrectionForm userId={userId} catalog={catalog} record={correcting} close={() => setCorrecting(null)} flash={flash} />}
+    <button type="button" className="primary convoy-save" disabled={busy} onClick={() => void save()}>{busy ? "Guardando..." : "Salvar e lançar o próximo"}</button>
+    <button type="button" className="secondary" onClick={() => {
+      if (equipment && !window.confirm("O abastecimento preenchido ainda não foi salvo. Concluir mesmo assim?")) return;
+      clear(); done();
+    }}>{savedCount > 0 ? "Concluir — terminei os de " + (yesterday ? "ontem" : "hoje") : "Fechar"}</button>
   </div>;
 }
 

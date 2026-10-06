@@ -32,8 +32,12 @@ const brDay = (value: string | null) => (value ? value.slice(0, 10).split("-").r
 const mapsLink = (item: Item) => (item.latitude !== null && item.longitude !== null ? `https://www.google.com/maps?q=${item.latitude},${item.longitude}` : null);
 const STATUS_FILTERS: Array<[string, string]> = [["ABERTOS", "Pendentes e correção"], ["PENDENTE", "Pendentes"], ["CORRECAO", "Correção pedida"], ["APROVADO", "Aprovados"], ["REJEITADO", "Rejeitados"], ["TODOS", "Todos"]];
 
-export default function ConvoyApprovalView({ fronts, fuelTypes, flash, onChanged }: { fronts: Front[]; fuelTypes: FuelType[]; flash: (message: string) => void; onChanged: () => void }) {
-  const [view, setView] = useState<"list" | "report">("list");
+// Setor ABASTECIMENTOS → Aprovação: abastecimentos lançados pelo motorista do comboio, pendentes até
+// alguém conferir a foto e aprovar (só então viram saída de combustível e baixam o saldo).
+export default function ConvoyApprovalView({ flash, onChanged }: { flash: (message: string) => void; onChanged: () => void }) {
+  const [context, setContext] = useState<{ fronts: Front[]; fuelTypes: FuelType[] }>({ fronts: [], fuelTypes: [] });
+  useEffect(() => { api<{ fronts: Front[]; fuelTypes: FuelType[] }>("/api/fuel/convoy/context").then(setContext).catch(() => undefined); }, []);
+  const { fronts, fuelTypes } = context;
   const [status, setStatus] = useState("ABERTOS");
   const [frontId, setFrontId] = useState("");
   const [from, setFrom] = useState("");
@@ -54,7 +58,7 @@ export default function ConvoyApprovalView({ fronts, fuelTypes, flash, onChanged
     } catch (problem) { setError(problem instanceof Error ? problem.message : "Falha ao carregar."); }
     finally { setLoading(false); }
   }, [status, frontId, from, to]);
-  useEffect(() => { if (view === "list") void load(); }, [load, view]);
+  useEffect(() => { void load(); }, [load]);
   const records = data?.records ?? [];
   const batchable = records.filter((item) => item.status === "PENDENTE" && item.flags.length === 0);
   const changed = async (message: string) => { flash(message); setOpen(null); await load(); onChanged(); };
@@ -68,10 +72,6 @@ export default function ConvoyApprovalView({ fronts, fuelTypes, flash, onChanged
   }
 
   return <section className="panel convoy-approval">
-    <div className="convoy-approval-toolbar">
-      <div className="main-tabs secondary-module-nav"><button className={view === "list" ? "active" : ""} onClick={() => setView("list")}>Aprovação</button><button className={view === "report" ? "active" : ""} onClick={() => setView("report")}>Relatório do comboio</button></div>
-    </div>
-    {view === "report" ? <ConvoyReport /> : <>
       <div className="convoy-approval-toolbar">
         <label>Situação<select value={status} onChange={(event) => setStatus(event.target.value)}>{STATUS_FILTERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {fronts.length > 1 && <label>Frente<select value={frontId} onChange={(event) => setFrontId(event.target.value)}><option value="">Todas</option>{fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
@@ -106,7 +106,6 @@ export default function ConvoyApprovalView({ fronts, fuelTypes, flash, onChanged
         </tbody>
       </table></div>
       {open && <ReviewModal item={open} fuelTypes={fuelTypes} close={() => setOpen(null)} changed={changed} flash={flash} reload={load} />}
-    </>}
   </section>;
 }
 
@@ -249,7 +248,7 @@ type Report = {
   options: { convoys: Array<{ id: number; label: string }>; drivers: Array<{ id: number; label: string }>; equipment: Array<{ id: number; label: string }> };
 };
 
-function ConvoyReport() {
+export function ConvoyReport() {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const [filters, setFilters] = useState({ from: `${today.slice(0, 7)}-01`, to: today, convoy: "", driver: "", equipment: "" });
   const [report, setReport] = useState<Report | null>(null);
@@ -261,7 +260,7 @@ function ConvoyReport() {
   const set = (key: keyof typeof filters) => (value: string) => setFilters((current) => ({ ...current, [key]: value }));
   const table = (title: string, rows: Group[]) => <div><h3>{title}</h3><div className="table-scroll"><table className="products-table"><thead><tr><th>{title.replace("Por ", "")}</th><th className="num">Registros</th><th className="num">Litros</th><th className="num">Aprovados (L)</th><th className="num">Pendentes</th><th className="num">Rejeitados</th><th className="num">Sem foto</th></tr></thead>
     <tbody>{rows.map((row) => <tr key={row.key}><td><b>{row.label}</b></td><td className="num">{row.records}</td><td className="num">{formatNumber(row.liters, 2)}</td><td className="num">{formatNumber(row.approvedLiters, 2)}</td><td className="num">{row.pending}</td><td className="num">{row.rejected}</td><td className="num">{row.noPhoto}</td></tr>)}{!rows.length && <tr><td colSpan={7} className="empty-state">Sem registros.</td></tr>}</tbody></table></div></div>;
-  return <div className="convoy-approval">
+  return <section className="panel convoy-approval">
     <div className="convoy-approval-toolbar">
       <label>De<input type="date" value={filters.from} onChange={(event) => set("from")(event.target.value)} /></label>
       <label>Até<input type="date" value={filters.to} onChange={(event) => set("to")(event.target.value)} /></label>
@@ -283,5 +282,5 @@ function ConvoyReport() {
       {table("Por motorista do comboio", report.byDriver)}
       {table("Por equipamento", report.byEquipment)}
     </>}
-  </div>;
+  </section>;
 }

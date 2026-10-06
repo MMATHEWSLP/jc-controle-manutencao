@@ -1,7 +1,7 @@
 import { getDb } from "../../../db";
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { employeeToday, listCompanies } from "../../../lib/employees";
-import { assertCodeNotObvious, convoyEquipmentOptions, createFieldOperator, FieldOperatorError, listFieldOperators, parseFieldOperatorInput } from "../../../lib/field-operators";
+import { assertCodeNotObvious, createFieldOperator, FieldOperatorError, listFieldOperators, parseFieldOperatorInput } from "../../../lib/field-operators";
 
 export async function GET(request: Request) {
   const auth = await authorize(request, "daily.field_operators"); if (auth.response) return auth.response;
@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   try {
     const canCreateEmployee = user.permissions.includes("employees.manage");
     return Response.json({
-      operators: await listFieldOperators(user), canImport: user.profile === "ADMIN", canCreateEmployee, convoyOptions: await convoyEquipmentOptions(),
+      // Motorista só do comboio (não faz o Controle Diário) é cadastrado no setor Abastecimentos.
+      operators: (await listFieldOperators(user)).filter((row) => row.fieldDailyAccess || !row.convoyFuelRegister), canImport: user.profile === "ADMIN", canCreateEmployee,
       companies: canCreateEmployee ? (await listCompanies(await getDb())).map((row) => row.name) : [], today: employeeToday(),
     });
   }

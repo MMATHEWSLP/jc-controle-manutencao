@@ -7,7 +7,6 @@ import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
 import FuelImportModal from "./FuelImportView";
 import FuelDailySummaryModal from "./FuelDailySummary";
-import ConvoyApprovalView from "./ConvoyApprovalView";
 import QueuedRequests from "./QueuedRequests";
 import { enqueueRequest } from "../lib/offline-queue";
 import { FUEL_PURPOSE_LABELS, FUEL_PURPOSES, METER_PHRASES as METER_PHRASE, type FuelPurpose, type ThirdPartyDestination } from "../lib/third-party-rules";
@@ -80,16 +79,12 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
-  const canApproveConvoy = authUser.permissions.includes("fuel.convoy_approve");
-  const [convoyPending, setConvoyPending] = useState(0);
-  const loadConvoyCount = useCallback(() => { if (canApproveConvoy) api<{ pending: number }>("/api/fuel/convoy/count").then((result) => setConvoyPending(result.pending)).catch(() => undefined); }, [canApproveConvoy]);
-  useEffect(() => { loadConvoyCount(); }, [loadConvoyCount]);
   // Importação por planilha: só ADMIN e GESTOR (o servidor confere de novo).
   const canImport = (authUser.profile === "ADMIN" || authUser.profile === "GESTOR") && canRegister;
   const [importOpen, setImportOpen] = useState(false);
   // Aberto pelo "Ver no sistema" do Assistente JC: já no Histórico com o período/tipo/busca da consulta.
   const [assistantFilters] = useState(() => (typeof window === "undefined" ? null : consumirFiltros("Combustível")));
-  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank" | "convoy">(assistantFilters || !canRegister ? "history" : "new");
+  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(assistantFilters || !canRegister ? "history" : "new");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -170,11 +165,9 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <button className={tab === "third-parties" ? "active" : ""} onClick={() => setTab("third-parties")}>Terceiros</button>
         <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
         <button className={tab === "tank" ? "active" : ""} onClick={() => setTab("tank")}>Tanque (régua)</button>
-        {canApproveConvoy && <button className={tab === "convoy" ? "active" : ""} onClick={() => { setTab("convoy"); loadConvoyCount(); }}>Aprovação do comboio{convoyPending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{convoyPending}</b>}</button>}
       </div>
       {canRegister && <QueuedRequests userId={authUser.id} kind="FUEL" title="Lançamentos guardados no celular" />}
-      {tab === "convoy" && canApproveConvoy ? <ConvoyApprovalView fronts={summary.fronts} fuelTypes={summary.fuelTypes} flash={flash} onChanged={() => { void loadSummary(); setHistoryVersion((value) => value + 1); loadConvoyCount(); window.dispatchEvent(new Event("jc:convoy-changed")); }} />
-        : tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
+      {tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
         : tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
         : tab === "new" && (canRegister || editing)

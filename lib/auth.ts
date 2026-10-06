@@ -158,8 +158,9 @@ export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
     "fuel.convoy_approve"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
-  // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados). Quem tem
-  // "Registra abastecimento (comboio)" no cadastro de campo ganha também fuel.convoy_register.
+  // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados). O motorista
+  // do comboio (setor Abastecimentos) ganha fuel.convoy_register e, se não fizer o Controle Diário
+  // (users.field_daily_access = false), perde daily.register.
   CAMPO:["daily.register"],
   ALMOXARIFADO:["dashboard.view","equipment.view","meter.view","maintenance.view","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report","products.view","suppliers.view"],
 };
@@ -287,9 +288,10 @@ export async function effectivePermissions(userId:number,profile:Profile) {
   if(profile==="ADMIN")return [...ALL_PERMISSIONS];
   if(profile==="CAMPO"){
     const db=await getDb();
-    // Antes da migração 0051 a coluna não existe: o acesso de campo segue só com o Controle Diário.
-    const row=(await db.select({convoy:users.convoyFuelRegister}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
-    return row?.convoy?[...PROFILE_DEFAULTS.CAMPO,"fuel.convoy_register" as Permission]:[...PROFILE_DEFAULTS.CAMPO];
+    // Antes das migrações 0051/0052 as colunas não existem: o acesso de campo segue só com o Controle Diário.
+    const row=(await db.select({convoy:users.convoyFuelRegister,daily:users.fieldDailyAccess}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
+    if(!row?.convoy)return [...PROFILE_DEFAULTS.CAMPO];
+    return [...(row.daily?PROFILE_DEFAULTS.CAMPO:[]),"fuel.convoy_register" as Permission];
   }
   const db=await getDb();
   const overrides=await db.select({permission:userPermissions.permission,enabled:userPermissions.enabled}).from(userPermissions).where(eq(userPermissions.userId,userId));

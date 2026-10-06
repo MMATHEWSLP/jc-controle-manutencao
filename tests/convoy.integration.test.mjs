@@ -157,3 +157,47 @@ test("comboio: pendente não mexe no saldo; aprovar baixa e atualiza leitura; re
 
   await rm(path.join(process.cwd(), "uploads", "convoy"), { recursive: true, force: true }).catch(() => undefined);
 });
+
+test("setor Abastecimentos: motorista do comboio entra só em Abastecimentos (Controle Diário só se marcar)", { skip: !enabled }, async () => {
+  const { ALL_PERMISSIONS } = await import("../lib/auth.ts");
+  const { createConvoyDriver, listConvoyDrivers, removeConvoyDriver, updateConvoyDriver } = await import("../lib/convoy-drivers.ts");
+  const { listFieldOperators } = await import("../lib/field-operators.ts");
+  const db = await getDb();
+  const s = Date.now().toString(36).toUpperCase();
+  const [front] = await db.insert(serviceFronts).values({ name: `FRENTE MOTORISTAS ${s}` }).returning();
+  const [cc] = await db.insert(equipment).values({ code: `EQ-CCM${s}`, prefix: `CCM-${s}`, type: "CAMINHÃO COMBOIO", brand: "M", model: "ATEGO", controlType: "KM", currentHours: 0, currentKm: 1000, serviceFrontId: front.id }).returning();
+  const [employee] = await db.insert(employees).values({ name: `PEDRO MOTORISTA ${s}`, jobTitle: "MOTORISTA", company: "JC", admissionDate: "2024-01-01", serviceFrontId: front.id }).returning();
+  const [adminRow] = await db.insert(users).values({ email: `adm-${s}@teste.local`, username: `adm-${s}`, name: `ADMIN ${s}`, role: "ADMIN" }).returning();
+  const admin = { id: adminRow.id, name: adminRow.name, username: adminRow.username, email: adminRow.email, profile: "ADMIN", taskRoleId: null, status: "ACTIVE", theme: "LIGHT", isPrimaryAdmin: false, lastAccessAt: null, createdAt: "", permissions: [...ALL_PERMISSIONS], serviceFrontId: null, serviceFrontName: null, allServiceFronts: true, serviceFrontIds: [], canExport: true, jobTitle: null };
+
+  // Da lista de funcionários: cria o acesso de campo com PIN (devolvido uma vez) e já marca como motorista.
+  const created = await createConvoyDriver(admin, { mode: "employee", employeeId: employee.id, convoyEquipmentId: cc.id, dailyAccess: false });
+  assert.match(created.access.code, /^\d{4}$/);
+  assert.deepEqual(await effectivePermissions(created.userId, "CAMPO"), ["fuel.convoy_register"], "não faz o Controle Diário");
+  const listed = (await listConvoyDrivers(admin)).drivers.find((row) => row.id === created.userId);
+  assert.equal(listed.convoyPrefix, cc.prefix); assert.equal(listed.dailyAccess, false);
+  // Não aparece em Controle Diário → Funcionários de campo (rota filtra os motoristas só do comboio).
+  const operator = (await listFieldOperators(admin)).find((row) => row.id === created.userId);
+  assert.ok(operator.convoyFuelRegister && !operator.fieldDailyAccess);
+
+  // Marcar "também faz o Controle Diário" devolve daily.register; remover do comboio volta ao acesso comum.
+  await updateConvoyDriver(admin, created.userId, { convoyEquipmentId: cc.id, dailyAccess: true, active: true });
+  assert.deepEqual((await effectivePermissions(created.userId, "CAMPO")).sort(), ["daily.register", "fuel.convoy_register"]);
+  await assert.rejects(updateConvoyDriver(admin, created.userId, { convoyEquipmentId: 999999999, dailyAccess: true }), /Comboio não encontrado/);
+  await removeConvoyDriver(admin, created.userId);
+  assert.deepEqual(await effectivePermissions(created.userId, "CAMPO"), ["daily.register"]);
+
+  // Quem já tem acesso de campo: vira motorista sem trocar o PIN e continua no Controle Diário por padrão.
+  const again = await createConvoyDriver(admin, { mode: "access", userId: created.userId, convoyEquipmentId: null });
+  assert.equal(again.access, null);
+  assert.deepEqual((await effectivePermissions(created.userId, "CAMPO")).sort(), ["daily.register", "fuel.convoy_register"]);
+  await assert.rejects(createConvoyDriver(admin, { mode: "access", userId: created.userId }), /já é motorista/);
+
+  // Fora do cadastro (manual, sem cadastro de funcionário) com PIN escolhido; PIN óbvio é recusado.
+  await assert.rejects(createConvoyDriver(admin, { mode: "manual", name: `ZECA FORA ${s}`, jobTitle: "MOTORISTA", serviceFrontIds: [front.id], criarFuncionario: false, confirmarParecidos: true, code: "1234" }), /fácil de adivinhar/);
+  const manual = await createConvoyDriver(admin, { mode: "manual", name: `ZECA FORA ${s}`, jobTitle: "MOTORISTA", serviceFrontIds: [front.id], criarFuncionario: false, confirmarParecidos: true, code: "4826", convoyEquipmentId: cc.id });
+  assert.equal(manual.access.code, "4826");
+  assert.deepEqual(await effectivePermissions(manual.userId, "CAMPO"), ["fuel.convoy_register"]);
+  const logs = (await db.select().from(auditLogs).where(eq(auditLogs.entityId, String(manual.userId)))).map((row) => row.action);
+  assert.ok(logs.includes("MOTORISTA DO COMBOIO CADASTRADO"));
+});

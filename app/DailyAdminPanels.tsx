@@ -12,8 +12,8 @@ type FrontRequest = {
   reason:string|null; requestedBy:string; requestedAt:string; status:"PENDING"|"APPROVED"|"REJECTED"; reviewedBy:string|null; reviewedAt:string|null; reviewNote:string|null;
 };
 type FieldOperator = { id:number; name:string; jobTitle:string|null; active:boolean; serviceFrontIds:number[]; lastAccessAt:string|null; employeeId:number|null; registration:string|null; employeeStatus:string|null; convoyFuelRegister:boolean; convoyEquipmentId:number|null; convoyPrefix:string|null };
-type ConvoyOption = { id:number; label:string; convoy:boolean };
-type OperatorsResponse = { operators:FieldOperator[]; canImport:boolean; canCreateEmployee:boolean; companies:string[]; today:string; convoyOptions:ConvoyOption[] };
+
+type OperatorsResponse = { operators:FieldOperator[]; canImport:boolean; canCreateEmployee:boolean; companies:string[]; today:string };
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const jsonInit=(method:string,body:unknown):RequestInit=>({ method, headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
@@ -135,7 +135,7 @@ export function FieldOperatorsPanel({ fronts, flash }:{ fronts:Front[]; flash:(m
         <dl>
           <div><dt>Função</dt><dd>{item.jobTitle??"—"}</dd></div>
           <div><dt>Frentes</dt><dd>{item.serviceFrontIds.map(frontName).join(", ")||"—"}</dd></div>
-          {item.convoyFuelRegister && <div className="wide"><dt>Abastecimento</dt><dd>⛽ Registra abastecimento (comboio){item.convoyPrefix?` · ${item.convoyPrefix}`:""}</dd></div>}
+          {item.convoyFuelRegister && <div className="wide"><dt>Abastecimentos</dt><dd>⛽ Também é motorista do comboio{item.convoyPrefix?` (${item.convoyPrefix})`:""} — gerenciado no setor Abastecimentos</dd></div>}
           <div className="wide"><dt>Último acesso</dt><dd>{formatDateTime(item.lastAccessAt)}</dd></div>
         </dl>
         <footer className="daily-record-actions">
@@ -145,7 +145,7 @@ export function FieldOperatorsPanel({ fronts, flash }:{ fronts:Front[]; flash:(m
       </article>)}
       {visible.length===0 && <div className="empty-state">{operators.length?"Ninguém encontrado para os filtros.":"Nenhum funcionário de campo cadastrado."}</div>}
     </div>}
-    {editing && <OperatorModal item={editing} fronts={fronts} convoyOptions={data?.convoyOptions??[]} close={()=>setEditing(null)} saved={async(message)=>{ setEditing(null); flash(message); await load(); }}/>}
+    {editing && <OperatorModal item={editing} fronts={fronts} close={()=>setEditing(null)} saved={async(message)=>{ setEditing(null); flash(message); await load(); }}/>}
     {adding && data && <AddFieldOperatorsModal fronts={fronts} canCreateEmployee={data.canCreateEmployee} companies={data.companies} today={data.today} close={()=>setAdding(false)}
       done={(criados,message)=>{ setAdding(false); setCodes(criados); flash(message); void load(); }}/>}
     {codes && <CodesResult criados={codes} close={()=>setCodes(null)}/>}
@@ -154,22 +154,19 @@ export function FieldOperatorsPanel({ fronts, flash }:{ fronts:Front[]; flash:(m
   </article>;
 }
 
-function OperatorModal({ item, fronts, convoyOptions, close, saved }:{ item:FieldOperator|null; fronts:Front[]; convoyOptions:ConvoyOption[]; close:()=>void; saved:(message:string)=>Promise<void> }) {
+function OperatorModal({ item, fronts, close, saved }:{ item:FieldOperator|null; fronts:Front[]; close:()=>void; saved:(message:string)=>Promise<void> }) {
   const linked=Boolean(item?.employeeId);
   const [name,setName]=useState(item?.name??"");
   const [jobTitle,setJobTitle]=useState(item?.jobTitle??"");
   const [code,setCode]=useState("");
   const [frontIds,setFrontIds]=useState<number[]>(item?.serviceFrontIds??[]);
   const [active,setActive]=useState(item?.active??true);
-  // Motorista do comboio: vê a tela "Abastecimentos" no app (registros vão para aprovação).
-  const [convoyFuelRegister,setConvoyFuelRegister]=useState(item?.convoyFuelRegister??false);
-  const [convoyEquipmentId,setConvoyEquipmentId]=useState(item?.convoyEquipmentId?String(item.convoyEquipmentId):"");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   async function submit(event:FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      const body={ name, jobTitle, code, serviceFrontIds:frontIds, active, convoyFuelRegister, convoyEquipmentId:convoyFuelRegister&&convoyEquipmentId?Number(convoyEquipmentId):null };
+      const body={ name, jobTitle, code, serviceFrontIds:frontIds, active };
       const result=item?await api<{message:string}>(`/api/field-operators/${item.id}`,jsonInit("PUT",body)):await api<{message:string}>("/api/field-operators",jsonInit("POST",body));
       await saved(result.message);
     } catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível salvar."); }
@@ -187,11 +184,6 @@ function OperatorModal({ item, fronts, convoyOptions, close, saved }:{ item:Fiel
         <label className="daily-field"><span>Situação</span><select value={active?"1":"0"} onChange={(event)=>setActive(event.target.value==="1")}><option value="1">Ativo (pode entrar)</option><option value="0">Inativo (acesso bloqueado)</option></select></label>
       </div>
       <fieldset className="daily-front-checks"><legend>Frentes em que trabalha *</legend>{fronts.map((front)=><label key={front.id}><input type="checkbox" checked={frontIds.includes(front.id)} onChange={()=>toggleFront(front.id)}/>{front.name}</label>)}</fieldset>
-      <fieldset className="daily-front-checks convoy-access"><legend>Abastecimento</legend>
-        <label><input type="checkbox" checked={convoyFuelRegister} onChange={(event)=>setConvoyFuelRegister(event.target.checked)}/>Registra abastecimento (comboio)</label>
-        {convoyFuelRegister && <label className="daily-field">Comboio<select value={convoyEquipmentId} onChange={(event)=>setConvoyEquipmentId(event.target.value)}><option value="">— Não informado —</option>{convoyOptions.some((option)=>option.convoy)&&<optgroup label="Comboios">{convoyOptions.filter((option)=>option.convoy).map((option)=><option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>}<optgroup label="Outros equipamentos">{convoyOptions.filter((option)=>!option.convoy).map((option)=><option key={option.id} value={option.id}>{option.label}</option>)}</optgroup></select></label>}
-        {convoyFuelRegister && <small>Vê a tela &quot;Abastecimentos&quot; no app. Os registros ficam pendentes e só baixam o saldo de diesel da frente depois de aprovados em Combustível → Aprovação do comboio. O comboio é só identificação (sem saldo próprio).</small>}
-      </fieldset>
       <p className="daily-security-note">⚠ Sem senha, quem souber o nome e o código entra no lugar do funcionário. Não use datas de nascimento nem números óbvios (1234, 0000). Após 5 tentativas erradas o acesso fica bloqueado por 15 minutos.</p>
       {error && <div className="fleet-form-error">! {error}</div>}
     </div>
