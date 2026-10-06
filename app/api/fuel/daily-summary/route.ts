@@ -1,7 +1,7 @@
 import { getDb } from "../../../../db";
 import { fuelDailySettings } from "../../../../db/schema";
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { fuelLocalDay, fuelVisibleFronts } from "../../../../lib/fuel";
+import { fuelCosts, fuelLocalDay, fuelVisibleFronts } from "../../../../lib/fuel";
 import { DAILY_EXIT_KIND_LABELS, dailySettings, fuelDailySummary } from "../../../../lib/fuel-daily";
 import { brDay, DAILY_LOCATION_LABELS, litersMessage, type DailyLocation } from "../../../../lib/fuel-daily-rules";
 import { createFuelDailySummaryPdf, formatPdfDate } from "../../../../lib/pdf";
@@ -30,6 +30,14 @@ export async function GET(request: Request) {
     if (params.get("formato") !== "pdf") return Response.json({ ...summary, canEditSettings: user.profile === "ADMIN" });
 
     const t = summary.totals;
+    // Valor do diesel: custo médio ponderado do estoque no momento de cada saída (mesma conta do Histórico).
+    const costs = await fuelCosts(db);
+    const exitCost = (id: number) => costs.get(id)?.cost ?? null;
+    const priced = summary.exits.filter((row) => exitCost(row.id) !== null);
+    const totalCost = Math.round(priced.reduce((sum, row) => sum + exitCost(row.id)!, 0) * 100) / 100;
+    const pricedLiters = priced.reduce((sum, row) => sum + row.liters, 0);
+    const withoutPrice = summary.exits.length - priced.length;
+    const brl = (value: number, digits = 2) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: digits, maximumFractionDigits: digits });
     const cards = [
       { label: "Saldo anterior", value: litersMessage(t.previous), tone: "gray" as const },
       ...(t.entries > 0 ? [{ label: "Entrada", value: litersMessage(t.entries), tone: "green" as const }] : []),
@@ -37,6 +45,8 @@ export async function GET(request: Request) {
       ...(t.transfersOut > 0 ? [{ label: "Transf. enviada", value: litersMessage(t.transfersOut), tone: "blue" as const }] : []),
       ...(t.adjustments !== 0 ? [{ label: "Ajuste de saldo", value: litersMessage(t.adjustments), tone: "gray" as const }] : []),
       { label: "Consumo", value: litersMessage(t.consumption), tone: "red" as const },
+      ...(priced.length ? [{ label: "Custo do consumo", value: brl(totalCost), tone: "red" as const,
+        detail: `${brl(totalCost / pricedLiters, 4)}/L${withoutPrice ? ` · ${withoutPrice} saída(s) sem valor` : ""}` }] : []),
       { label: "Saldo final", value: litersMessage(t.final), tone: t.final < 0 ? "red" as const : "green" as const },
     ];
     const reading = (row: (typeof summary.exits)[number]) => row.reading === null ? "—" : `${row.reading.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${row.readingUnit === "KM" ? "km" : "h"}`;
@@ -47,8 +57,8 @@ export async function GET(request: Request) {
         direction: transfer.direction === "ENVIADA" ? "Enviada" : "Recebida", liters: litersMessage(transfer.liters),
         place: `${transfer.direction === "ENVIADA" ? "para" : "de"} ${transfer.place}`, responsible: transfer.responsible ?? "—", notes: transfer.notes ?? "—",
       })),
-      rows: summary.exits.map((row) => [row.equipment, row.plate ?? "—", DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
-      totalLiters: litersMessage(summary.exitsLiters), count: summary.exits.length,
+      rows: summary.exits.map((row) => [row.equipment, row.plate ?? "—", DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
+      totalLiters: litersMessage(summary.exitsLiters), totalValue: priced.length ? brl(totalCost) : undefined, count: summary.exits.length,
     });
     const name = `resumo-combustivel-${summary.front.name.replace(/[^\w-]+/g, "-")}-${date}.pdf`;
     return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "private, no-store" } });
