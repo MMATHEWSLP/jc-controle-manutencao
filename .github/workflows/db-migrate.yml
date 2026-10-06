@@ -12,11 +12,11 @@ on:
         type: boolean
         default: false
       valor_litro_diesel:
-        description: "Valor do litro (R$) para as entradas de diesel SEM valor, ex.: 6,38 (vazio = não roda)"
+        description: "Reavaliar o estoque de diesel: valor do litro (R$) a partir de hoje, ex.: 6,38 (vazio = não roda; não altera o passado)"
         type: string
         default: ""
       confirmar_valor_diesel:
-        description: "Gravar de verdade o valor do litro do diesel (sem marcar, só mostra o que faria)"
+        description: "Gravar de verdade a reavaliação do estoque de diesel (sem marcar, só mostra o que faria)"
         type: boolean
         default: false
 
@@ -79,9 +79,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node corrigir-historico-data-generica.mjs ${{ github.event.inputs.confirmar_data_generica == 'true' && '--confirmar' || '' }}
 
-      - name: Valor do litro do diesel nas entradas sem valor
+      - name: Reavaliar o estoque de diesel (valor do litro a partir de hoje)
         if: github.event.inputs.valor_litro_diesel != ''
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VALOR_LITRO: ${{ github.event.inputs.valor_litro_diesel }}
-        run: node scripts/valor-diesel-estoque.mjs "--valor=$VALOR_LITRO" ${{ github.event.inputs.confirmar_valor_diesel == 'true' && '--confirmar' || '' }}
+        run: npx tsx scripts/reavaliar-estoque-combustivel.ts "--valor=$VALOR_LITRO" --combustivel=diesel ${{ github.event.inputs.confirmar_valor_diesel == 'true' && '--confirmar' || '' }}

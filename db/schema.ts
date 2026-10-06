@@ -1983,6 +1983,22 @@ export const assistantPendingItems = pgTable("assistant_pending_items", {
 
 // Resumo do dia do Combustível: textos da mensagem do WhatsApp por frente (o ADMIN edita no modal).
 // Aceitam {frente}, {combustivel} e {ano}. Frente sem linha aqui usa o padrão de lib/fuel-daily-rules.ts.
+// Reavaliação do custo do combustível em estoque (lib/fuel-rules.ts:computeFuelCosts): a partir de
+// effectiveDate (inclusive) o custo médio do estoque passa a ser unitCost. Saídas anteriores não
+// mudam; entradas seguintes entram na média normalmente. Frente/local vazios = todos os estoques do
+// combustível que existirem naquela data.
+export const fuelStockValuations = pgTable("fuel_stock_valuations", {
+  id: serial("id").primaryKey(),
+  fuelTypeId: integer("fuel_type_id").notNull().references(() => fuelTypes.id),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  stockLocation: text("stock_location", { enum: ["FRENTE", "PORTO"] }),
+  effectiveDate: text("effective_date").notNull(),
+  unitCost: doublePrecision("unit_cost").notNull(),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("fuel_stock_valuations_fuel_idx").on(table.fuelTypeId)]);
+
 export const fuelDailySettings = pgTable("fuel_daily_settings", {
   serviceFrontId: integer("service_front_id").primaryKey().references(() => serviceFronts.id),
   greeting: text("greeting").notNull().default("Bom dia a todos!"),

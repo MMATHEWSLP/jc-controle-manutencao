@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { auditLogs, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles } from "../db/schema";
 import type { SessionUser } from "./auth";
 import { computeFuelCosts } from "./fuel-rules";
+import { loadFuelValuations } from "./fuel-valuations";
 import {
   averageConsumption, computeConsumption, CONSUMPTION_UNITS, isOutlier, METER_LABELS, METER_PHRASES, THIRD_PARTY_KIND_LABELS,
   isFuelPurpose, purposeText,
@@ -442,7 +443,7 @@ export async function thirdPartySummary(db: Db, scopeFronts: number[], filters: 
         destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType,
         movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity, unitPrice: fuelMovements.unitPrice,
       }).from(fuelMovements).where(isNull(fuelMovements.deletedAt));
-      return computeFuelCosts(rows);
+      return computeFuelCosts(rows, await loadFuelValuations(db));
     })(),
   ]);
   const mapa = new Map<number, Linha>();

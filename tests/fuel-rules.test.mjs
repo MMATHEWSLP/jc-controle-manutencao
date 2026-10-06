@@ -130,6 +130,32 @@ test("custo das saídas pelo custo médio ponderado do estoque de origem", () =>
   assert.deepEqual(costs.get(6), { unitCost: null, cost: null }); // estoque sem valor informado
 });
 
+test("reavaliação do estoque: vale da data em diante, passado intacto, entradas futuras entram na média", () => {
+  const ledger = [
+    { id: 1, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-01", quantity: 1000, unitPrice: 5.7 },
+    { id: 2, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-09-01", quantity: 1000 }, // sem valor
+    { id: 3, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-10-05", quantity: 100 },
+    { id: 4, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-10-06", quantity: 100 },
+    { id: 5, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: 2, destinationLocation: "FRENTE", fuelTypeId: DIESEL, movementType: "TRANSFERENCIA", movementDate: "2026-10-06", quantity: 300 },
+    { id: 6, serviceFrontId: 2, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-10-07", quantity: 50 },
+    // Estoque da frente 1 antes da entrada: 2000 − 100 − 100 − 300 = 1500 L a 6,38.
+    { id: 7, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "ENTRADA", movementDate: "2026-10-08", quantity: 500, unitPrice: 6.5 },
+    { id: 8, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: DIESEL, movementType: "SAIDA", movementDate: "2026-10-09", quantity: 10 },
+    { id: 9, serviceFrontId: 1, stockLocation: "FRENTE", destinationFrontId: null, fuelTypeId: 99, movementType: "SAIDA", movementDate: "2026-10-09", quantity: 10 },
+  ];
+  const valuations = [{ id: 1, fuelTypeId: DIESEL, serviceFrontId: null, stockLocation: null, effectiveDate: "2026-10-06", unitCost: 6.38 }];
+  const before = computeFuelCosts(ledger);
+  const costs = computeFuelCosts(ledger, valuations);
+  assert.deepEqual(costs.get(3), before.get(3)); // saída antes da data: não muda
+  assert.deepEqual(costs.get(3), { unitCost: 5.7, cost: 570 });
+  assert.deepEqual(costs.get(4), { unitCost: 6.38, cost: 638 });
+  assert.equal(costs.get(5).unitCost, 6.38);
+  assert.equal(costs.get(6).unitCost, 6.38); // a outra frente recebeu pela transferência a 6,38
+  // (1500 × 6,38 + 500 × 6,5) / 2000 = 6,41
+  assert.equal(Math.round(costs.get(8).unitCost * 10000) / 10000, 6.41);
+  assert.deepEqual(costs.get(9), { unitCost: null, cost: null }); // outro combustível não muda
+});
+
 test("lançamento importado do histórico: correção sem os campos obrigatórios dos lançamentos novos", () => {
   const historical = { historical: true };
   // Saída sem veículo e sem responsável (veículo a identificar).
