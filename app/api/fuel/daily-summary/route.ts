@@ -37,7 +37,8 @@ export async function GET(request: Request) {
     const totalCost = Math.round(priced.reduce((sum, row) => sum + exitCost(row.id)!, 0) * 100) / 100;
     const pricedLiters = priced.reduce((sum, row) => sum + row.liters, 0);
     const withoutPrice = summary.exits.length - priced.length;
-    const brl = (value: number, digits = 2) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: digits, maximumFractionDigits: digits });
+    // R$ com 2 casas; o valor do litro aceita até 4 (6,38 · 6,4125).
+    const brl = (value: number, maxDigits = 2) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: maxDigits });
     const cards = [
       { label: "Saldo anterior", value: litersMessage(t.previous), tone: "gray" as const },
       ...(t.entries > 0 ? [{ label: "Entrada", value: litersMessage(t.entries), tone: "green" as const }] : []),
@@ -57,8 +58,9 @@ export async function GET(request: Request) {
         direction: transfer.direction === "ENVIADA" ? "Enviada" : "Recebida", liters: litersMessage(transfer.liters),
         place: `${transfer.direction === "ENVIADA" ? "para" : "de"} ${transfer.place}`, responsible: transfer.responsible ?? "—", notes: transfer.notes ?? "—",
       })),
-      rows: summary.exits.map((row) => [row.equipment, row.plate ?? "—", DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
-      totalLiters: litersMessage(summary.exitsLiters), totalValue: priced.length ? brl(totalCost) : undefined, count: summary.exits.length,
+      rows: summary.exits.map((row) => [row.equipment, DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), costs.get(row.id)?.unitCost == null ? "—" : brl(costs.get(row.id)!.unitCost!, 4), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
+      totalLiters: litersMessage(summary.exitsLiters), totalValue: priced.length ? brl(totalCost) : undefined,
+      averagePrice: priced.length ? brl(totalCost / pricedLiters, 4) : undefined, withoutPrice, count: summary.exits.length,
     });
     const name = `resumo-combustivel-${summary.front.name.replace(/[^\w-]+/g, "-")}-${date}.pdf`;
     return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "private, no-store" } });

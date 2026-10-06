@@ -11,6 +11,14 @@ on:
         description: "Importar de verdade o Controle Diário de setembro/2026 (sem marcar, só mostra o que faria)"
         type: boolean
         default: false
+      valor_litro_diesel:
+        description: "Valor do litro (R$) para as entradas de diesel SEM valor, ex.: 6,38 (vazio = não roda)"
+        type: string
+        default: ""
+      confirmar_valor_diesel:
+        description: "Gravar de verdade o valor do litro do diesel (sem marcar, só mostra o que faria)"
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -70,3 +78,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node corrigir-historico-data-generica.mjs ${{ github.event.inputs.confirmar_data_generica == 'true' && '--confirmar' || '' }}
+
+      - name: Valor do litro do diesel nas entradas sem valor
+        if: github.event.inputs.valor_litro_diesel != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VALOR_LITRO: ${{ github.event.inputs.valor_litro_diesel }}
+        run: node scripts/valor-diesel-estoque.mjs "--valor=$VALOR_LITRO" ${{ github.event.inputs.confirmar_valor_diesel == 'true' && '--confirmar' || '' }}
