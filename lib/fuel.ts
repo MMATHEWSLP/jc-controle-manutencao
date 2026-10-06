@@ -6,6 +6,7 @@ import { employees, equipment, fuelMovements, fuelTypes, serviceFronts, thirdPar
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { consumptionByMovement } from "./third-parties";
+import { loadFuelValuations } from "./fuel-valuations";
 import { computeFuelBalances, computeFuelCosts, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -209,15 +210,15 @@ export async function fuelHistorySummary(db: Db, scopeFronts: number[], filters:
   };
 }
 
-// Custo médio ponderado de todos os estoques (lib/fuel-rules.ts:computeFuelCosts). Replaya o
-// razão inteiro porque transferências levam custo de uma frente para outra.
+// Custo médio ponderado de todos os estoques (lib/fuel-rules.ts:computeFuelCosts), com as
+// reavaliações do estoque. Replaya o razão inteiro porque transferências levam custo de uma frente para outra.
 export async function fuelCosts(db: Db) {
   const rows = await db.select({
     id: fuelMovements.id, serviceFrontId: fuelMovements.serviceFrontId, stockLocation: fuelMovements.stockLocation, destinationFrontId: fuelMovements.destinationFrontId,
     destinationLocation: fuelMovements.destinationLocation, fuelTypeId: fuelMovements.fuelTypeId, movementType: fuelMovements.movementType,
     movementDate: fuelMovements.movementDate, quantity: fuelMovements.quantity, unitPrice: fuelMovements.unitPrice,
   }).from(fuelMovements).where(isNull(fuelMovements.deletedAt));
-  return computeFuelCosts(rows);
+  return computeFuelCosts(rows, await loadFuelValuations(db));
 }
 
 // Responsável escolhido na lista de Funcionários: grava o id e usa o nome do cadastro. Sem id,

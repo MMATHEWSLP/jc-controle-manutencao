@@ -179,9 +179,14 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
 // ---------------------------------------------------------------------------
 export type CostMovement = LedgerMovement & { id: number; unitPrice?: number | null };
 export type FuelCost = { unitCost: number | null; cost: number | null };
+// Reavaliação (fuel_stock_valuations): no início de effectiveDate o custo médio dos estoques do
+// combustível vira unitCost (frente/local nulos = todos os estoques existentes). Não muda o custo de
+// nada antes dessa data; as entradas seguintes entram na média a partir desse valor.
+export type FuelValuation = { id: number; fuelTypeId: number; serviceFrontId: number | null; stockLocation: FuelLocation | null; effectiveDate: string; unitCost: number };
 
-export function computeFuelCosts(movements: CostMovement[]) {
+export function computeFuelCosts(movements: CostMovement[], valuations: FuelValuation[] = []) {
   const ordered = [...movements].sort((a, b) => a.movementDate.localeCompare(b.movementDate) || a.id - b.id);
+  const pending = [...valuations].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.id - b.id);
   const stocks = new Map<string, { quantity: number; average: number | null }>();
   const stock = (frontId: number, location: FuelLocation, fuelTypeId: number) => {
     const key = `${frontId}:${location}:${fuelTypeId}`;
@@ -198,7 +203,18 @@ export function computeFuelCosts(movements: CostMovement[]) {
   };
   const costs = new Map<number, FuelCost>();
   const money = (value: number) => Math.round(value * 100) / 100;
+  const revalue = (valuation: FuelValuation) => {
+    if (valuation.serviceFrontId !== null) for (const location of valuation.stockLocation ? [valuation.stockLocation] : (["FRENTE", "PORTO"] as FuelLocation[])) stock(valuation.serviceFrontId, location, valuation.fuelTypeId);
+    for (const [key, value] of stocks) {
+      const [frontId, location, fuelTypeId] = key.split(":");
+      if (Number(fuelTypeId) !== valuation.fuelTypeId) continue;
+      if (valuation.serviceFrontId !== null && Number(frontId) !== valuation.serviceFrontId) continue;
+      if (valuation.stockLocation !== null && location !== valuation.stockLocation) continue;
+      value.average = valuation.unitCost;
+    }
+  };
   for (const movement of ordered) {
+    while (pending.length && pending[0].effectiveDate <= movement.movementDate) revalue(pending.shift()!);
     const origin = stock(movement.serviceFrontId, movement.stockLocation ?? "FRENTE", movement.fuelTypeId);
     if (movement.movementType === "ENTRADA") {
       const price = movement.unitPrice != null && movement.unitPrice > 0 ? movement.unitPrice : null;
