@@ -454,17 +454,24 @@ export function createEmployeeHistoryPdf(input:EmployeeHistoryPdfInput){
 // TODAS as saídas do dia com o valor (custo médio do estoque × litros), com total no fim.
 export type FuelDailyPdfTransfer={direction:string;liters:string;place:string;responsible:string;notes:string};
 export type FuelDailyPdfInput={frontName:string;date:string;fuelName:string;locationLabel:string;generatedAt:string;generatedBy:string;
-  cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray";detail?:string}>;transfers?:FuelDailyPdfTransfer[];rows:string[][];totalLiters:string;totalValue?:string;count:number};
+  cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray";detail?:string}>;transfers?:FuelDailyPdfTransfer[];rows:string[][];totalLiters:string;
+  totalValue?:string;averagePrice?:string;withoutPrice?:number;count:number};
 export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
   // Bloco das transferências (página 1, abaixo dos cards): título + uma linha por transferência (até 8).
   const transfers=(input.transfers??[]).slice(0,8);const hiddenTransfers=(input.transfers??[]).length-transfers.length;
   const transferBlock=transfers.length?16+(transfers.length+(hiddenTransfers>0?1:0))*13:0;
-  const columns=[{x:34,label:"EQUIPAMENTO",max:22},{x:150,label:"TIPO",max:10},{x:204,label:"EMPRESA",max:24},{x:346,label:"LITROS",max:11,align:"right" as const},
-    {x:398,label:"VALOR",max:14,align:"right" as const},{x:470,label:"LEITURA",max:14},{x:548,label:"RESPONSÁVEL",max:26},{x:684,label:"OBSERVAÇÃO",max:30}];
+  // Colunas da linha: equipamento, tipo, empresa, litros, R$/L, valor, leitura, responsável, observação.
+  const columns=[{x:34,label:"EQUIPAMENTO",max:20},{x:138,label:"TIPO",max:9},{x:184,label:"EMPRESA",max:22},{x:314,label:"LITROS",max:11,align:"right" as const},
+    {x:362,label:"R$/L",max:10,align:"right" as const},{x:414,label:"VALOR",max:14,align:"right" as const},{x:486,label:"LEITURA",max:13},{x:556,label:"RESPONSÁVEL",max:24},{x:684,label:"OBSERVAÇÃO",max:30}];
   const firstPage=Math.max(1,14-Math.ceil(transferBlock/22));const perPage=19;
-  const pageCount=Math.max(1,1+Math.ceil(Math.max(0,input.rows.length-firstPage)/perPage));
-  const pages=Array.from({length:pageCount},(_,pageIndex)=>{
-    const start=pageIndex===0?0:firstPage+(pageIndex-1)*perPage;const rows=input.rows.slice(start,start+(pageIndex===0?firstPage:perPage));let content="";
+  // Fatias por página; o fechamento (linha TOTAL + valor acumulado) ocupa ~70pt abaixo da última
+  // linha e não pode passar do rodapé (y 45) — sem espaço, vai para uma página só dele.
+  const slices:string[][][]=[input.rows.slice(0,firstPage)];
+  for(let start=firstPage;start<input.rows.length;start+=perPage)slices.push(input.rows.slice(start,start+perPage));
+  const lastHeaderY=slices.length===1?410-transferBlock:470;
+  if(slices[slices.length-1].length>Math.floor((lastHeaderY-117)/22))slices.push([]);
+  const pageCount=slices.length;
+  const pages=slices.map((rows,pageIndex)=>{let content="";
     content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
     content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · CONTROLE DE COMBUSTÍVEL",true,"0.08 0.49 0.35");content+=text(130,548,16,"RESUMO DO DIA — SAÍDAS DE COMBUSTÍVEL",true,"0.08 0.25 0.36");
     content+=text(130,531,8.5,truncate(`${input.frontName}  ·  ${input.date}  ·  ${input.fuelName}  ·  Estoque: ${input.locationLabel}`,95),true,"0.16 0.48 0.66");
@@ -499,8 +506,15 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
     if(pageIndex===pageCount-1){
       const y=headerY-16-(rows.length*22)-10;
       content+=`0.90 0.95 0.93 rg 28 ${y-8} 786 24 re f\n`;
-      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(346,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
-      if(input.totalValue)content+=text(398,y,8.5,input.totalValue,true,"0.08 0.38 0.29");
+      content+=text(34,y,8.5,`TOTAL: ${input.count} abastecimento(s)`,true,"0.08 0.38 0.29");content+=text(314,y,8.5,`${input.totalLiters}`,true,"0.08 0.38 0.29");
+      if(input.averagePrice)content+=text(362,y,8.5,input.averagePrice,true,"0.08 0.38 0.29");
+      if(input.totalValue)content+=text(414,y,8.5,input.totalValue,true,"0.08 0.38 0.29");
+      // Fechamento: valor acumulado de todas as saídas do dia, em destaque.
+      const box=y-46;
+      content+=`0.08 0.38 0.29 rg 28 ${box} 786 30 re f\n`;
+      content+=text(40,box+11,10,"VALOR TOTAL ACUMULADO DAS SAÍDAS",true,"1 1 1");
+      content+=text(300,box+11,7.5,truncate(`${input.count} saída(s) · ${input.totalLiters}${input.averagePrice?` · média ${input.averagePrice}/L`:""}${input.withoutPrice?` · ${input.withoutPrice} sem valor (fora do total)`:""}`,80),false,"1 1 1");
+      content+=text(640,box+10,13,input.totalValue??"sem valor",true,"1 1 1");
     }
     content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Mesma consulta da mensagem do WhatsApp. Saídas = frota + terceiros + prestadores do estoque escolhido. Valor = custo médio do diesel no estoque (entradas com R$/L) × litros.",false,"0.42 0.51 0.58");
     return content;
