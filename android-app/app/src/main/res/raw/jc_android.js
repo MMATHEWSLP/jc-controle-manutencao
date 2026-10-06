@@ -15,7 +15,7 @@
   var revokeURL = URL.revokeObjectURL;
   URL.createObjectURL = function (obj) {
     var url = createURL.call(URL, obj);
-    try { if (obj instanceof Blob) blobs[url] = obj; } catch (e) { /* ignora */ }
+    if (obj instanceof Blob) blobs[url] = obj;
     return url;
   };
   // O site costuma revogar logo depois do clique: espera o app terminar de ler.

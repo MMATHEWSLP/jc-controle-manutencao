@@ -13,7 +13,7 @@ import java.io.File
 
 /**
  * Campos de arquivo do site (<input type="file">): fotos do comboio, checklist e fichas, e planilhas.
- *  - accept="image/*" capture → abre a câmera direto;
+ *  - accept de imagem com capture → abre a câmera direto;
  *  - só imagens → pergunta "Tirar foto" ou "Escolher da galeria";
  *  - planilhas/outros → seletor de arquivos do Android.
  * A permissão da câmera é pedida só na primeira vez que for usada.
