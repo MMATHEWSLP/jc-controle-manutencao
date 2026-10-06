@@ -1,0 +1,44 @@
+import { assertSameOrigin, authorize } from "../../../../lib/auth";
+import { approveConvoyBatch, ConvoyError, convoySettings, listConvoyRecords, type ConvoyListFilters } from "../../../../lib/convoy";
+import { getDb } from "../../../../db";
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const STATUSES = ["ABERTOS", "TODOS", "PENDENTE", "APROVADO", "REJEITADO", "CORRECAO"];
+
+// Aba "Aprovação do comboio": lista com as etiquetas (SEM FOTO, leitura menor, salto alto,
+// litragem alta, foto diverge), leitura digitada × última leitura e consumo estimado.
+export async function GET(request: Request) {
+  const auth = await authorize(request, "fuel.convoy_approve");
+  if (auth.response) return auth.response;
+  try {
+    const params = new URL(request.url).searchParams;
+    const status = STATUSES.includes(params.get("status") ?? "") ? params.get("status") as ConvoyListFilters["status"] : "ABERTOS";
+    const filters: ConvoyListFilters = {
+      status, from: DATE.test(params.get("from") ?? "") ? params.get("from") : null, to: DATE.test(params.get("to") ?? "") ? params.get("to") : null,
+      frontId: Number(params.get("frontId")) || null, id: Number(params.get("id")) || null,
+    };
+    const [records, settings] = await Promise.all([listConvoyRecords(auth.user!, filters), convoySettings(await getDb())]);
+    return Response.json({ records, settings, canConfigure: auth.user!.profile === "ADMIN" });
+  } catch (error) {
+    if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });
+    console.error("[convoy.list]", error);
+    return Response.json({ error: "Não foi possível carregar os abastecimentos do comboio." }, { status: 500 });
+  }
+}
+
+// Aprovar em lote (só itens sem etiqueta de alerta).
+export async function POST(request: Request) {
+  if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
+  const auth = await authorize(request, "fuel.convoy_approve");
+  if (auth.response) return auth.response;
+  try {
+    const body = (await request.json()) as { action?: string; ids?: unknown };
+    if (body.action !== "approve_batch" || !Array.isArray(body.ids)) return Response.json({ error: "Pedido inválido." }, { status: 400 });
+    const ids = [...new Set(body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 100);
+    return Response.json(await approveConvoyBatch(auth.user!, ids));
+  } catch (error) {
+    if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });
+    console.error("[convoy.batch]", error);
+    return Response.json({ error: "Não foi possível aprovar agora." }, { status: 500 });
+  }
+}

@@ -1,0 +1,98 @@
+/* Abastecimentos do comboio (app de campo) e Aprovação do comboio (Combustível). */
+.convoy-app{display:grid;gap:12px;max-width:760px;margin:0 auto}
+.convoy-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px}
+.convoy-head h1{margin:2px 0;font-size:24px}.convoy-head span{color:var(--muted);font-size:12px}
+.convoy-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.convoy-online{padding:6px 10px;border-radius:999px;font-size:13px}
+.convoy-online.on{background:#e3f5ec;color:#11724f}.convoy-online.off{background:#fde8e8;color:#a3262c}
+.convoy-pending{padding:6px 10px;border-radius:999px;background:#fff3d6;color:#8a5a00;font-size:13px}
+.convoy-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.convoy-tabs button{min-height:52px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:16px;font-weight:800;color:var(--ink);cursor:pointer}
+.convoy-tabs button.active{border-color:#16835f;background:#16835f;color:#fff}
+.convoy-form,.convoy-list{display:grid;gap:14px}
+.convoy-card{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.convoy-field{display:grid;gap:6px;font-size:14px;font-weight:800;color:var(--ink)}
+.convoy-field>span{font-size:14px}
+.convoy-field small{color:var(--muted);font-weight:600;font-size:13px}
+.convoy-big,.convoy-field input,.convoy-field textarea{min-height:56px;font-size:20px;padding:10px 14px;border-radius:12px}
+.convoy-field textarea{min-height:64px;font-size:16px}
+.convoy-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.convoy-options{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.convoy-options button{display:grid;width:100%;min-height:58px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left;color:var(--ink);cursor:pointer}
+.convoy-options strong{font-size:18px}.convoy-options small{color:var(--muted);font-size:13px}
+.convoy-empty{color:var(--muted);font-size:14px;padding:8px}
+.convoy-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:60px;padding:10px 14px;border:2px solid #16835f;border-radius:12px;background:#f1fbf6}
+.convoy-chosen strong{display:block;font-size:20px}.convoy-chosen small{color:var(--muted);font-size:13px}
+.convoy-chosen button{min-height:44px}
+.convoy-suggestion{justify-self:start;min-height:46px;padding:8px 14px;border:1px dashed #16835f;border-radius:999px;background:#f1fbf6;color:#11724f;font-size:15px;font-weight:800;cursor:pointer}
+.convoy-camera{width:100%;min-height:72px;border:2px dashed #7f97a6;border-radius:14px;background:var(--surface);font-size:19px;font-weight:800;color:var(--ink);cursor:pointer}
+.convoy-camera.required{border-color:#16835f;color:#11724f}
+.convoy-photo-preview{display:flex;gap:12px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:12px}
+.convoy-photo-preview img{width:132px;height:100px;object-fit:cover;border-radius:10px}
+.convoy-photo-preview div{display:grid;gap:4px}.convoy-photo-preview small{color:var(--muted)}
+.convoy-check{display:flex;align-items:center;gap:12px;min-height:54px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;font-size:16px;font-weight:800}
+.convoy-check input{width:26px;height:26px}
+.convoy-reasons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.convoy-reasons button{min-height:54px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:15px;font-weight:800;color:var(--ink);cursor:pointer}
+.convoy-reasons button.active{border-color:#b26b00;background:#fff3d6;color:#7a4a00}
+.convoy-reasons input,.convoy-reasons small{grid-column:1/-1}.convoy-reasons small{color:var(--muted)}
+.convoy-when{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;background:#eef4f7;font-size:15px}
+.convoy-warnings{display:grid;gap:6px;margin:0;padding:12px 14px;list-style:none;border:1px solid #f0c98f;border-radius:12px;background:#fffaf0;color:#7a4a00;font-size:15px;font-weight:700}
+.convoy-warnings .hint{color:var(--muted);font-weight:600;font-size:13px}
+.convoy-save{min-height:64px;font-size:20px;border-radius:14px}
+.convoy-saved{padding:14px;border-radius:12px;background:#e3f5ec;color:#11724f;font-size:16px;font-weight:800}
+.convoy-error{margin:0;color:#a3262c;font-size:14px;font-weight:700}
+.convoy-warning{margin:0;color:#7a4a00;font-size:14px;font-weight:700}
+.convoy-footnote{margin:0;color:var(--muted);font-size:13px;text-align:center}
+.convoy-list h3{margin:6px 0 0;font-size:15px}.convoy-list h3 small{color:var(--muted);font-weight:600}
+.convoy-item{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line);border-left:5px solid #7f97a6;border-radius:12px;background:var(--surface)}
+.convoy-item.ok{border-left-color:#16835f}.convoy-item.error{border-left-color:#c83e43}.convoy-item.warning{border-left-color:#d08a00}.convoy-item.waiting{border-left-color:#1f6b9c}
+.convoy-item header{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.convoy-item p{margin:0;font-size:14px;color:var(--muted)}
+.convoy-item p.convoy-error{color:#a3262c}.convoy-item p.convoy-warning{color:#7a4a00}
+.convoy-badge{padding:4px 9px;border-radius:999px;background:#eef4f7;font-size:12px;font-weight:800;white-space:nowrap}
+.convoy-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.convoy-actions button{min-height:46px}
+.convoy-correction{border-color:#d08a00}
+.field-shell-tabs{display:flex;gap:6px}
+.field-shell-tabs button{min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-weight:800;cursor:pointer}
+.field-shell-tabs button.active{background:#16835f;border-color:#16835f;color:#fff}
+@media (max-width:560px){.convoy-row{grid-template-columns:1fr}.convoy-head h1{font-size:22px}}
+
+/* Botões (as classes primary/secondary do sistema só dão a cor; o tamanho vem daqui). */
+.convoy-app button.primary,.convoy-app button.secondary,.convoy-app .danger-action,
+.convoy-approval button.primary,.convoy-approval button.secondary,.convoy-approval .danger-action,
+.convoy-review button.primary,.convoy-review button.secondary,.convoy-review .danger-action,.convoy-zoom-controls>*{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
+.convoy-app button.primary,.convoy-app button.secondary,.convoy-app .danger-action{min-height:46px;padding:0 16px;font-size:15px;border-radius:10px}
+.convoy-app .convoy-save{min-height:64px;font-size:20px;border-radius:14px}
+.convoy-approval button:disabled,.convoy-review button:disabled{opacity:.55;cursor:not-allowed}
+.convoy-review .danger-action,.convoy-approval .danger-action,.convoy-app .danger-action{background:#fff;color:#a3262c;border:1px solid #e5b3b6}
+.convoy-approval .main-tabs button{min-height:38px}
+
+/* Aprovação do comboio */
+.convoy-approval{display:grid;gap:12px}
+.convoy-approval-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.convoy-approval-toolbar label{display:grid;gap:4px;font-size:12px;font-weight:700}
+.convoy-approval-table td{vertical-align:top}
+.convoy-thumb{width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:#eef4f7}
+.convoy-tag{display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#fff3d6;color:#7a4a00}
+.convoy-tag.SEM_FOTO{background:#fde8e8;color:#a3262c}.convoy-tag.FOTO_DIVERGE{background:#fde8e8;color:#a3262c}
+.convoy-status-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#eef4f7}
+.convoy-status-pill.APROVADO{background:#e3f5ec;color:#11724f}.convoy-status-pill.REJEITADO{background:#fde8e8;color:#a3262c}.convoy-status-pill.CORRECAO{background:#fff3d6;color:#7a4a00}
+.convoy-review{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+.convoy-zoom{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#0f1a22;min-height:320px;touch-action:none}
+.convoy-zoom img{position:absolute;top:0;left:0;max-width:none;transform-origin:0 0;user-select:none;-webkit-user-drag:none;cursor:grab}
+.convoy-zoom-controls{display:flex;gap:6px;margin-top:6px}
+.convoy-review-data{display:grid;gap:10px;align-content:start}
+.convoy-typed{padding:10px 12px;border-radius:10px;background:#eef4f7;font-size:22px;font-weight:800}
+.convoy-typed small{display:block;color:var(--muted);font-size:12px;font-weight:700}
+.convoy-review-data label{display:grid;gap:4px;font-size:12px;font-weight:700}
+.convoy-corrections{margin:0;padding-left:18px;font-size:12px;color:var(--muted)}
+.fuel-balance-forecast{display:block;margin-top:4px;color:#8a5a00;font-size:12px;font-weight:700}
+.fuel-convoy-cam{border:0;background:none;cursor:pointer;font-size:15px;padding:0 4px}
+.fuel-daily-convoy-pending{padding:8px 12px;border:1px solid #f0c98f;border-radius:9px;background:#fffaf0;color:#7a4a00;font-size:13px;font-weight:700}
+@media (max-width:900px){.convoy-review{grid-template-columns:1fr}}
+html[data-theme="dark"] .convoy-chosen,html[data-theme="dark"] .convoy-suggestion{background:#16342a}
+html[data-theme="dark"] .convoy-when,html[data-theme="dark"] .convoy-typed,html[data-theme="dark"] .convoy-badge{background:#1d2b35}
+html[data-theme="dark"] .convoy-warnings,html[data-theme="dark"] .fuel-daily-convoy-pending{background:#2a2419;border-color:#5a4a2a;color:#f3c77a}

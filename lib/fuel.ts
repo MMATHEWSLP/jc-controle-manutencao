@@ -7,6 +7,7 @@ import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
 import { consumptionByMovement } from "./third-parties";
 import { loadFuelValuations } from "./fuel-valuations";
+import { convoyInfoForMovements } from "./convoy-history";
 import { computeFuelBalances, computeFuelCosts, FUEL_LOCATION_LABELS, fuelMovementLabel, isFuelLocation, isFuelMovementType, type FuelLocation, type FuelMovementType } from "./fuel-rules";
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -148,10 +149,12 @@ export async function fuelHistory(db: Db, scopeFronts: number[], filters: FuelFi
     db.select({ total: sql<number>`count(*)::int` }).from(fuelMovements).leftJoin(equipment, eq(fuelMovements.equipmentId, equipment.id)).where(where),
   ]);
   // Consumo dos abastecimentos de veículos de terceiros (calculado com todo o histórico do veículo).
-  const [costs, consumption] = await Promise.all([fuelCosts(db), consumptionByMovement(db, rows.flatMap((row) => (row.thirdPartyVehicleId ? [row.thirdPartyVehicleId] : [])))]);
+  // Saídas aprovadas do comboio: foto (ícone de câmera), comboio, quem registrou e quem aprovou.
+  const [costs, consumption, convoy] = await Promise.all([fuelCosts(db), consumptionByMovement(db, rows.flatMap((row) => (row.thirdPartyVehicleId ? [row.thirdPartyVehicleId] : []))), convoyInfoForMovements(db, rows.map((row) => row.id))]);
   return {
     rows: rows.map((row) => ({
       ...row,
+      convoy: convoy.get(row.id) ?? null,
       consumption: consumption.get(row.id) ?? null,
       unitCost: costs.get(row.id)?.unitCost ?? null,
       cost: costs.get(row.id)?.cost ?? null,

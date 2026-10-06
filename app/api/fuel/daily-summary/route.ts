@@ -59,6 +59,7 @@ export async function GET(request: Request) {
         place: `${transfer.direction === "ENVIADA" ? "para" : "de"} ${transfer.place}`, responsible: transfer.responsible ?? "—", notes: transfer.notes ?? "—",
       })),
       rows: summary.exits.map((row) => [row.equipment, DAILY_EXIT_KIND_LABELS[row.kind], row.company ?? "—", litersMessage(row.liters), costs.get(row.id)?.unitCost == null ? "—" : brl(costs.get(row.id)!.unitCost!, 4), exitCost(row.id) === null ? "sem valor" : brl(exitCost(row.id)!), reading(row), row.responsible ?? "—", row.notes ?? "—"]),
+      pendingNotice: summary.convoyPending.liters > 0 ? `Comboio: ${litersMessage(summary.convoyPending.liters)} pendentes de aprovação neste dia (${summary.convoyPending.count} registro(s)) — não entram nas saídas nem no saldo.` : null,
       totalLiters: litersMessage(summary.exitsLiters), totalValue: priced.length ? brl(totalCost) : undefined,
       averagePrice: priced.length ? brl(totalCost / pricedLiters, 4) : undefined, withoutPrice, count: summary.exits.length,
     });

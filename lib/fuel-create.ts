@@ -24,8 +24,8 @@ export type FuelCreateOptions = {
   // Importação: lote gravado no lançamento e leitura de terceiro conferida pela data do abastecimento.
   importBatchId?: number | null;
   referenceByDate?: boolean;
-  // "Lançar tudo" do Assistente JC.
-  createdVia?: "ASSISTENTE" | null;
+  // "Lançar tudo" do Assistente JC; aprovação de abastecimento do comboio.
+  createdVia?: "ASSISTENTE" | "COMBOIO" | null;
 };
 
 export type FuelCreateResult = { id: number; duplicate: boolean; message: string; consumption: { value: number; unit: string } | null };
