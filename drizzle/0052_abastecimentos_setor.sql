@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "field_daily_access" boolean DEFAULT true NOT NULL;

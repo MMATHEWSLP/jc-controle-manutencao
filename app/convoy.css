@@ -1,4 +1,4 @@
-/* Abastecimentos do comboio (app de campo) e Aprovação do comboio (Combustível). */
+/* Setor ABASTECIMENTOS: app do motorista do comboio (campo), Aprovação, Motoristas do comboio e Relatório. */
 .convoy-app{display:grid;gap:12px;max-width:760px;margin:0 auto}
 .convoy-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px}
 .convoy-head h1{margin:2px 0;font-size:24px}.convoy-head span{color:var(--muted);font-size:12px}
@@ -96,3 +96,33 @@
 html[data-theme="dark"] .convoy-chosen,html[data-theme="dark"] .convoy-suggestion{background:#16342a}
 html[data-theme="dark"] .convoy-when,html[data-theme="dark"] .convoy-typed,html[data-theme="dark"] .convoy-badge{background:#1d2b35}
 html[data-theme="dark"] .convoy-warnings,html[data-theme="dark"] .fuel-daily-convoy-pending{background:#2a2419;border-color:#5a4a2a;color:#f3c77a}
+
+/* Setor ABASTECIMENTOS (menu principal) */
+.fueling-sector{display:grid;gap:12px}
+.fueling-sector>.secondary-module-nav{border:1px solid var(--line);border-radius:10px}
+.convoy-driver-pick{max-height:300px;overflow:auto}
+.convoy-driver-pick button.active{border:2px solid #16835f;background:#f1fbf6}
+.fleet-modal .convoy-check{font-size:14px;min-height:46px}
+.fleet-modal .convoy-warnings{font-size:13px}
+html[data-theme="dark"] .convoy-driver-pick button.active{background:#16342a}
+
+/* App do motorista: o dia (hoje/ontem) com total, "+ Adicionar" contínuo e dias anteriores */
+.convoy-day-summary{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#123550,#17624f);color:#fff}
+.convoy-day-summary>div:first-child{display:grid;gap:2px}
+.convoy-day-summary span{font-size:13px;font-weight:700;opacity:.85}
+.convoy-day-summary strong{font-size:30px;line-height:1.1}
+.convoy-day-summary small{font-size:13px;opacity:.85}
+.convoy-day-chips{display:flex;flex-wrap:wrap;gap:6px}
+.convoy-day-summary .convoy-badge{background:rgba(255,255,255,.16);color:#fff}
+.convoy-badge.local{background:#fff3d6;color:#8a5a00}.convoy-badge.approved{background:#e3f5ec;color:#11724f}.convoy-badge.rejected{background:#fde8e8;color:#a3262c}
+.convoy-day-summary .convoy-badge.local{background:#fff3d6;color:#8a5a00}.convoy-day-summary .convoy-badge.approved{background:#e3f5ec;color:#11724f}
+.convoy-adding{border:2px solid #16835f}
+.convoy-attention{padding:12px;border:2px solid #d08a00;border-radius:14px;background:#fffaf0}
+.convoy-attention h3{margin:0;color:#7a4a00}
+.convoy-yesterday{padding:12px 14px;border:1px solid #f0c98f;border-radius:12px;background:#fffaf0}
+.convoy-day{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.convoy-day>summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:40px;cursor:pointer;font-size:15px}
+.convoy-day>summary span{color:var(--muted);font-weight:700}
+.convoy-day[open]>summary{margin-bottom:8px}
+html[data-theme="dark"] .convoy-attention,html[data-theme="dark"] .convoy-yesterday{background:#2a2419;border-color:#5a4a2a}
+html[data-theme="dark"] .convoy-attention h3{color:#f3c77a}

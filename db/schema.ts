@@ -74,6 +74,9 @@ export const users = pgTable("users", {
   // depois de aprovados. convoyEquipmentId = comboio que ele dirige (só identificação, sem saldo próprio).
   convoyFuelRegister: boolean("convoy_fuel_register").notNull().default(false),
   convoyEquipmentId: integer("convoy_equipment_id").references((): AnyPgColumn => equipment.id),
+  // Só para perfil CAMPO: faz o Controle Diário. O motorista do comboio cadastrado no setor
+  // Abastecimentos entra só em "Abastecimentos" (false), a menos que também faça o Controle Diário.
+  fieldDailyAccess: boolean("field_daily_access").notNull().default(true),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),

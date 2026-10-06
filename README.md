@@ -59,6 +59,23 @@ npm start
 No primeiro login, use o usuário `mathews` (e-mail `mathews@manutencao.local`)
 com a senha definida em `INITIAL_ADMIN_PASSWORD`.
 
+## Setor ABASTECIMENTOS (comboio)
+
+Menu principal **ABASTECIMENTOS** (fora do Controle Diário), visível para quem aprova
+(`fuel.convoy_approve`) ou cadastra acessos de campo (`daily.field_operators`):
+
+- **Aprovação** (com contador): o que o motorista do comboio lançou fica pendente — não baixa o
+  saldo — até alguém conferir a foto e aprovar; só então vira saída de combustível (Combustível
+  continua mostrando o "Saldo previsto" e o 📷 no Histórico).
+- **Motoristas do comboio**: cadastro de quem lança (da lista de funcionários, de um acesso de
+  campo que já existe ou fora do cadastro), comboio que dirige, PIN (mostrado uma vez) e a opção
+  "Também faz o Controle Diário".
+- **Relatório**: por período, comboio, motorista e equipamento.
+
+O motorista entra em "Sou operador" (nome + PIN) e cai direto em Abastecimentos: "Hoje"/"Ontem"
+com o total de litros do dia, "＋ Adicionar abastecimento" que fica aberto para lançar um
+equipamento atrás do outro (funciona sem internet) e os dias anteriores com a situação de cada um.
+
 ## O que NÃO veio nesta migração (propositalmente)
 
 - Nenhum dado de produção (equipamentos, usuários, manutenções etc.) — o

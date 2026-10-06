@@ -24,9 +24,9 @@ export class FieldOperatorError extends Error {
 type Db = Awaited<ReturnType<typeof getDb>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-// convoyFuelRegister/convoyEquipmentId: "Registra abastecimento (comboio)" e o comboio que dirige
-// (só identificação — o diesel sai do saldo da frente no sistema, depois da aprovação).
-export type FieldOperatorInput = { name: string; jobTitle: string; code: string | null; serviceFrontIds: number[]; active: boolean; convoyFuelRegister: boolean; convoyEquipmentId: number | null };
+// Motorista do comboio (convoyFuelRegister/convoyEquipmentId/fieldDailyAccess) é cadastrado no setor
+// Abastecimentos (lib/convoy-drivers.ts); esta tela (Controle Diário → Funcionários de campo) não mexe nisso.
+export type FieldOperatorInput = { name: string; jobTitle: string; code: string | null; serviceFrontIds: number[]; active: boolean };
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "");
 const ids = (value: unknown) => (Array.isArray(value) ? [...new Set(value.map(Number).filter((id) => Number.isInteger(id) && id > 0))] : []);
@@ -40,9 +40,7 @@ export function parseFieldOperatorInput(body: Record<string, unknown>, creating:
   if (!jobTitle) throw new FieldOperatorError("Informe a função do funcionário.");
   if ((creating || code) && !ACCESS_CODE_PATTERN.test(code)) throw new FieldOperatorError("O código deve ter de 4 a 8 números.");
   if (!serviceFrontIds.length) throw new FieldOperatorError("Selecione pelo menos uma frente de serviço.");
-  const convoyFuelRegister = body.convoyFuelRegister === true;
-  const convoyEquipmentId = convoyFuelRegister ? Number(body.convoyEquipmentId) || null : null;
-  return { name, jobTitle, code: code || null, serviceFrontIds, active: body.active !== false, convoyFuelRegister, convoyEquipmentId };
+  return { name, jobTitle, code: code || null, serviceFrontIds, active: body.active !== false };
 }
 
 function assertFronts(actor: SessionUser, frontIds: number[]) {
@@ -56,7 +54,7 @@ export async function listFieldOperators(actor: SessionUser) {
   const rows = await db.select({
     id: users.id, name: users.name, jobTitle: users.jobTitle, status: users.status, serviceFrontId: users.serviceFrontId, lastAccessAt: users.lastAccessAt,
     employeeId: users.employeeId, origin: users.fieldAccessOrigin, registration: employees.registration, employeeStatus: employees.status, employeeName: employees.name,
-    convoyFuelRegister: users.convoyFuelRegister, convoyEquipmentId: users.convoyEquipmentId, convoyPrefix: equipment.prefix,
+    convoyFuelRegister: users.convoyFuelRegister, convoyEquipmentId: users.convoyEquipmentId, convoyPrefix: equipment.prefix, fieldDailyAccess: users.fieldDailyAccess,
   }).from(users).leftJoin(employees, eq(employees.id, users.employeeId)).leftJoin(equipment, eq(equipment.id, users.convoyEquipmentId)).where(eq(users.role, "CAMPO")).orderBy(asc(users.name));
   const links = rows.length ? await db.select().from(userServiceFronts).where(inArray(userServiceFronts.userId, rows.map((row) => row.id))) : [];
   const fronts = frentesVisiveis(actor);
@@ -65,12 +63,12 @@ export async function listFieldOperators(actor: SessionUser) {
     return {
       id: row.id, name: row.name, jobTitle: row.jobTitle, active: row.status === "ACTIVE", serviceFrontIds: frontIds, lastAccessAt: row.lastAccessAt,
       employeeId: row.employeeId, registration: row.registration, employeeStatus: row.employeeStatus, origin: row.origin ?? "FUNCAO",
-      convoyFuelRegister: row.convoyFuelRegister, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix,
+      convoyFuelRegister: row.convoyFuelRegister, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix, fieldDailyAccess: row.fieldDailyAccess,
     };
   }).filter((row) => fronts === "ALL" || row.serviceFrontIds.some((id) => fronts.includes(id)));
 }
 
-async function validateConvoyEquipment(db: Db, equipmentId: number | null) {
+export async function validateConvoyEquipment(db: Db, equipmentId: number | null) {
   if (!equipmentId) return;
   if (!(await db.select({ id: equipment.id }).from(equipment).where(eq(equipment.id, equipmentId)).limit(1))[0]) throw new FieldOperatorError("Comboio não encontrado no cadastro de equipamentos.");
 }
@@ -111,12 +109,7 @@ export async function createFieldOperator(actor: SessionUser, input: FieldOperat
   assertFronts(actor, input.serviceFrontIds);
   const db = await getDb();
   await validateFrontsExist(db, input.serviceFrontIds);
-  await validateConvoyEquipment(db, input.convoyEquipmentId);
-  return db.transaction(async (tx) => {
-    const id = await inserirAcesso(tx, actor, { name: input.name, jobTitle: input.jobTitle, frontIds: input.serviceFrontIds, code: input.code!, employeeId: null, active: input.active, origin: "MANUAL", via: "manual" });
-    if (input.convoyFuelRegister) await tx.update(users).set({ convoyFuelRegister: true, convoyEquipmentId: input.convoyEquipmentId }).where(eq(users.id, id));
-    return id;
-  });
+  return db.transaction((tx) => inserirAcesso(tx, actor, { name: input.name, jobTitle: input.jobTitle, frontIds: input.serviceFrontIds, code: input.code!, employeeId: null, active: input.active, origin: "MANUAL", via: "manual" }));
 }
 
 export async function updateFieldOperator(actor: SessionUser, id: number, input: FieldOperatorInput) {
@@ -130,12 +123,10 @@ export async function updateFieldOperator(actor: SessionUser, id: number, input:
   if (vinculado && input.active && vinculado.status === "DEMITIDO") throw new FieldOperatorError(`${vinculado.name} está demitido no cadastro de Funcionários: o acesso fica inativo.`);
   const name = vinculado?.name ?? input.name;
   const jobTitle = vinculado?.jobTitle ?? input.jobTitle;
-  await validateConvoyEquipment(db, input.convoyEquipmentId);
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.update(users).set({
       name, jobTitle, status: input.active ? "ACTIVE" : "INACTIVE", serviceFrontId: input.serviceFrontIds[0], updatedAt: now,
-      convoyFuelRegister: input.convoyFuelRegister, convoyEquipmentId: input.convoyEquipmentId,
       ...(input.code ? { accessCodeHash: await hashAccessCode(input.code), accessCodeChangedAt: now } : {}),
     }).where(and(eq(users.id, id), eq(users.role, "CAMPO")));
     // Inativar ou trocar o código derruba na hora quem estiver logado com o acesso antigo.
@@ -144,7 +135,7 @@ export async function updateFieldOperator(actor: SessionUser, id: number, input:
     await tx.insert(userServiceFronts).values(input.serviceFrontIds.map((serviceFrontId) => ({ userId: id, serviceFrontId, createdAt: now, updatedAt: now })));
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(id), action: "FUNCIONÁRIO DE CAMPO ALTERADO",
       previousValue: JSON.stringify(current), occurredAt: now,
-      newValue: JSON.stringify({ name, jobTitle, serviceFrontIds: input.serviceFrontIds, active: input.active, codeChanged: Boolean(input.code), convoyFuelRegister: input.convoyFuelRegister, convoyEquipmentId: input.convoyEquipmentId }) });
+      newValue: JSON.stringify({ name, jobTitle, serviceFrontIds: input.serviceFrontIds, active: input.active, codeChanged: Boolean(input.code) }) });
   });
   return { name };
 }
