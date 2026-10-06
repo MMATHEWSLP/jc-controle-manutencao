@@ -13,7 +13,8 @@ type Location = "FRENTE" | "PORTO" | "TODOS";
 type Totals = { previous: number; entries: number; transfersIn: number; transfersOut: number; adjustments: number; consumption: number; final: number };
 type Settings = { greeting: string; title: string; balanceLabel: string; configured: boolean };
 type Exit = { id: number; equipment: string; plate: string | null; kind: "FROTA" | "TERCEIRO" | "PRESTADOR"; company: string | null; liters: number; reading: number | null; readingUnit: "KM" | "HOURS" | null; responsible: string | null; notes: string | null };
-type Result = { date: string; totals: Totals; exits: Exit[]; exitsLiters: number; ledgerBalance: number; message: string; settings: Settings; canEditSettings: boolean; front: Front; fuel: { id: number; name: string } };
+type Transfer = { id: number; direction: "ENVIADA" | "RECEBIDA"; liters: number; place: string; responsible: string | null; notes: string | null };
+type Result = { date: string; totals: Totals; exits: Exit[]; transfers?: Transfer[]; exitsLiters: number; ledgerBalance: number; message: string; settings: Settings; canEditSettings: boolean; front: Front; fuel: { id: number; name: string } };
 
 const LOCATIONS: Array<[Location, string]> = [["FRENTE", "Frente"], ["PORTO", "Porto"], ["TODOS", "Frente + Porto"]];
 const KIND: Record<Exit["kind"], string> = { FROTA: "Frota", TERCEIRO: "Terceiro", PRESTADOR: "Prestador" };
@@ -104,6 +105,12 @@ export default function FuelDailySummaryModal({ today, fronts, fuelTypes, defaul
             <div className={`fuel-daily-cards ${loading ? "loading" : ""}`}>
               {cards.map(([label, value, tone]) => <article key={label} className={tone}><span>{label}</span><strong>{liters(value)}</strong></article>)}
             </div>
+            {(result.transfers ?? []).length > 0 && <ul className="fuel-daily-transfers">
+              {(result.transfers ?? []).map((transfer) => <li key={transfer.id}>
+                <b>Transferência {transfer.direction === "ENVIADA" ? "enviada" : "recebida"}:</b> {liters(transfer.liters)} {transfer.direction === "ENVIADA" ? "para" : "de"} <b>{transfer.place}</b>
+                {transfer.responsible ? <small> · {transfer.responsible}</small> : null}{transfer.notes ? <small> · {transfer.notes}</small> : null}
+              </li>)}
+            </ul>}
             {result.ledgerBalance !== t.final && <div className="fuel-import-note"><p><b>Atenção:</b> o saldo final ({liters(t.final)}) difere do saldo do formulário para esta data ({liters(result.ledgerBalance)}). Avise o administrador.</p></div>}
             <div className="fuel-daily-grid">
               <div className="fuel-daily-message">

@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { getDb } from "../db";
 import { equipment, fuelDailySettings, fuelMovements, fuelTypes, serviceFronts, thirdParties, thirdPartyVehicles } from "../db/schema";
 import { computeFuelBalances } from "./fuel-rules";
-import { DEFAULT_DAILY_SETTINGS, dailyMessage, dailyTotals, type DailyLocation, type DailyMessageSettings, type DailyMovement } from "./fuel-daily-rules";
+import { DEFAULT_DAILY_SETTINGS, dailyMessage, dailyTotals, transferPlace, type DailyLocation, type DailyMessageSettings, type DailyMovement, type DailyTransfer } from "./fuel-daily-rules";
 
 // ---------------------------------------------------------------------------
 // Resumo do dia (Combustível → Histórico → "Resumo do dia"): UMA consulta para a mensagem do
@@ -14,6 +14,8 @@ export type DailyExit = {
   id: number; equipment: string; plate: string | null; kind: "FROTA" | "TERCEIRO" | "PRESTADOR"; company: string | null;
   liters: number; reading: number | null; readingUnit: "KM" | "HOURS" | null; responsible: string | null; notes: string | null; location: "FRENTE" | "PORTO";
 };
+// Transferência do dia com o outro lado já por extenso ("Frente Fazendinha") — mensagem, modal e PDF.
+export type DailyTransferRow = DailyTransfer & { place: string; responsible: string | null; notes: string | null };
 export const DAILY_EXIT_KIND_LABELS: Record<DailyExit["kind"], string> = { FROTA: "Frota", TERCEIRO: "Terceiro", PRESTADOR: "Prestador" };
 
 export async function dailySettings(db: Db, frontId: number): Promise<DailyMessageSettings & { configured: boolean }> {
@@ -65,13 +67,23 @@ export async function fuelDailySummary(db: Db, input: { date: string; frontId: n
     };
   }).sort((a, b) => a.equipment.localeCompare(b.equipment, "pt-BR", { numeric: true, sensitivity: "base" }) || a.id - b.id) : [];
 
+  // Nomes das frentes do outro lado das transferências; responsável e observação de cada uma.
+  const otherFrontIds = [...new Set(totals.transfers.map((transfer) => transfer.frontId))];
+  const frontNames: Record<number, string> = { [front.id]: front.name };
+  if (otherFrontIds.length) for (const row of await db.select({ id: serviceFronts.id, name: serviceFronts.name }).from(serviceFronts).where(inArray(serviceFronts.id, otherFrontIds))) frontNames[row.id] = row.name;
+  const transferInfo = new Map(totals.transferIds.length ? (await db.select({ id: fuelMovements.id, responsible: fuelMovements.responsible, notes: fuelMovements.notes })
+    .from(fuelMovements).where(inArray(fuelMovements.id, totals.transferIds))).map((row) => [row.id, row] as const) : []);
+  const transfers: DailyTransferRow[] = totals.transfers.map((transfer) => ({
+    ...transfer, place: transferPlace(transfer, frontNames), responsible: transferInfo.get(transfer.id)?.responsible ?? null, notes: transferInfo.get(transfer.id)?.notes ?? null,
+  }));
+
   const settings = await dailySettings(db, input.frontId);
   const exitsLiters = Math.round(exits.reduce((sum, row) => sum + row.liters, 0) * 1000) / 1000;
   return {
-    date: input.date, location: input.location, front, fuel, totals, exits, exitsLiters, settings,
+    date: input.date, location: input.location, front, fuel, totals, exits, exitsLiters, transfers, settings,
     // Deve ser sempre igual a totals.final (e a totals.consumption no caso das saídas).
     ledgerBalance: Math.round(ledgerBalance * 1000) / 1000,
-    message: dailyMessage({ settings, frontName: front.name, fuelName: fuel.name, date: input.date, totals }),
+    message: dailyMessage({ settings, frontName: front.name, fuelName: fuel.name, date: input.date, totals, frontNames }),
   };
 }
 export type FuelDailySummary = Awaited<ReturnType<typeof fuelDailySummary>>;

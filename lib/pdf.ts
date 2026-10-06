@@ -450,13 +450,18 @@ export function createEmployeeHistoryPdf(input:EmployeeHistoryPdfInput){
 }
 
 // Resumo do dia do Combustível (Histórico → "Resumo do dia"): cabeçalho com frente/data/combustível,
-// o mesmo resumo da mensagem do WhatsApp e TODAS as saídas do dia, com total no fim.
+// o mesmo resumo da mensagem do WhatsApp, as transferências do dia (para onde foi / de onde veio) e
+// TODAS as saídas do dia, com total no fim.
+export type FuelDailyPdfTransfer={direction:string;liters:string;place:string;responsible:string;notes:string};
 export type FuelDailyPdfInput={frontName:string;date:string;fuelName:string;locationLabel:string;generatedAt:string;generatedBy:string;
-  cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray"}>;rows:string[][];totalLiters:string;count:number};
+  cards:Array<{label:string;value:string;tone:"green"|"red"|"blue"|"gray"}>;transfers?:FuelDailyPdfTransfer[];rows:string[][];totalLiters:string;count:number};
 export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
+  // Bloco das transferências (página 1, abaixo dos cards): título + uma linha por transferência (até 8).
+  const transfers=(input.transfers??[]).slice(0,8);const hiddenTransfers=(input.transfers??[]).length-transfers.length;
+  const transferBlock=transfers.length?16+(transfers.length+(hiddenTransfers>0?1:0))*13:0;
   const columns=[{x:34,label:"EQUIPAMENTO",max:18},{x:128,label:"PLACA",max:10},{x:184,label:"TIPO",max:10},{x:236,label:"EMPRESA",max:22},{x:388,label:"LITROS",max:11,align:"right" as const},
     {x:432,label:"LEITURA",max:14},{x:508,label:"RESPONSÁVEL",max:24},{x:634,label:"OBSERVAÇÃO",max:36}];
-  const firstPage=14;const perPage=19;
+  const firstPage=Math.max(1,14-Math.ceil(transferBlock/22));const perPage=19;
   const pageCount=Math.max(1,1+Math.ceil(Math.max(0,input.rows.length-firstPage)/perPage));
   const pages=Array.from({length:pageCount},(_,pageIndex)=>{
     const start=pageIndex===0?0:firstPage+(pageIndex-1)*perPage;const rows=input.rows.slice(start,start+(pageIndex===0?firstPage:perPage));let content="";
@@ -472,6 +477,15 @@ export function createFuelDailySummaryPdf(input:FuelDailyPdfInput){
       input.cards.forEach((card,index)=>{const x=28+index*(width+8);content+=`0.96 0.975 0.98 rg ${x} 452 ${width} 50 re f\n`;content+=`${toneColor[card.tone]} rg ${x} 452 3 50 re f\n`;
         content+=text(x+11,487,7,card.label.toUpperCase(),true,"0.34 0.47 0.56");content+=text(x+11,463,15,card.value,true,toneColor[card.tone]);});
       headerY=410;
+      if(transfers.length){
+        content+=text(34,438,7,"TRANSFERÊNCIAS DO DIA",true,toneColor.blue);
+        transfers.forEach((transfer,index)=>{const y=425-index*13;
+          content+=text(34,y,7.5,transfer.direction,true,toneColor.blue);content+=text(96,y,7.5,transfer.liters,true);
+          content+=text(160,y,7.5,truncate(transfer.place,46),true);content+=text(400,y,7,truncate(`Resp.: ${transfer.responsible}`,40),false,"0.31 0.46 0.55");
+          content+=text(600,y,7,truncate(`Obs.: ${transfer.notes}`,42),false,"0.31 0.46 0.55");});
+        if(hiddenTransfers>0)content+=text(34,425-transfers.length*13,7,`… e mais ${hiddenTransfers} transferência(s) — veja no Histórico.`,false,"0.31 0.46 0.55");
+        headerY-=transferBlock;
+      }
     }
     content+=`0.06 0.25 0.36 rg 28 ${headerY} 786 22 re f\n`;
     for(const column of columns)content+=text(column.align==="right"?column.x-4:column.x,headerY+8,6.5,column.label,true,"1 1 1");

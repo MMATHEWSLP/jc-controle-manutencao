@@ -17,9 +17,12 @@ export type DailyMovement = {
   id: number; fuelTypeId: number; movementType: FuelMovementType; movementDate: string; quantity: number; serviceFrontId: number; stockLocation: FuelLocation;
   destinationFrontId: number | null; destinationLocation: FuelLocation | null; balanceAdjustment: boolean;
 };
+// Transferência do dia que entra ou sai do estoque escolhido; frontId/location = o outro lado
+// (destino da enviada, origem da recebida).
+export type DailyTransfer = { id: number; direction: "ENVIADA" | "RECEBIDA"; liters: number; frontId: number; location: FuelLocation };
 export type DailyTotals = {
   previous: number; entries: number; transfersIn: number; transfersOut: number; adjustments: number; consumption: number; final: number;
-  exitIds: number[]; entryIds: number[]; transferIds: number[]; adjustmentIds: number[];
+  exitIds: number[]; entryIds: number[]; transferIds: number[]; adjustmentIds: number[]; transfers: DailyTransfer[];
 };
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
@@ -35,7 +38,7 @@ function legs(movement: DailyMovement) {
 }
 
 export function dailyTotals(movements: DailyMovement[], scope: { date: string; frontId: number; location: DailyLocation }): DailyTotals {
-  const totals: DailyTotals = { previous: 0, entries: 0, transfersIn: 0, transfersOut: 0, adjustments: 0, consumption: 0, final: 0, exitIds: [], entryIds: [], transferIds: [], adjustmentIds: [] };
+  const totals: DailyTotals = { previous: 0, entries: 0, transfersIn: 0, transfersOut: 0, adjustments: 0, consumption: 0, final: 0, exitIds: [], entryIds: [], transferIds: [], adjustmentIds: [], transfers: [] };
   const inScope = (leg: { frontId: number; location: FuelLocation }) => leg.frontId === scope.frontId && (scope.location === "TODOS" || leg.location === scope.location);
   for (const movement of movements) {
     if (movement.movementDate > scope.date) continue;
@@ -48,7 +51,12 @@ export function dailyTotals(movements: DailyMovement[], scope: { date: string; f
     if (movement.movementType === "ENTRADA") { totals.entries += delta; totals.entryIds.push(movement.id); }
     else if (movement.movementType === "SAIDA") { totals.consumption -= delta; totals.exitIds.push(movement.id); }
     else if (mine.length === all.length) continue; // transferência interna ao estoque escolhido
-    else { if (delta > 0) totals.transfersIn += delta; else totals.transfersOut -= delta; totals.transferIds.push(movement.id); }
+    else {
+      if (delta > 0) totals.transfersIn += delta; else totals.transfersOut -= delta;
+      totals.transferIds.push(movement.id);
+      const other = all.find((leg) => !inScope(leg))!;
+      totals.transfers.push({ id: movement.id, direction: delta > 0 ? "RECEBIDA" : "ENVIADA", liters: Math.abs(delta), frontId: other.frontId, location: other.location });
+    }
   }
   for (const key of ["previous", "entries", "transfersIn", "transfersOut", "adjustments", "consumption"] as const) totals[key] = round(totals[key]);
   totals.final = round(totals.previous + totals.entries + totals.transfersIn - totals.transfersOut - totals.consumption + totals.adjustments);
@@ -62,6 +70,24 @@ export function litersMessage(value: number) {
 }
 export const brDay = (iso: string) => iso.split("-").reverse().join("/");
 
+// "Frente Fazendinha", "Porto Arapiuns": o outro lado da transferência.
+export function transferPlace(transfer: Pick<DailyTransfer, "frontId" | "location">, frontNames: Record<number, string>) {
+  return `${DAILY_LOCATION_LABELS[transfer.location]} ${frontNames[transfer.frontId] ?? `(frente ${transfer.frontId})`}`;
+}
+
+// "5.000L para Frente Fazendinha" ou, com destinos diferentes, "5.000L (3.000L para Frente X; 2.000L para Porto Y)".
+function transferLine(total: number, transfers: DailyTransfer[], direction: DailyTransfer["direction"], frontNames: Record<number, string>) {
+  const preposition = direction === "ENVIADA" ? "para" : "de";
+  const byPlace = new Map<string, number>();
+  for (const transfer of transfers.filter((item) => item.direction === direction)) {
+    const place = transferPlace(transfer, frontNames);
+    byPlace.set(place, (byPlace.get(place) ?? 0) + transfer.liters);
+  }
+  if (byPlace.size === 0) return litersMessage(total);
+  if (byPlace.size === 1) return `${litersMessage(total)} ${preposition} ${[...byPlace.keys()][0]}`;
+  return `${litersMessage(total)} (${[...byPlace].map(([place, liters]) => `${litersMessage(liters)} ${preposition} ${place}`).join("; ")})`;
+}
+
 // Configuração por frente (ADMIN edita). Aceita {frente}, {combustivel} e {ano}.
 export type DailyMessageSettings = { greeting: string; title: string; balanceLabel: string };
 export const DEFAULT_DAILY_SETTINGS: DailyMessageSettings = { greeting: "Bom dia a todos!", title: "Controle de {combustivel} {frente} {ano}", balanceLabel: "Saldo {frente}" };
@@ -70,13 +96,13 @@ export function fillTemplate(template: string, values: { frente: string; combust
   return template.replace(/\{(frente|combustivel|ano)\}/gi, (_, key: string) => values[key.toLowerCase() as keyof typeof values]).replace(/\s+/g, " ").trim();
 }
 
-export function dailyMessage(input: { settings: DailyMessageSettings; frontName: string; fuelName: string; date: string; totals: DailyTotals }) {
+export function dailyMessage(input: { settings: DailyMessageSettings; frontName: string; fuelName: string; date: string; totals: DailyTotals; frontNames: Record<number, string> }) {
   const values = { frente: input.frontName, combustivel: input.fuelName.replace(/\s+S\d+$/i, ""), ano: input.date.slice(0, 4) };
   const { totals } = input;
   const optional = [
     totals.entries > 0 ? `Entrada: ${litersMessage(totals.entries)}` : null,
-    totals.transfersIn > 0 ? `Transferência recebida: ${litersMessage(totals.transfersIn)}` : null,
-    totals.transfersOut > 0 ? `Transferência enviada: ${litersMessage(totals.transfersOut)}` : null,
+    totals.transfersIn > 0 ? `Transferência recebida: ${transferLine(totals.transfersIn, totals.transfers, "RECEBIDA", input.frontNames)}` : null,
+    totals.transfersOut > 0 ? `Transferência enviada: ${transferLine(totals.transfersOut, totals.transfers, "ENVIADA", input.frontNames)}` : null,
     totals.adjustments !== 0 ? `Ajuste de saldo: ${totals.adjustments > 0 ? "+" : ""}${litersMessage(totals.adjustments)}` : null,
   ].filter((line): line is string => line !== null);
   const header = [fillTemplate(input.settings.greeting, values), fillTemplate(input.settings.title, values)].filter(Boolean).join("\n");
