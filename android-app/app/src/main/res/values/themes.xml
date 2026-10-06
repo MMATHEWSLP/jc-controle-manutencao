@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.JCSistema" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/jc_green</item>
+        <item name="colorPrimaryDark">@color/jc_dark</item>
+        <item name="colorAccent">@color/jc_green</item>
+        <item name="android:windowBackground">@color/white</item>
+    </style>
+
+    <!-- Tela de abertura com a logo da JC. -->
+    <style name="Theme.JCSistema.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.JCSistema</item>
+    </style>
+</resources>

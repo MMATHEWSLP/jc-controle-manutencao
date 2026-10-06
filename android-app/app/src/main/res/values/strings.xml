@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JC Sistema</string>
+
+    <!-- Sem internet -->
+    <string name="offline_title">Sem internet no momento</string>
+    <string name="offline_text">Depois de aberto uma vez com sinal, o JC Sistema funciona sem internet: os lançamentos ficam guardados no celular e são enviados sozinhos quando a conexão voltar.\n\nEste celular ainda não tem o sistema salvo. Assim que a internet voltar, o app recarrega sozinho.</string>
+    <string name="error_title">Não foi possível abrir o sistema</string>
+    <string name="error_text">O celular tem internet, mas o JC Sistema não respondeu. Confira o sinal e toque em "Tentar novamente".</string>
+    <string name="retry">Tentar novamente</string>
+
+    <!-- Sair -->
+    <string name="exit_title">Sair do JC Sistema?</string>
+    <string name="exit_message">Os lançamentos guardados no celular continuam salvos.</string>
+    <string name="exit_yes">Sair</string>
+    <string name="cancel">Cancelar</string>
+
+    <!-- Fotos e arquivos -->
+    <string name="photo_title">Foto</string>
+    <string name="photo_camera">📷  Tirar foto agora</string>
+    <string name="photo_gallery">🖼  Escolher da galeria</string>
+    <string name="camera_denied">Sem permissão da câmera. Escolha a foto da galeria ou libere a câmera nas configurações do app.</string>
+    <string name="file_chooser_failed">Não foi possível abrir a câmera ou os arquivos.</string>
+
+    <!-- Downloads -->
+    <string name="download_started">Baixando %1$s… Aparece nas notificações e na pasta Downloads.</string>
+    <string name="download_saved">Arquivo salvo em Downloads: %1$s</string>
+    <string name="download_failed">Não foi possível baixar o arquivo. Tente de novo.</string>
+    <string name="download_notification_title">Arquivo salvo em Downloads</string>
+    <string name="channel_downloads">Arquivos baixados</string>
+    <string name="storage_denied">Sem permissão para gravar na pasta Downloads.</string>
+    <string name="no_app_to_open">Nenhum app deste celular abre este link ou arquivo.</string>
+
+    <!-- Janelas novas e impressão -->
+    <string name="popup_close">✕  Fechar</string>
+    <string name="popup_print">Imprimir / Salvar PDF</string>
+    <string name="print_failed">Não foi possível abrir a impressão.</string>
+
+    <!-- Atualização -->
+    <string name="update_title">Nova versão disponível</string>
+    <string name="update_message">Versão %1$s do JC Sistema (instalada: %2$s). Deseja baixar agora?</string>
+    <string name="update_mandatory">Esta atualização é obrigatória: o app só continua depois de atualizar.</string>
+    <string name="update_download">Baixar agora</string>
+    <string name="update_later">Depois</string>
+    <string name="update_downloading">Baixando a atualização… %1$d%%</string>
+    <string name="update_failed">Não foi possível baixar a atualização. Confira a internet e tente de novo.</string>
+    <string name="install_permission_title">Permitir a instalação</string>
+    <string name="install_permission_message">Para instalar a atualização, permita que o JC Sistema instale apps: na próxima tela, ligue "Permitir desta fonte" e volte para o app.</string>
+    <string name="open_settings">Abrir configurações</string>
+</resources>

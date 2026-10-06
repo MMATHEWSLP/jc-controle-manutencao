@@ -1,0 +1,5 @@
+// App Android "JC Sistema": WebView do https://www.jcsistema.online (veja LEIA-ME.md).
+plugins {
+    id("com.android.application") version "8.13.0" apply false
+    id("org.jetbrains.kotlin.android") version "2.3.20" apply false
+}
