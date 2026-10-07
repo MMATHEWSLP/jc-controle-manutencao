@@ -75,15 +75,32 @@
 .convoy-approval-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .convoy-approval-toolbar label{display:grid;gap:4px;font-size:12px;font-weight:700}
 .convoy-approval-table td{vertical-align:top}
-.convoy-thumb{width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:#eef4f7}
+.convoy-thumb{width:64px;height:48px;object-fit:contain;image-orientation:from-image;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:#e6eaed}
 .convoy-tag{display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#fff3d6;color:#7a4a00}
 .convoy-tag.SEM_FOTO{background:#fde8e8;color:#a3262c}.convoy-tag.FOTO_DIVERGE{background:#fde8e8;color:#a3262c}
 .convoy-status-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#eef4f7}
 .convoy-status-pill.APROVADO{background:#e3f5ec;color:#11724f}.convoy-status-pill.REJEITADO{background:#fde8e8;color:#a3262c}.convoy-status-pill.CORRECAO{background:#fff3d6;color:#7a4a00}
 .convoy-review{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
-.convoy-zoom{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#0f1a22;min-height:320px;touch-action:none}
-.convoy-zoom img{position:absolute;top:0;left:0;max-width:none;transform-origin:0 0;user-select:none;-webkit-user-drag:none;cursor:grab}
-.convoy-zoom-controls{display:flex;gap:6px;margin-top:6px}
+/* Foto da aprovação (app/PhotoViewer.tsx): sempre inteira, zoom e arrasto a partir dela. */
+.photo-stage{position:relative;overflow:hidden;width:100%;border:1px solid var(--line);border-radius:10px;background:#e6eaed;touch-action:pan-y;cursor:zoom-in;user-select:none;-webkit-user-select:none}
+.photo-stage.zoomed{touch-action:none;cursor:grab}
+.photo-stage.zoomed:active{cursor:grabbing}
+.photo-stage img{position:absolute;left:0;top:0;max-width:none;max-height:none;transform-origin:50% 50%;image-orientation:from-image;user-select:none;-webkit-user-drag:none;pointer-events:none}
+.photo-stage-error{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px;font-weight:700}
+.convoy-zoom-controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.convoy-zoom-controls .photo-new-tab{min-height:0;padding:0 4px;margin-left:auto;font-size:12px;font-weight:700;color:var(--muted);text-decoration:underline}
+.photo-fullscreen{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;background:#15191d;color:#fff;animation:fade-in .15s ease}
+.photo-fullscreen-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#0d1013;border-bottom:1px solid #2a3036}
+.photo-fullscreen-bar strong{font-size:14px}
+.photo-fullscreen-bar>div{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.photo-fullscreen-bar button,.photo-fullscreen-bar a{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;padding:0 12px;border:1px solid #3a4148;border-radius:8px;background:#1d2329;color:#fff;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer}
+.photo-fullscreen-bar a{border-color:transparent;background:none;color:#c4cbd1;text-decoration:underline}
+.photo-fullscreen-bar .photo-fullscreen-close{font-size:18px}
+.photo-fullscreen-body{position:relative;flex:1;min-height:0}
+.photo-fullscreen-stage{position:absolute;inset:0;width:auto;border:0;border-radius:0;background:#15191d;touch-action:none;cursor:grab}
+.photo-fullscreen-nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:64px;border:0;border-radius:10px;background:rgba(0,0,0,.45);color:#fff;font-size:34px;line-height:1;cursor:pointer}
+.photo-fullscreen-nav.prev{left:10px}.photo-fullscreen-nav.next{right:10px}
+@media (max-width:560px){.photo-fullscreen-bar{padding:6px 8px}.photo-fullscreen-bar button,.photo-fullscreen-bar a{padding:0 9px}.photo-fullscreen-nav{width:40px;height:56px}}
 .convoy-review-data{display:grid;gap:10px;align-content:start}
 .convoy-typed{padding:10px 12px;border-radius:10px;background:#eef4f7;font-size:22px;font-weight:800}
 .convoy-typed small{display:block;color:var(--muted);font-size:12px;font-weight:700}
@@ -93,8 +110,10 @@
 .fuel-convoy-cam{border:0;background:none;cursor:pointer;font-size:15px;padding:0 4px}
 .fuel-daily-convoy-pending{padding:8px 12px;border:1px solid #f0c98f;border-radius:9px;background:#fffaf0;color:#7a4a00;font-size:13px;font-weight:700}
 @media (max-width:900px){.convoy-review{grid-template-columns:1fr}}
+@media (max-width:560px){.fuel-daily-body.convoy-review{padding:12px 10px 16px}}
 html[data-theme="dark"] .convoy-chosen,html[data-theme="dark"] .convoy-suggestion{background:#16342a}
 html[data-theme="dark"] .convoy-when,html[data-theme="dark"] .convoy-typed,html[data-theme="dark"] .convoy-badge{background:#1d2b35}
+html[data-theme="dark"] .photo-stage,html[data-theme="dark"] .convoy-thumb{background:#1f2428}
 html[data-theme="dark"] .convoy-warnings,html[data-theme="dark"] .fuel-daily-convoy-pending{background:#2a2419;border-color:#5a4a2a;color:#f3c77a}
 
 /* Setor ABASTECIMENTOS (menu principal) */
