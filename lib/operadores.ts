@@ -1,9 +1,9 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import type { getDb } from "../db";
-import { auditLogs, employees, fieldLoginAttempts, jobFunctions, serviceFronts, userServiceFronts, userSessions, users } from "../db/schema";
+import { auditLogs, employees, fieldLoginAttempts, jobFunctions, serviceFronts, userServiceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
-import type { SessionUser } from "./auth";
+import { revokeUserSessions, type SessionUser } from "./auth";
 import { hashAccessCode, LOCK_MINUTES, MAX_FAILS_PER_OPERATOR } from "./field-auth";
 import { deveTerAcesso, gerarPin, normalizarFuncao, type StatusAcesso } from "./operadores-regras";
 import { createOperatorAccessPdf, type OperatorAccessPdfRow } from "./pdf";
@@ -85,7 +85,7 @@ export async function sincronizarAcessoOperador(db: Db, employeeId: number, acto
     if (!deve) {
       if (usuario && usuario.status === "ACTIVE") {
         await tx.update(users).set({ status: "INACTIVE", updatedAt: agora }).where(eq(users.id, usuario.id));
-        await tx.delete(userSessions).where(eq(userSessions.userId, usuario.id));
+        await revokeUserSessions(tx, usuario.id, "INATIVADO");
         const motivo = funcionario.status === "DEMITIDO" ? "funcionário demitido" : "função não opera equipamento";
         await auditar(tx, actorId, usuario.id, "ACESSO DE OPERADOR DESATIVADO", { employeeId, motivo: opcoes.motivo ?? motivo });
         return { acao: "DESATIVADO", mensagem: `Acesso de operador de ${funcionario.name} desativado (${motivo}).` };
@@ -193,7 +193,7 @@ export async function redefinirPin(db: Db, actor: SessionUser, userId: number): 
   await db.transaction(async (tx) => {
     await tx.update(users).set({ accessCodeHash: await hashAccessCode(pin), accessCodeChangedAt: agora, updatedAt: agora }).where(eq(users.id, usuario.id));
     // O PIN antigo deixa de valer na hora (sessões abertas caem) e o bloqueio por tentativas zera.
-    await tx.delete(userSessions).where(eq(userSessions.userId, usuario.id));
+    await revokeUserSessions(tx, usuario.id, "PIN_TROCADO");
     await auditar(tx, actor.id, usuario.id, "PIN DE OPERADOR REDEFINIDO");
   });
   const frente = usuario.serviceFrontId ? (await db.select({ name: serviceFronts.name }).from(serviceFronts).where(eq(serviceFronts.id, usuario.serviceFrontId)).limit(1))[0]?.name : null;

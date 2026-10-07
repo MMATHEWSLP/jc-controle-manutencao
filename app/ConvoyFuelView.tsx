@@ -9,28 +9,35 @@ import {
 } from "../lib/convoy-offline";
 import { currentPosition, stampLines, stampPhoto, type GpsPosition } from "../lib/convoy-photo";
 import {
-  CONVOY_STATUS_LABELS, convoyWarnings, formatNumber, fortalezaDay, matchesSearch, parseConvoyNumber, previousDay, validateConvoyPayload,
-  type ConvoyStatus, type ConvoyUnit, type LitersStats, type NoPhotoReason,
+  CONVOY_EXIT_KINDS, CONVOY_STATUS_LABELS, convoyWarnings, formatNumber, fortalezaDay, matchesSearch, parseConvoyNumber, previousDay, thirdPartyConvoyWarnings, validateConvoyPayload,
+  type ConvoyExitKind, type ConvoyPayload, type ConvoyStatus, type ConvoyThirdPartyPayload, type ConvoyUnit, type LitersStats, type NoPhotoReason,
 } from "../lib/convoy-rules";
+import { FUEL_PURPOSES, FUEL_PURPOSE_LABELS, type FuelPurpose } from "../lib/third-party-rules";
+import { KIND_LABELS, ThirdPartyPicker, ThirdPartyVehiclePicker, ThirdPartyWorkerPicker, type ThirdPartyOption, type VehicleOption, type WorkerOption } from "./ThirdPartiesView";
 
 type CatalogEquipment = {
   id: number; prefix: string; code: string; plate: string | null; type: string; model: string; serviceFrontId: number | null; front: string; unit: ConvoyUnit;
   lastReading: number | null; lastReadingDate: string | null; lastOperator: { employeeId: number | null; name: string } | null; litersStats: LitersStats | null; avgPerDay: number | null;
 };
 type CatalogEmployee = { id: number; name: string; jobTitle: string; serviceFrontId: number; front: string };
+// Terceiros do cadastro baixado (mesmo formato das opções do computador, com unidade e litros recentes).
+type CatalogVehicle = VehicleOption & { unit: ConvoyUnit; litersStats: LitersStats | null };
+type CatalogParty = Omit<ThirdPartyOption, "vehicles"> & { vehicles: CatalogVehicle[]; employees: WorkerOption[] };
 type Catalog = {
   generatedAt: string; today: string; userId: number; convoy: { id: number; prefix: string } | null; settings: { pumpPhotoRequired: boolean };
   noPhotoReasons: Array<{ value: NoPhotoReason; label: string }>; equipment: CatalogEquipment[]; employees: CatalogEmployee[];
+  // Cadastro baixado antes desta versão não tem a lista: Terceiros/Prestadores pedem "Atualizar".
+  thirdParties?: CatalogParty[];
 };
 type MyRecord = {
-  id: number; clientUuid: string; status: ConvoyStatus; equipment: string; operatorName: string; liters: number; reading: number | null; readingUnit: ConvoyUnit;
-  recordedAt: string; recordDate: string; noPhoto: boolean; rejectionReason: string | null; correctionNote: string | null;
+  id: number; clientUuid: string; status: ConvoyStatus; equipment: string; operatorName: string; liters: number; reading: number | null; readingUnit: ConvoyUnit | null;
+  recordedAt: string; recordDate: string; noPhoto: boolean; rejectionReason: string | null; correctionNote: string | null; exitKind?: ConvoyExitKind; destination?: "VEICULO" | "FUNCIONARIO" | null;
 };
 type Photo = { blob: Blob; url: string; takenAt: string; gps: GpsPosition | null };
 type Operator = { employeeId: number | null; name: string };
 
-const unitLabel = (unit: ConvoyUnit) => (unit === "KM" ? "KM" : "Horímetro");
-const unitSuffix = (unit: ConvoyUnit) => (unit === "KM" ? "km" : "h");
+const unitLabel = (unit: ConvoyUnit | null) => (unit === "KM" ? "KM" : unit === "HOURS" ? "Horímetro" : "KM / Horímetro");
+const unitSuffix = (unit: ConvoyUnit | null) => (unit === "KM" ? "km" : unit === "HOURS" ? "h" : "");
 const brDay = (value: string | null) => (value ? value.slice(0, 10).split("-").reverse().join("/") : "—");
 const brTime = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -177,7 +184,7 @@ export default function ConvoyFuelView({ userId, flash }: { userId: number; flas
 // ---------------------------------------------------------------------------
 const QUEUE_LABEL: Record<ConvoyQueueItem["status"], string> = { PENDENTE_ENVIO: "No celular — a enviar", ENVIADO: "Enviado", ERRO: "Com erro" };
 type DayItem = {
-  key: string; date: string; at: string; equipment: string; liters: number; operator: string; reading: number | null; unit: ConvoyUnit; noPhoto: boolean;
+  key: string; date: string; at: string; equipment: string; liters: number; operator: string; reading: number | null; unit: ConvoyUnit | null; noPhoto: boolean;
   label: string; tone: "ok" | "error" | "warning" | "waiting" | "local"; rejected: boolean; record: MyRecord | null; local: ConvoyQueueItem | null;
 };
 
@@ -186,7 +193,7 @@ function buildItems(queue: ConvoyQueueItem[], records: MyRecord[]): DayItem[] {
     const payload = item.payload as { recordDate?: string; recordedAt?: string };
     return {
       key: `q-${item.clientUuid}`, date: payload.recordDate ?? item.createdAt.slice(0, 10), at: payload.recordedAt ?? item.createdAt, equipment: item.summary.equipment, liters: item.summary.liters,
-      operator: item.summary.operator, reading: item.summary.reading, unit: item.summary.unit as ConvoyUnit, noPhoto: item.summary.noPhoto,
+      operator: item.summary.operator, reading: item.summary.reading, unit: (item.summary.unit || null) as ConvoyUnit | null, noPhoto: item.summary.noPhoto,
       label: item.status === "ENVIADO" ? "Aguardando aprovação" : QUEUE_LABEL[item.status], tone: item.status === "ERRO" ? "error" : item.status === "ENVIADO" ? "waiting" : "local", rejected: false, record: null, local: item,
     };
   });
@@ -243,11 +250,29 @@ function PhotoButton({ label, photo, onPick, onClear, required }: { label: strin
 }
 
 // Fica aberto depois de salvar: o motorista lança um equipamento atrás do outro e toca "Concluir".
+// Tipo de saída igual ao computador (Combustível → Saída): Frota, Saída para terceiros ou
+// Prestadores de Serviço. Nos terceiros o motorista só escolhe do cadastro baixado; o que não achar
+// marca "Não cadastrado" e digita (vai para a aprovação com a etiqueta CADASTRO PENDENTE).
 function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justification, done }: { catalog: Catalog; userId: number; queue: ConvoyQueueItem[]; recordDate: string; yesterday: boolean; justification: string; done: () => void }) {
+  const [exitKind, setExitKind] = useState<ConvoyExitKind>("FROTA");
   const [equipment, setEquipment] = useState<CatalogEquipment | null>(null);
   const [equipmentQuery, setEquipmentQuery] = useState("");
   const [operator, setOperator] = useState<Operator | null>(null);
   const [operatorQuery, setOperatorQuery] = useState("");
+  const [party, setParty] = useState<CatalogParty | null>(null);
+  const [partyPending, setPartyPending] = useState(false);
+  const [partyText, setPartyText] = useState("");
+  const [destination, setDestination] = useState<"VEICULO" | "FUNCIONARIO">("VEICULO");
+  const [vehicle, setVehicle] = useState<CatalogVehicle | null>(null);
+  const [vehiclePending, setVehiclePending] = useState(false);
+  const [vehicleText, setVehicleText] = useState("");
+  const [worker, setWorker] = useState<WorkerOption | null>(null);
+  const [workerPending, setWorkerPending] = useState(false);
+  const [workerText, setWorkerText] = useState("");
+  const [purpose, setPurpose] = useState<FuelPurpose | "">("");
+  const [purposeNote, setPurposeNote] = useState("");
+  const [fullTank, setFullTank] = useState(true);
+  const [receiver, setReceiver] = useState("");
   const [liters, setLiters] = useState("");
   const [reading, setReading] = useState("");
   const [meterPhoto, setMeterPhoto] = useState<Photo | null>(null);
@@ -266,25 +291,41 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { void currentPosition().then((position) => { if (position) setGps(position); }); const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
 
+  const fleet = exitKind === "FROTA";
+  const parties = useMemo(() => catalog.thirdParties ?? [], [catalog.thirdParties]);
+  const vehicleIsPending = partyPending || vehiclePending;
+  const workerIsPending = partyPending || workerPending;
+  const toWorker = !fleet && destination === "FUNCIONARIO";
+  // Medidor (leitura + foto): Frota, ou terceiro com destino Veículo e um veículo escolhido/digitado.
+  const hasMeter = fleet || (!toWorker && (Boolean(vehicle) || (vehicleIsPending && Boolean(vehicleText.trim()))));
+  const meterUnitNow: ConvoyUnit | null = fleet ? equipment?.unit ?? null : vehicle?.unit ?? null;
+
   const today = fortalezaDay(now);
   const equipmentMatches = useMemo(() => equipmentQuery.trim() ? catalog.equipment.filter((item) => matchesSearch(equipmentQuery, item.prefix, item.code, item.plate, item.model, item.type)).slice(0, 8) : [], [catalog.equipment, equipmentQuery]);
   const operatorMatches = useMemo(() => operatorQuery.trim().length >= 2 ? catalog.employees.filter((item) => matchesSearch(operatorQuery, item.name)).slice(0, 8) : [], [catalog.employees, operatorQuery]);
-  // Última leitura: a do cadastro ou a de um registro deste equipamento ainda guardado no celular (maior).
+  // Responsável que recebeu: funcionários da empresa (busca sem acento) ou o nome digitado.
+  const receiverMatches = useMemo(() => party && !partyPending ? party.employees.filter((item) => matchesSearch(receiver, item.name, item.jobTitle)).filter((item) => item.name !== receiver).slice(0, 6) : [], [party, partyPending, receiver]);
+  // Última leitura: a do cadastro ou a de um registro deste equipamento/veículo ainda guardado no celular (maior).
   const lastKnown = useMemo(() => {
-    if (!equipment) return { value: null as number | null, date: null as string | null };
-    let value = equipment.lastReading, date = equipment.lastReadingDate;
+    const target = fleet ? equipment : vehicle;
+    if (!target) return { value: null as number | null, date: null as string | null };
+    let value = fleet ? equipment!.lastReading : vehicle!.lastReading, date = fleet ? equipment!.lastReadingDate : null;
     for (const item of queue) {
-      const payload = item.payload as { equipmentId?: number; reading?: number | null; recordDate?: string };
-      if (item.kind === "NOVO" && payload.equipmentId === equipment.id && typeof payload.reading === "number" && (value === null || payload.reading > value)) { value = payload.reading; date = payload.recordDate ?? date; }
+      const payload = item.payload as { equipmentId?: number; reading?: number | null; recordDate?: string; thirdParty?: { thirdPartyVehicleId?: number | null } | null };
+      const same = fleet ? payload.equipmentId === target.id && !payload.thirdParty : payload.thirdParty?.thirdPartyVehicleId === target.id;
+      if (item.kind === "NOVO" && same && typeof payload.reading === "number" && (value === null || payload.reading > value)) { value = payload.reading; date = payload.recordDate ?? date; }
     }
     return { value, date };
-  }, [equipment, queue]);
+  }, [fleet, equipment, vehicle, queue]);
   const litersValue = parseConvoyNumber(liters);
   const readingValue = parseConvoyNumber(reading);
-  const warnings = equipment && litersValue && litersValue > 0 ? convoyWarnings({
-    liters: litersValue, reading: readingValue !== null && Number.isFinite(readingValue) ? readingValue : null, unit: equipment.unit,
-    lastReading: lastKnown.value, lastReadingDate: lastKnown.date, recordDate, litersStats: equipment.litersStats, avgPerDay: equipment.avgPerDay,
-  }) : [];
+  const typedReading = readingValue !== null && Number.isFinite(readingValue) ? readingValue : null;
+  const warnings = !litersValue || litersValue <= 0 ? []
+    : fleet ? (equipment ? convoyWarnings({
+      liters: litersValue, reading: typedReading, unit: equipment.unit,
+      lastReading: lastKnown.value, lastReadingDate: lastKnown.date, recordDate, litersStats: equipment.litersStats, avgPerDay: equipment.avgPerDay,
+    }) : [])
+      : vehicle && !toWorker ? thirdPartyConvoyWarnings({ liters: litersValue, reading: typedReading, unit: vehicle.unit, lastReading: lastKnown.value, tankCapacity: vehicle.tankCapacityLiters, litersStats: vehicle.litersStats }) : [];
 
   function chooseEquipment(item: CatalogEquipment) {
     setEquipment(item); setEquipmentQuery("");
@@ -294,6 +335,24 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
       setOperator({ employeeId: person?.id ?? item.lastOperator.employeeId, name: person?.name ?? item.lastOperator.name });
     }
   }
+  function resetThirdParty() {
+    setParty(null); setPartyPending(false); setPartyText(""); setDestination("VEICULO"); setVehicle(null); setVehiclePending(false); setVehicleText("");
+    setWorker(null); setWorkerPending(false); setWorkerText(""); setPurpose(""); setPurposeNote(""); setFullTank(true); setReceiver("");
+  }
+  function chooseKind(next: ConvoyExitKind) {
+    if (next === exitKind) return;
+    setExitKind(next); setError(""); setReading("");
+    // Prestadores não aceitam pessoa física: a empresa escolhida sai se não servir.
+    if (next === "PRESTADOR" && party?.kind === "PESSOA_FISICA") resetThirdParty();
+  }
+  function chooseParty(option: ThirdPartyOption | null) {
+    setParty(option ? parties.find((item) => item.id === option.id) ?? null : null);
+    setVehicle(null); setWorker(null); setReading("");
+  }
+  function chooseWorker(option: WorkerOption | null) {
+    setWorker(option);
+    if (option && !receiver.trim()) setReceiver(option.name);
+  }
 
   async function takePhoto(file: File, kind: "meter" | "pump") {
     setError("");
@@ -301,7 +360,8 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
       const position = (await Promise.race([currentPosition(6000), new Promise<null>((resolve) => setTimeout(() => resolve(null), 6500))])) ?? gps;
       if (position) setGps(position);
       const takenAt = new Date();
-      const lines = stampLines(takenAt, position, [equipment ? `Equip. ${equipment.prefix}` : "", catalog.convoy ? `Comboio ${catalog.convoy.prefix}` : ""]);
+      const target = fleet ? (equipment ? `Equip. ${equipment.prefix}` : "") : [party?.name ?? partyText.trim(), vehicle?.plate ?? vehicleText.trim()].filter(Boolean).join(" · ");
+      const lines = stampLines(takenAt, position, [target, catalog.convoy ? `Comboio ${catalog.convoy.prefix}` : ""]);
       const blob = await stampPhoto(file, lines);
       const photo = { blob, url: URL.createObjectURL(blob), takenAt: takenAt.toISOString(), gps: position };
       if (kind === "meter") { if (meterPhoto) URL.revokeObjectURL(meterPhoto.url); setMeterPhoto(photo); }
@@ -314,6 +374,20 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
     if (pumpPhoto) URL.revokeObjectURL(pumpPhoto.url);
     setEquipment(null); setEquipmentQuery(""); setOperator(null); setOperatorQuery(""); setLiters(""); setReading(""); setMeterPhoto(null); setPumpPhoto(null);
     setNoPhoto(false); setNoPhotoReason(""); setNoPhotoNote(""); setNotes("");
+    resetThirdParty();
+  }
+
+  function thirdPartyPayload(): ConvoyThirdPartyPayload | null {
+    if (fleet) return null;
+    const vehicleLabel = vehicle ? [vehicle.plate, vehicle.description].filter(Boolean).join(" — ") : null;
+    return {
+      thirdPartyId: partyPending ? null : party?.id ?? null, companyLabel: partyPending ? partyText.trim() || null : party?.name ?? null, pendingCompany: partyPending ? partyText.trim() || null : null,
+      destination,
+      thirdPartyVehicleId: !toWorker && !vehicleIsPending ? vehicle?.id ?? null : null, vehicleLabel: !toWorker ? vehicleLabel : null, pendingVehicle: !toWorker && vehicleIsPending ? vehicleText.trim() || null : null,
+      thirdPartyEmployeeId: toWorker && !workerIsPending ? worker?.id ?? null : null, employeeLabel: toWorker ? worker?.name ?? null : null, pendingEmployee: toWorker && workerIsPending ? workerText.trim() || null : null,
+      purpose: toWorker && purpose ? purpose : null, purposeNote: toWorker && purpose === "OUTROS" ? purposeNote.trim() || null : null,
+      fullTank: toWorker ? true : fullTank,
+    };
   }
 
   async function save() {
@@ -321,34 +395,39 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
     const clientUuid = crypto.randomUUID();
     const recordedAt = new Date().toISOString();
     const position = meterPhoto?.gps ?? pumpPhoto?.gps ?? gps;
-    const payload = {
-      clientUuid, equipmentId: equipment?.id ?? 0, operatorEmployeeId: operator?.employeeId ?? null, operatorName: operator?.name ?? "",
-      liters: litersValue ?? NaN, reading: noPhoto && readingValue === null ? null : readingValue, recordedAt, recordDate,
-      dateJustification: yesterday ? justification.trim() || null : null, noPhoto, noPhotoReason: noPhoto ? (noPhotoReason || null) as NoPhotoReason | null : null,
-      noPhotoNote: noPhoto ? noPhotoNote.trim() || null : null, notes: notes.trim() || null,
+    const third = thirdPartyPayload();
+    const meterOff = !hasMeter || noPhoto;
+    const payload: ConvoyPayload = {
+      clientUuid, exitKind, equipmentId: fleet ? equipment?.id ?? 0 : 0, operatorEmployeeId: fleet ? operator?.employeeId ?? null : null, operatorName: fleet ? operator?.name ?? "" : receiver.trim(),
+      liters: litersValue ?? NaN, reading: !hasMeter ? null : noPhoto && readingValue === null ? null : readingValue, recordedAt, recordDate,
+      dateJustification: yesterday ? justification.trim() || null : null, noPhoto: hasMeter && noPhoto, noPhotoReason: hasMeter && noPhoto ? (noPhotoReason || null) as NoPhotoReason | null : null,
+      noPhotoNote: hasMeter && noPhoto ? noPhotoNote.trim() || null : null, notes: notes.trim() || null,
       latitude: position?.latitude ?? null, longitude: position?.longitude ?? null, gpsAccuracy: position?.accuracy ?? null,
-      photoTakenAt: meterPhoto?.takenAt ?? null, deviceLastReading: lastKnown.value, deviceWarnings: warnings.map((warning) => warning.code),
+      photoTakenAt: meterPhoto?.takenAt ?? null, deviceLastReading: lastKnown.value, deviceWarnings: warnings.map((warning) => warning.code), thirdParty: third,
     };
     if (readingValue !== null && Number.isNaN(readingValue)) { setError("Leitura inválida: use só números."); return; }
-    const problem = validateConvoyPayload(payload, { hasMeterPhoto: Boolean(meterPhoto) && !noPhoto, hasPumpPhoto: Boolean(pumpPhoto), pumpPhotoRequired: catalog.settings.pumpPhotoRequired, today });
+    if (!fleet && !parties.length && !partyPending) { setError("A lista de terceiros não está no celular: toque em \"Atualizar\" com internet ou marque \"Não cadastrado\"."); return; }
+    const problem = validateConvoyPayload(payload, { hasMeterPhoto: Boolean(meterPhoto) && !meterOff, hasPumpPhoto: Boolean(pumpPhoto), pumpPhotoRequired: catalog.settings.pumpPhotoRequired, today, companyKind: partyPending ? null : party?.kind ?? null });
     if (problem) { setError(problem); return; }
+    const label = fleet ? equipment!.prefix : [third!.companyLabel ?? "Terceiro", toWorker ? worker?.name ?? workerText.trim() : vehicle?.plate ?? (vehicleText.trim() || "sem veículo")].join(" · ");
     setBusy(true);
     try {
       await enqueueConvoy({
-        clientUuid, userId, kind: "NOVO", targetUuid: null, payload, meterPhoto: noPhoto ? null : meterPhoto?.blob ?? null, pumpPhoto: pumpPhoto?.blob ?? null,
-        summary: { equipment: equipment!.prefix, liters: payload.liters, operator: payload.operatorName, reading: payload.reading, unit: equipment!.unit, noPhoto },
+        clientUuid, userId, kind: "NOVO", targetUuid: null, payload, meterPhoto: meterOff ? null : meterPhoto?.blob ?? null, pumpPhoto: pumpPhoto?.blob ?? null,
+        summary: { equipment: label, liters: payload.liters, operator: payload.operatorName, reading: payload.reading, unit: meterUnitNow ?? "", noPhoto: payload.noPhoto },
       });
-      const prefix = equipment!.prefix;
       clear();
-      setSaved(`${prefix} · ${formatNumber(payload.liters, 2)} L guardado — aguardando aprovação${isKnownOnline() ? "" : " (será enviado quando houver sinal)"}. Pode lançar o próximo.`);
+      setSaved(`${label} · ${formatNumber(payload.liters, 2)} L guardado — aguardando aprovação${isKnownOnline() ? "" : " (será enviado quando houver sinal)"}. Pode lançar o próximo.`);
       setSavedCount((count) => count + 1);
       top.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      window.setTimeout(() => equipmentInput.current?.focus({ preventScroll: true }), 400);
+      if (fleet) window.setTimeout(() => equipmentInput.current?.focus({ preventScroll: true }), 400);
       void syncConvoyQueue();
     } catch {
       setError("Não foi possível guardar no celular. Libere espaço e tente de novo.");
     } finally { setBusy(false); }
   }
+
+  const pendingToggle = (checked: boolean, set: (value: boolean) => void, label: string) => <label className="convoy-check convoy-not-registered"><input type="checkbox" checked={checked} onChange={(event) => set(event.target.checked)} /><span>{label}</span></label>;
 
   return <div className="convoy-form convoy-card convoy-adding" ref={top}>
     <div className="convoy-when">
@@ -358,45 +437,96 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
     {saved && <div className="convoy-saved" role="status">✓ {saved}</div>}
 
     <div className="convoy-field">
-      <span>Equipamento abastecido *</span>
-      {equipment ? <div className="convoy-chosen"><div><strong>{equipment.prefix}</strong><small>{[equipment.model, equipment.plate, equipment.front].filter(Boolean).join(" · ")}</small></div><button type="button" className="secondary" onClick={() => { setEquipment(null); setReading(""); }}>Trocar</button></div>
-        : <><input ref={equipmentInput} className="convoy-big" value={equipmentQuery} onChange={(event) => setEquipmentQuery(event.target.value)} placeholder="Código ou placa (ex.: PC20, CM-35)" autoComplete="off" />
-          {equipmentQuery.trim() && <ul className="convoy-options">{equipmentMatches.map((item) => <li key={item.id}><button type="button" onClick={() => chooseEquipment(item)}><strong>{item.prefix}</strong><small>{[item.model, item.plate, item.front].filter(Boolean).join(" · ")}</small></button></li>)}
-            {!equipmentMatches.length && <li className="convoy-empty">Nenhum equipamento encontrado no cadastro do celular.</li>}</ul>}</>}
+      <span>Tipo de saída *</span>
+      <div className="convoy-reasons convoy-exit-kind">{CONVOY_EXIT_KINDS.map(([value, label]) => <button key={value} type="button" className={exitKind === value ? "active" : ""} onClick={() => chooseKind(value)}>{label}</button>)}</div>
     </div>
 
-    <div className="convoy-field">
-      <span>Motorista/operador do equipamento *</span>
-      {operator ? <div className="convoy-chosen"><div><strong>{operator.name}</strong><small>{equipment?.lastOperator && equipment.lastOperator.name === operator.name ? "Último operador no Controle Diário" : operator.employeeId ? "Cadastro de funcionários" : ""}</small></div><button type="button" className="secondary" onClick={() => setOperator(null)}>Trocar</button></div>
-        : <><input className="convoy-big" value={operatorQuery} onChange={(event) => setOperatorQuery(event.target.value)} placeholder="Nome do motorista/operador" autoComplete="off" />
-          {equipment?.lastOperator && <button type="button" className="convoy-suggestion" onClick={() => { const person = equipment.lastOperator!.employeeId ? catalog.employees.find((item) => item.id === equipment.lastOperator!.employeeId) : null; setOperator({ employeeId: person?.id ?? null, name: person?.name ?? equipment.lastOperator!.name }); }}>Sugerido: {equipment.lastOperator.name}</button>}
-          {operatorQuery.trim().length >= 2 && <ul className="convoy-options">{operatorMatches.map((item) => <li key={item.id}><button type="button" onClick={() => { setOperator({ employeeId: item.id, name: item.name }); setOperatorQuery(""); }}><strong>{item.name}</strong><small>{item.jobTitle} · {item.front}</small></button></li>)}
-            {!operatorMatches.length && <li className="convoy-empty">Ninguém encontrado no cadastro do celular.</li>}</ul>}</>}
-    </div>
+    {fleet ? <>
+      <div className="convoy-field">
+        <span>Equipamento abastecido *</span>
+        {equipment ? <div className="convoy-chosen"><div><strong>{equipment.prefix}</strong><small>{[equipment.model, equipment.plate, equipment.front].filter(Boolean).join(" · ")}</small></div><button type="button" className="secondary" onClick={() => { setEquipment(null); setReading(""); }}>Trocar</button></div>
+          : <><input ref={equipmentInput} className="convoy-big" value={equipmentQuery} onChange={(event) => setEquipmentQuery(event.target.value)} placeholder="Código ou placa (ex.: PC20, CM-35)" autoComplete="off" />
+            {equipmentQuery.trim() && <ul className="convoy-options">{equipmentMatches.map((item) => <li key={item.id}><button type="button" onClick={() => chooseEquipment(item)}><strong>{item.prefix}</strong><small>{[item.model, item.plate, item.front].filter(Boolean).join(" · ")}</small></button></li>)}
+              {!equipmentMatches.length && <li className="convoy-empty">Nenhum equipamento encontrado no cadastro do celular.</li>}</ul>}</>}
+      </div>
+
+      <div className="convoy-field">
+        <span>Motorista/operador do equipamento *</span>
+        {operator ? <div className="convoy-chosen"><div><strong>{operator.name}</strong><small>{equipment?.lastOperator && equipment.lastOperator.name === operator.name ? "Último operador no Controle Diário" : operator.employeeId ? "Cadastro de funcionários" : ""}</small></div><button type="button" className="secondary" onClick={() => setOperator(null)}>Trocar</button></div>
+          : <><input className="convoy-big" value={operatorQuery} onChange={(event) => setOperatorQuery(event.target.value)} placeholder="Nome do motorista/operador" autoComplete="off" />
+            {equipment?.lastOperator && <button type="button" className="convoy-suggestion" onClick={() => { const person = equipment.lastOperator!.employeeId ? catalog.employees.find((item) => item.id === equipment.lastOperator!.employeeId) : null; setOperator({ employeeId: person?.id ?? null, name: person?.name ?? equipment.lastOperator!.name }); }}>Sugerido: {equipment.lastOperator.name}</button>}
+            {operatorQuery.trim().length >= 2 && <ul className="convoy-options">{operatorMatches.map((item) => <li key={item.id}><button type="button" onClick={() => { setOperator({ employeeId: item.id, name: item.name }); setOperatorQuery(""); }}><strong>{item.name}</strong><small>{item.jobTitle} · {item.front}</small></button></li>)}
+              {!operatorMatches.length && <li className="convoy-empty">Ninguém encontrado no cadastro do celular.</li>}</ul>}</>}
+      </div>
+    </> : <>
+      {!catalog.thirdParties && <p className="convoy-warning">A lista de terceiros ainda não está neste celular. Com internet, toque em &quot;Atualizar&quot;; sem internet, marque &quot;Não cadastrado&quot; e digite.</p>}
+      <div className="convoy-field">
+        <span>Empresa *{exitKind === "PRESTADOR" ? " (prestadora ou terceirizada)" : ""}</span>
+        {partyPending ? <input className="convoy-big" value={partyText} onChange={(event) => setPartyText(event.target.value)} placeholder="Nome da empresa / pessoa" autoComplete="off" />
+          : <ThirdPartyPicker options={parties} kinds={exitKind === "PRESTADOR" ? ["PRESTADOR", "TERCEIRIZADA"] : undefined} value={party} onPick={chooseParty} placeholder="Buscar empresa, pessoa, CNPJ/CPF ou placa..." />}
+        {pendingToggle(partyPending, (value) => { setPartyPending(value); setParty(null); setVehicle(null); setWorker(null); }, "Não cadastrado (o aprovador cadastra)")}
+        {party && <small>{KIND_LABELS[party.kind]}</small>}
+      </div>
+
+      <div className="convoy-field">
+        <span>Destino *</span>
+        <div className="convoy-reasons">{([["VEICULO", "Veículo"], ["FUNCIONARIO", "Funcionário"]] as const).map(([value, label]) => <button key={value} type="button" className={destination === value ? "active" : ""} onClick={() => { setDestination(value); setReading(""); setNoPhoto(false); }}>{label}</button>)}</div>
+      </div>
+
+      {destination === "VEICULO" ? <div className="convoy-field">
+        <span>Veículo/máquina da empresa{party?.kind === "PESSOA_FISICA" ? " (opcional para pessoa física)" : " *"}</span>
+        {vehicleIsPending ? <input className="convoy-big" value={vehicleText} onChange={(event) => setVehicleText(event.target.value)} placeholder="Placa ou identificação" autoComplete="off" />
+          : <ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} onPick={(item) => { setVehicle(item ? party?.vehicles.find((entry) => entry.id === item.id) ?? null : null); setReading(""); }} disabled={!party} />}
+        {!partyPending && pendingToggle(vehiclePending, (value) => { setVehiclePending(value); setVehicle(null); }, "Veículo não cadastrado")}
+      </div> : <>
+        <div className="convoy-field">
+          <span>Funcionário da empresa *</span>
+          {workerIsPending ? <input className="convoy-big" value={workerText} onChange={(event) => { setWorkerText(event.target.value); if (!receiver.trim() || receiver === workerText) setReceiver(event.target.value); }} placeholder="Nome do funcionário" autoComplete="off" />
+            : <ThirdPartyWorkerPicker workers={party?.employees ?? []} value={worker} onPick={chooseWorker} disabled={!party} />}
+          {!partyPending && pendingToggle(workerPending, (value) => { setWorkerPending(value); setWorker(null); }, "Funcionário não cadastrado")}
+        </div>
+        <div className="convoy-field">
+          <span>Finalidade *</span>
+          <div className="convoy-reasons">{FUEL_PURPOSES.map((value) => <button key={value} type="button" className={purpose === value ? "active" : ""} onClick={() => setPurpose(value)}>{FUEL_PURPOSE_LABELS[value]}</button>)}</div>
+          {purpose === "OUTROS" && <input className="convoy-big" value={purposeNote} onChange={(event) => setPurposeNote(event.target.value)} placeholder="Ex.: bomba d'água, roçadeira" />}
+          <small>Sem leitura e sem foto do medidor: não entra na média de consumo.</small>
+        </div>
+      </>}
+
+      <div className="convoy-field">
+        <span>Responsável que recebeu *</span>
+        <input className="convoy-big" value={receiver} onChange={(event) => setReceiver(event.target.value)} placeholder="Funcionário da empresa ou digite o nome" autoComplete="off" />
+        {receiverMatches.length > 0 && <div className="convoy-reasons">{receiverMatches.map((item) => <button key={item.id} type="button" onClick={() => setReceiver(item.name)}>{item.name}</button>)}</div>}
+      </div>
+    </>}
 
     <div className="convoy-row">
       <label className="convoy-field">Litros *<input className="convoy-big" inputMode="decimal" value={liters} onChange={(event) => setLiters(event.target.value.replace(/[^\d.,]/g, ""))} placeholder="0" /></label>
-      <label className="convoy-field">{equipment ? unitLabel(equipment.unit) : "KM / Horímetro"}{noPhoto ? "" : " *"}
+      {hasMeter && <label className="convoy-field">{unitLabel(meterUnitNow)}{noPhoto ? "" : " *"}
         <input className="convoy-big" inputMode="decimal" value={reading} onChange={(event) => setReading(event.target.value.replace(/[^\d.,]/g, ""))} placeholder={lastKnown.value !== null ? formatNumber(lastKnown.value) : "0"} />
-        {equipment && <small>Última conhecida: {lastKnown.value !== null ? `${formatNumber(lastKnown.value)} ${unitSuffix(equipment.unit)}${lastKnown.date ? ` (${brDay(lastKnown.date)})` : ""}` : "—"}</small>}
-      </label>
+        {(fleet ? equipment : vehicle) && <small>Última conhecida: {lastKnown.value !== null ? `${formatNumber(lastKnown.value)} ${unitSuffix(meterUnitNow)}${lastKnown.date ? ` (${brDay(lastKnown.date)})` : ""}` : "—"}</small>}
+      </label>}
     </div>
+    {!fleet && hasMeter && <label className="convoy-check"><input type="checkbox" checked={fullTank} onChange={(event) => setFullTank(event.target.checked)} /><span>Tanque cheio <small>{fullTank ? "(o consumo é calculado desde o último tanque cheio)" : "(parcial: os litros somam no próximo tanque cheio)"}</small></span></label>}
 
-    {!noPhoto && <PhotoButton label="Foto do KM/horímetro" photo={meterPhoto} required onPick={(file) => void takePhoto(file, "meter")} onClear={() => { if (meterPhoto) URL.revokeObjectURL(meterPhoto.url); setMeterPhoto(null); }} />}
-    <label className="convoy-check"><input type="checkbox" checked={noPhoto} onChange={(event) => { setNoPhoto(event.target.checked); if (event.target.checked && meterPhoto) { URL.revokeObjectURL(meterPhoto.url); setMeterPhoto(null); } }} /><span>Sem foto do medidor</span></label>
-    {noPhoto && <div className="convoy-reasons">
-      {catalog.noPhotoReasons.map((reason) => <button key={reason.value} type="button" className={noPhotoReason === reason.value ? "active" : ""} onClick={() => setNoPhotoReason(reason.value)}>{reason.label}</button>)}
-      {noPhotoReason === "OUTRO" && <input className="convoy-big" value={noPhotoNote} onChange={(event) => setNoPhotoNote(event.target.value)} placeholder="Qual o motivo?" />}
-      <small>O registro vai com a etiqueta SEM FOTO. A leitura fica opcional.</small>
-    </div>}
+    {hasMeter && <>
+      {!noPhoto && <PhotoButton label="Foto do KM/horímetro" photo={meterPhoto} required onPick={(file) => void takePhoto(file, "meter")} onClear={() => { if (meterPhoto) URL.revokeObjectURL(meterPhoto.url); setMeterPhoto(null); }} />}
+      <label className="convoy-check"><input type="checkbox" checked={noPhoto} onChange={(event) => { setNoPhoto(event.target.checked); if (event.target.checked && meterPhoto) { URL.revokeObjectURL(meterPhoto.url); setMeterPhoto(null); } }} /><span>Sem foto do medidor</span></label>
+      {noPhoto && <div className="convoy-reasons">
+        {catalog.noPhotoReasons.map((reason) => <button key={reason.value} type="button" className={noPhotoReason === reason.value ? "active" : ""} onClick={() => setNoPhotoReason(reason.value)}>{reason.label}</button>)}
+        {noPhotoReason === "OUTRO" && <input className="convoy-big" value={noPhotoNote} onChange={(event) => setNoPhotoNote(event.target.value)} placeholder="Qual o motivo?" />}
+        <small>O registro vai com a etiqueta SEM FOTO. A leitura fica opcional.</small>
+      </div>}
+    </>}
     <PhotoButton label={`Foto da bomba/totalizador${catalog.settings.pumpPhotoRequired ? "" : " (opcional)"}`} photo={pumpPhoto} required={catalog.settings.pumpPhotoRequired} onPick={(file) => void takePhoto(file, "pump")} onClear={() => { if (pumpPhoto) URL.revokeObjectURL(pumpPhoto.url); setPumpPhoto(null); }} />
     <label className="convoy-field">Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} /></label>
 
     {warnings.length > 0 && <ul className="convoy-warnings">{warnings.map((warning) => <li key={warning.code}>⚠ {warning.message}</li>)}<li className="hint">Confira. Se estiver certo, pode salvar: vai com aviso para a aprovação.</li></ul>}
+    {!fleet && (partyPending || vehicleIsPending && !toWorker || workerIsPending && toWorker) && <p className="convoy-warning">Vai com a etiqueta CADASTRO PENDENTE: o aprovador cadastra (ou vincula) antes de aprovar.</p>}
     {error && <p className="convoy-error">! {error}</p>}
     <button type="button" className="primary convoy-save" disabled={busy} onClick={() => void save()}>{busy ? "Guardando..." : "Salvar e lançar o próximo"}</button>
     <button type="button" className="secondary" onClick={() => {
-      if (equipment && !window.confirm("O abastecimento preenchido ainda não foi salvo. Concluir mesmo assim?")) return;
+      if ((equipment || party || partyText.trim()) && !window.confirm("O abastecimento preenchido ainda não foi salvo. Concluir mesmo assim?")) return;
       clear(); done();
     }}>{savedCount > 0 ? "Concluir — terminei os de " + (yesterday ? "ontem" : "hoje") : "Fechar"}</button>
   </div>;
@@ -412,18 +542,20 @@ function CorrectionForm({ userId, catalog, record, close, flash }: { userId: num
     const position = await currentPosition(6000);
     const takenAt = new Date();
     try {
-      const blob = await stampPhoto(file, stampLines(takenAt, position, [`Equip. ${record.equipment}`, catalog.convoy ? `Comboio ${catalog.convoy.prefix}` : ""]));
+      const blob = await stampPhoto(file, stampLines(takenAt, position, [record.exitKind && record.exitKind !== "FROTA" ? record.equipment : `Equip. ${record.equipment}`, catalog.convoy ? `Comboio ${catalog.convoy.prefix}` : ""]));
       setPhoto({ blob, url: URL.createObjectURL(blob), takenAt: takenAt.toISOString(), gps: position });
     } catch (problem) { setError(problem instanceof Error ? problem.message : "Foto inválida."); }
   }
+  // Terceiro com destino Funcionário: não tem leitura nem foto do medidor.
+  const toWorker = record.destination === "FUNCIONARIO";
   async function send() {
     const litersValue = parseConvoyNumber(liters), readingValue = parseConvoyNumber(reading);
     if (!litersValue || Number.isNaN(litersValue) || litersValue <= 0) { setError("Informe os litros."); return; }
     if (readingValue !== null && Number.isNaN(readingValue)) { setError("Leitura inválida."); return; }
     const clientUuid = crypto.randomUUID();
     await enqueueConvoy({
-      clientUuid, userId, kind: "CORRECAO", targetUuid: record.clientUuid, payload: { liters: litersValue, reading: readingValue, note: note.trim(), answerId: clientUuid },
-      meterPhoto: photo?.blob ?? null, pumpPhoto: null, summary: { equipment: record.equipment, liters: litersValue, operator: record.operatorName, reading: readingValue, unit: record.readingUnit, noPhoto: record.noPhoto && !photo },
+      clientUuid, userId, kind: "CORRECAO", targetUuid: record.clientUuid, payload: { liters: litersValue, reading: toWorker ? null : readingValue, note: note.trim(), answerId: clientUuid },
+      meterPhoto: photo?.blob ?? null, pumpPhoto: null, summary: { equipment: record.equipment, liters: litersValue, operator: record.operatorName, reading: toWorker ? null : readingValue, unit: record.readingUnit ?? "", noPhoto: record.noPhoto && !photo },
     });
     flash("Correção guardada — será enviada para aprovação.");
     void syncConvoyQueue();
@@ -433,9 +565,9 @@ function CorrectionForm({ userId, catalog, record, close, flash }: { userId: num
     <strong>Corrigir {record.equipment}</strong><p className="convoy-warning">{record.correctionNote}</p>
     <div className="convoy-row">
       <label className="convoy-field">Litros<input className="convoy-big" inputMode="decimal" value={liters} onChange={(event) => setLiters(event.target.value)} /></label>
-      <label className="convoy-field">{unitLabel(record.readingUnit)}<input className="convoy-big" inputMode="decimal" value={reading} onChange={(event) => setReading(event.target.value)} /></label>
+      {!toWorker && <label className="convoy-field">{unitLabel(record.readingUnit)}<input className="convoy-big" inputMode="decimal" value={reading} onChange={(event) => setReading(event.target.value)} /></label>}
     </div>
-    <PhotoButton label="Nova foto do KM/horímetro (opcional)" photo={photo} onPick={(file) => void pick(file)} onClear={() => setPhoto(null)} />
+    {!toWorker && <PhotoButton label="Nova foto do KM/horímetro (opcional)" photo={photo} onPick={(file) => void pick(file)} onClear={() => setPhoto(null)} />}
     <label className="convoy-field">Observação<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="O que foi corrigido" /></label>
     {error && <p className="convoy-error">! {error}</p>}
     <div className="convoy-actions"><button type="button" className="secondary" onClick={close}>Cancelar</button><button type="button" className="primary" onClick={() => void send()}>Enviar correção</button></div>

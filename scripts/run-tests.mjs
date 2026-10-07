@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const NEEDS_DATABASE = new Set(["test:stock", "test:assistente-pendentes-banco", "test:operadores-terceiros-banco", "test:funcionarios-campo-banco", "test:controle-diario-importacao-banco", "test:importacao-pessoal-banco", "test:comboio-banco"]);
+const NEEDS_DATABASE = new Set(["test:stock", "test:assistente-pendentes-banco", "test:operadores-terceiros-banco", "test:funcionarios-campo-banco", "test:controle-diario-importacao-banco", "test:importacao-pessoal-banco", "test:comboio-banco", "test:sessao-banco"]);
 const scripts = Object.keys(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts)
   .filter((name) => name.startsWith("test:") && !NEEDS_DATABASE.has(name));
 const failed = [];

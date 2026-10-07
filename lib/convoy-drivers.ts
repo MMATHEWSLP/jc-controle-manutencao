@@ -1,8 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, serviceFronts, userSessions, users } from "../db/schema";
+import { auditLogs, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
-import type { SessionUser } from "./auth";
+import { revokeUserSessions, type SessionUser } from "./auth";
 import { ACCESS_CODE_PATTERN, hashAccessCode } from "./field-auth";
 import {
   assertCodeNotObvious, convoyEquipmentOptions, createFromEmployees, createManual, fieldAccessCandidates, FieldOperatorError,
@@ -64,8 +64,8 @@ async function markAsDriver(actor: SessionUser, userId: number, options: DriverO
   await db.transaction(async (tx) => {
     await tx.update(users).set({ convoyFuelRegister: true, convoyEquipmentId: options.convoyEquipmentId, fieldDailyAccess: options.dailyAccess, updatedAt: now })
       .where(and(eq(users.id, userId), eq(users.role, "CAMPO")));
-    // As permissões são lidas no login: quem estava logado entra de novo já com o setor certo.
-    await tx.delete(userSessions).where(eq(userSessions.userId, userId));
+    // Sem derrubar a sessão: as permissões são recalculadas a cada requisição (lib/auth.ts) e o app
+    // confere a sessão ao voltar para a tela, então o motorista já vê o setor certo sem entrar de novo.
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(userId), action: "MOTORISTA DO COMBOIO CADASTRADO",
       previousValue: previous ? JSON.stringify(previous) : null, newValue: JSON.stringify({ ...options, via }), occurredAt: now });
   });
@@ -119,7 +119,8 @@ export async function updateConvoyDriver(actor: SessionUser, id: number, body: R
       convoyEquipmentId: options.convoyEquipmentId, fieldDailyAccess: options.dailyAccess, status: active ? "ACTIVE" : "INACTIVE", updatedAt: now,
       ...(code ? { accessCodeHash: await hashAccessCode(code), accessCodeChangedAt: now } : {}),
     }).where(and(eq(users.id, id), eq(users.role, "CAMPO")));
-    if (!active || code || options.dailyAccess !== current.fieldDailyAccess) await tx.delete(userSessions).where(eq(userSessions.userId, id));
+    // Só inativar ou trocar o PIN derruba a sessão (mudar comboio/Controle Diário não desloga).
+    if (!active || code) await revokeUserSessions(tx, id, !active ? "INATIVADO" : "PIN_TROCADO");
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(id), action: "MOTORISTA DO COMBOIO ALTERADO",
       previousValue: JSON.stringify({ convoyEquipmentId: current.convoyEquipmentId, dailyAccess: current.fieldDailyAccess, active: current.active }),
       newValue: JSON.stringify({ ...options, active, codeChanged: Boolean(code) }), occurredAt: now });
@@ -135,7 +136,6 @@ export async function removeConvoyDriver(actor: SessionUser, id: number) {
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.update(users).set({ convoyFuelRegister: false, convoyEquipmentId: null, fieldDailyAccess: true, updatedAt: now }).where(and(eq(users.id, id), eq(users.role, "CAMPO")));
-    await tx.delete(userSessions).where(eq(userSessions.userId, id));
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(id), action: "MOTORISTA DO COMBOIO REMOVIDO",
       previousValue: JSON.stringify({ convoyEquipmentId: current.convoyEquipmentId, dailyAccess: current.fieldDailyAccess }), occurredAt: now });
   });

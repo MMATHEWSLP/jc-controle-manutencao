@@ -201,3 +201,137 @@ test("setor Abastecimentos: motorista do comboio entra só em Abastecimentos (Co
   const logs = (await db.select().from(auditLogs).where(eq(auditLogs.entityId, String(manual.userId)))).map((row) => row.action);
   assert.ok(logs.includes("MOTORISTA DO COMBOIO CADASTRADO"));
 });
+
+// Roteiro do comboio com terceiros (registrados "offline" e enviados depois): 1 abastecimento para o
+// veículo de um prestador, 1 para o funcionário do prestador e 1 com a empresa "Não cadastrada".
+// Aprovar grava com a MESMA createFuelMovement do computador: baixa o saldo, atualiza a leitura e a
+// média de consumo do veículo do terceiro (só destino veículo) e entra nos relatórios.
+test("comboio: saída para terceiros e prestadores — veículo, funcionário e cadastro pendente", { skip: !enabled }, async () => {
+  const { thirdParties, thirdPartyEmployees, thirdPartyVehicles } = await import("../db/schema.ts");
+  const { createThirdParty, createVehicle, thirdPartyConsumptionReport } = await import("../lib/third-parties.ts");
+  const { createFuelMovement } = await import("../lib/fuel-create.ts");
+  const db = await getDb();
+  const s = Date.now().toString(36).toUpperCase();
+  const [front] = await db.insert(serviceFronts).values({ name: `FRENTE TERCEIROS ${s}` }).returning();
+  const [cc] = await db.insert(equipment).values({ code: `EQ-CT${s}`, prefix: `CT-${s}`, type: "CAMINHÃO COMBOIO", brand: "M", model: "ATEGO", controlType: "KM", currentHours: 0, currentKm: 70000, serviceFrontId: front.id }).returning();
+  const [driverRow] = await db.insert(users).values({ email: `ct-${s}@campo.local`, username: `ct-${s}`, name: `MOTORISTA CT ${s}`, role: "CAMPO", serviceFrontId: front.id, convoyFuelRegister: true, convoyEquipmentId: cc.id }).returning();
+  const [approverRow] = await db.insert(users).values({ email: `apt-${s}@teste.local`, username: `apt-${s}`, name: `APROVADOR T ${s}`, role: "GESTOR", serviceFrontId: front.id }).returning();
+  const session = (row, profile, permissions) => ({ id: row.id, name: row.name, username: row.username, email: row.email, profile, taskRoleId: null, status: "ACTIVE", theme: "LIGHT", isPrimaryAdmin: false, lastAccessAt: null, createdAt: "", permissions, serviceFrontId: front.id, serviceFrontName: front.name, allServiceFronts: false, serviceFrontIds: [front.id], canExport: false, jobTitle: null });
+  const driver = session(driverRow, "CAMPO", await effectivePermissions(driverRow.id, "CAMPO"));
+  const approver = session(approverRow, "GESTOR", await effectivePermissions(approverRow.id, "GESTOR"));
+  assert.ok(approver.permissions.includes("third_parties.manage") && approver.permissions.includes("fuel.convoy_approve"));
+  let diesel = (await db.select().from(fuelTypes).where(eq(fuelTypes.code, "DIESEL_S10")).limit(1))[0];
+  if (!diesel) [diesel] = await db.insert(fuelTypes).values({ code: "DIESEL_S10", name: "Diesel S10" }).returning();
+  await db.insert(fuelMovements).values({ serviceFrontId: front.id, fuelTypeId: diesel.id, movementType: "ENTRADA", movementDate: "2026-01-01", quantity: 5000, unitPrice: 6, responsible: "Teste", stockLocation: "FRENTE" });
+  const balance = async () => (await fuelBalances(db, [front.id], today, today)).get(diesel.id)?.byFront.get(front.id)?.byLocation.FRENTE.balance ?? 0;
+
+  // Prestador com veículo (tanque 400 L, base de consumo: 10.000 km em 02/01) e funcionário.
+  const [prestador] = await db.insert(thirdParties).values({ name: `PRESTADORA TESTE ${s}`, kind: "PRESTADOR", serviceFrontId: front.id }).returning();
+  const plate = `PRT${s.slice(-4)}`;
+  const [caminhao] = await db.insert(thirdPartyVehicles).values({ thirdPartyId: prestador.id, plate, plateKey: plate, meterType: "KM", tankCapacityLiters: 400 }).returning();
+  const [joao] = await db.insert(thirdPartyEmployees).values({ thirdPartyId: prestador.id, name: `JOAO MOTOSSERRISTA ${s}`, jobTitle: "MOTOSSERRISTA" }).returning();
+  await createFuelMovement(db, approver, { movementType: "SAIDA", thirdParty: true, thirdPartyKind: "PRESTADOR", fuelTypeId: diesel.id, movementDate: "2026-01-02", quantity: 100, stockLocation: "FRENTE", serviceFrontId: front.id, thirdPartyId: prestador.id, thirdPartyDestination: "VEICULO", thirdPartyVehicleId: caminhao.id, thirdPartyReading: "10000", fullTank: true, responsible: "Base" }, { displayedFronts: "ALL" });
+  assert.equal(await balance(), 4900);
+
+  // Celular: o cadastro baixado traz a empresa, o veículo (última leitura) e o funcionário.
+  const catalog = await convoyFieldCatalog(driver);
+  const party = catalog.thirdParties.find((item) => item.id === prestador.id);
+  assert.equal(party.kind, "PRESTADOR");
+  assert.deepEqual([party.vehicles[0].plate, party.vehicles[0].lastReading, party.vehicles[0].unit, party.vehicles[0].tankCapacityLiters], [plate, 10000, "KM", 400]);
+  assert.equal(party.employees[0].name, joao.name);
+
+  const recordedAt = new Date().toISOString();
+  const common = { recordedAt, recordDate: today, latitude: -2.4, longitude: -54.7, gpsAccuracy: 8, photoTakenAt: recordedAt };
+  const vehicleToPrestador = { ...common, clientUuid: crypto.randomUUID(), exitKind: "PRESTADOR", operatorName: "MOTORISTA DO PRESTADOR", liters: "100", reading: "10300", deviceLastReading: 10000,
+    thirdPartyId: prestador.id, companyLabel: prestador.name, destination: "VEICULO", thirdPartyVehicleId: caminhao.id, vehicleLabel: plate, fullTank: true };
+  // Estes dois no formato que o celular envia (campos do terceiro dentro de "thirdParty").
+  const workerOfPrestador = { ...common, clientUuid: crypto.randomUUID(), exitKind: "PRESTADOR", operatorName: joao.name, liters: "20",
+    thirdParty: { thirdPartyId: prestador.id, companyLabel: prestador.name, destination: "FUNCIONARIO", thirdPartyEmployeeId: joao.id, employeeLabel: joao.name, purpose: "MOTOSSERRA" } };
+  const notRegistered = { ...common, clientUuid: crypto.randomUUID(), exitKind: "TERCEIROS", operatorName: "SEU ZE DA SERRARIA", liters: "60", reading: "5000",
+    thirdParty: { thirdPartyId: null, pendingCompany: `SERRARIA NOVA ${s}`, destination: "VEICULO", thirdPartyVehicleId: null, pendingVehicle: `ABC${s.slice(-4)}`, fullTank: true } };
+  // Mesmas regras do computador: veículo obrigatório (não é pessoa física), finalidade no destino funcionário.
+  await assert.rejects(receiveConvoyRecord(driver, { ...vehicleToPrestador, clientUuid: crypto.randomUUID(), thirdPartyVehicleId: null }, { meter: jpeg(), pump: null }), /veículo\/máquina/);
+  await assert.rejects(receiveConvoyRecord(driver, { ...workerOfPrestador, clientUuid: crypto.randomUUID(), thirdParty: { ...workerOfPrestador.thirdParty, purpose: null } }, { meter: null, pump: null }), /finalidade/);
+  await assert.rejects(receiveConvoyRecord(driver, { ...vehicleToPrestador, clientUuid: crypto.randomUUID() }, { meter: null, pump: null }), /foto do KM/);
+  const r1 = await receiveConvoyRecord(driver, vehicleToPrestador, { meter: jpeg(), pump: null });
+  const r2 = await receiveConvoyRecord(driver, workerOfPrestador, { meter: null, pump: null });
+  const r3 = await receiveConvoyRecord(driver, notRegistered, { meter: jpeg(), pump: null });
+  assert.equal((await receiveConvoyRecord(driver, vehicleToPrestador, { meter: jpeg(), pump: null })).duplicate, true, "reenvio da fila não duplica");
+  const stored = await db.select().from(convoyFuelRecords).where(eq(convoyFuelRecords.registeredBy, driver.id));
+  assert.equal(stored.length, 3);
+  assert.ok(stored.every((row) => row.serviceFrontId === front.id && row.equipmentId === null), "frente do comboio, sem equipamento da frota");
+  const stored3 = stored.find((row) => row.id === r3.id);
+  assert.deepEqual([stored3.exitKind, stored3.thirdPartyId, stored3.pendingCompany, stored3.pendingVehicle], ["TERCEIROS", null, `SERRARIA NOVA ${s}`, `ABC${s.slice(-4)}`]);
+
+  // Pendentes: nada muda no saldo nem na leitura do veículo; entram no "Saldo previsto".
+  assert.equal(await balance(), 4900);
+  assert.equal((await db.select().from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, caminhao.id)))[0].lastReading, 10000);
+  assert.equal((await pendingConvoyLiters(db, [front.id])).find((row) => row.fuelTypeId === diesel.id).liters, 180);
+
+  // Aprovação: tipo, empresa, destino e etiquetas.
+  const list = await listConvoyRecords(approver, { status: "ABERTOS", from: null, to: null, frontId: null });
+  const view = (id) => list.find((item) => item.id === id);
+  assert.deepEqual([view(r1.id).exitKind, view(r1.id).company, view(r1.id).destination, view(r1.id).vehiclePlate, view(r1.id).lastReading, view(r1.id).difference], ["PRESTADOR", prestador.name, "VEICULO", plate, 10000, 300]);
+  assert.deepEqual(view(r1.id).flags, []);
+  assert.deepEqual([view(r2.id).destination, view(r2.id).workerName, view(r2.id).purposeLabel, view(r2.id).flags], ["FUNCIONARIO", joao.name, "Motosserra", []]);
+  assert.deepEqual(view(r3.id).flags, ["CADASTRO_PENDENTE"]);
+  assert.match(view(r3.id).equipment, /SERRARIA NOVA .* \(não cadastrada\)/);
+  const mine = await myConvoyRecords(driver);
+  assert.equal(mine.find((item) => item.id === r2.id).equipment, `${prestador.name} · ${joao.name}`);
+
+  // 1) Veículo do prestador: baixa o saldo, atualiza a leitura e calcula o consumo (300 km / 100 L).
+  const a1 = await approveConvoyRecord(approver, r1.id, { stockLocation: "FRENTE" });
+  assert.equal(await balance(), 4800);
+  assert.equal((await db.select().from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, caminhao.id)))[0].lastReading, 10300);
+  const m1 = (await db.select().from(fuelMovements).where(eq(fuelMovements.id, a1.fuelMovementId)))[0];
+  assert.deepEqual([m1.thirdParty, m1.thirdPartyKind, m1.thirdPartyId, m1.thirdPartyVehicleId, m1.meterReading, m1.createdVia, m1.convoyRecordId, m1.responsible], [true, "PRESTADOR", prestador.id, caminhao.id, 10300, "COMBOIO", r1.id, "MOTORISTA DO PRESTADOR"]);
+  assert.match(a1.message, /consumo 3 km\/L/);
+
+  // 2) Funcionário do prestador: baixa o saldo, sem leitura e fora do consumo.
+  const a2 = await approveConvoyRecord(approver, r2.id, {});
+  assert.equal(await balance(), 4780);
+  const m2 = (await db.select().from(fuelMovements).where(eq(fuelMovements.id, a2.fuelMovementId)))[0];
+  assert.deepEqual([m2.thirdPartyDestination, m2.thirdPartyEmployeeId, m2.purpose, m2.meterReading, m2.thirdPartyVehicleId], ["FUNCIONARIO", joao.id, "MOTOSSERRA", null, null]);
+  assert.equal((await db.select().from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, caminhao.id)))[0].lastReading, 10300, "funcionário não mexe na leitura do veículo");
+
+  // 3) "Não cadastrada": não aprova sem cadastrar/vincular (e não fica travado em "Em aprovação").
+  await assert.rejects(approveConvoyRecord(approver, r3.id, {}), /CADASTRO PENDENTE/);
+  assert.equal((await db.select().from(convoyFuelRecords).where(eq(convoyFuelRecords.id, r3.id)))[0].status, "PENDENTE");
+  const companyId = await createThirdParty(db, approver, { name: `SERRARIA NOVA ${s}`, kind: "TERCEIRIZADA", document: null, contactName: null, phone: null, serviceFrontId: front.id, notes: null });
+  await assert.rejects(approveConvoyRecord(approver, r3.id, { thirdPartyId: companyId }), /veículo/);
+  const vehicleId = await createVehicle(db, approver, companyId, { plate: `ABC${s.slice(-4)}`, plateKey: `ABC${s.slice(-4)}`, description: "Toyota", vehicleType: "CAMINHAO", meterType: "KM", fuelTypeId: null, tankCapacityLiters: 50, expectedConsumption: null, lastReading: null });
+  // Passa da capacidade do tanque: igual ao computador, pede confirmação.
+  const tank = await approveConvoyRecord(approver, r3.id, { thirdPartyId: companyId, thirdPartyVehicleId: vehicleId }).then(() => null, (error) => error);
+  assert.equal(tank.data.confirm, "TANK");
+  assert.equal((await db.select().from(convoyFuelRecords).where(eq(convoyFuelRecords.id, r3.id)))[0].status, "PENDENTE");
+  const a3 = await approveConvoyRecord(approver, r3.id, { thirdPartyId: companyId, thirdPartyVehicleId: vehicleId, confirmTank: true });
+  assert.equal(await balance(), 4720);
+  assert.equal((await db.select().from(thirdPartyVehicles).where(eq(thirdPartyVehicles.id, vehicleId)))[0].lastReading, 5000);
+  const rec3 = (await db.select().from(convoyFuelRecords).where(eq(convoyFuelRecords.id, r3.id)))[0];
+  assert.deepEqual([rec3.status, rec3.thirdPartyId, rec3.thirdPartyVehicleId, rec3.fuelMovementId], ["APROVADO", companyId, vehicleId, a3.fuelMovementId]);
+  assert.ok(JSON.parse(rec3.corrections).some((change) => change.campo === "empresa"));
+
+  // Leitura menor que a última: só com a exceção + justificativa (quem gerencia Terceiros).
+  const lower = await receiveConvoyRecord(driver, { ...vehicleToPrestador, clientUuid: crypto.randomUUID(), liters: "50", reading: "10200", deviceWarnings: ["LEITURA_MENOR"] }, { meter: jpeg(), pump: null });
+  assert.deepEqual((await listConvoyRecords(approver, { status: "ABERTOS", from: null, to: null, frontId: null })).find((item) => item.id === lower.id).flags, ["LEITURA_MENOR"]);
+  const refused = await approveConvoyRecord(approver, lower.id, {}).then(() => null, (error) => error);
+  assert.equal(refused.data.exception, true);
+  await assert.rejects(approveConvoyRecord(approver, lower.id, { readingException: true }), /justificativa/);
+  await approveConvoyRecord(approver, lower.id, { readingException: true, note: "Painel trocado na oficina", confirmOutlier: true });
+  assert.equal(await balance(), 4670);
+  assert.equal((await approveConvoyBatch(approver, [])).approved.length, 0);
+
+  // Relatórios: comboio (por tipo e por empresa) e Consumo de Terceiros.
+  const report = await convoyReport(approver, { from: today, to: today, convoyEquipmentId: null, registeredBy: driver.id, equipmentId: null });
+  assert.equal(report.totals.approvedLiters, 230);
+  assert.equal(report.byKind.find((row) => row.key === "PRESTADOR").approvedLiters, 170);
+  assert.equal(report.byKind.find((row) => row.key === "TERCEIROS").approvedLiters, 60);
+  assert.equal(report.byCompany.find((row) => row.label === prestador.name).approvedLiters, 170);
+  const consumption = await thirdPartyConsumptionReport(db, [front.id], { from: today, to: today, thirdPartyId: prestador.id, vehicleId: null });
+  const truck = consumption.vehicles.find((row) => row.id === caminhao.id);
+  assert.equal(truck.fuelings, 2); assert.equal(truck.liters, 150); assert.equal(truck.average, 3);
+  const history = await fuelHistory(db, [front.id], parseFuelFilters(new URLSearchParams({ from: today, to: today, movementType: "PRESTADORES" })), 50);
+  assert.ok(history.rows.some((row) => row.id === a2.fuelMovementId && row.convoy?.registeredBy === driver.name));
+
+  await rm(path.join(process.cwd(), "uploads", "convoy"), { recursive: true, force: true }).catch(() => undefined);
+});

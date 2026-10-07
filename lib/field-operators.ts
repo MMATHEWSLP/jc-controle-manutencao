@@ -2,9 +2,9 @@ import { randomInt, randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
 import { and, asc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, employees, equipment, jobFunctions, serviceFronts, userServiceFronts, userSessions, users } from "../db/schema";
+import { auditLogs, employees, equipment, jobFunctions, serviceFronts, userServiceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
-import type { SessionUser } from "./auth";
+import { revokeUserSessions, type SessionUser } from "./auth";
 import { validateEmployee } from "./employee-rules";
 import { assertUniqueDocuments, employeeToday, insertEmployee, parseEmployeeBody, requireCompany, restrictedMatches } from "./employees";
 import { ACCESS_CODE_PATTERN, hashAccessCode } from "./field-auth";
@@ -130,7 +130,7 @@ export async function updateFieldOperator(actor: SessionUser, id: number, input:
       ...(input.code ? { accessCodeHash: await hashAccessCode(input.code), accessCodeChangedAt: now } : {}),
     }).where(and(eq(users.id, id), eq(users.role, "CAMPO")));
     // Inativar ou trocar o código derruba na hora quem estiver logado com o acesso antigo.
-    if (!input.active || input.code) await tx.delete(userSessions).where(eq(userSessions.userId, id));
+    if (!input.active || input.code) await revokeUserSessions(tx, id, !input.active ? "INATIVADO" : "PIN_TROCADO");
     await tx.delete(userServiceFronts).where(eq(userServiceFronts.userId, id));
     await tx.insert(userServiceFronts).values(input.serviceFrontIds.map((serviceFrontId) => ({ userId: id, serviceFrontId, createdAt: now, updatedAt: now })));
     await tx.insert(auditLogs).values({ userId: actor.id, entityType: "USER", entityId: String(id), action: "FUNCIONÁRIO DE CAMPO ALTERADO",

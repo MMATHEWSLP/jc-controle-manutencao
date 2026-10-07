@@ -69,7 +69,7 @@ export default function AppRuntime() {
     {online && pending === 0 && sentNotice > 0 && <div className="app-offline-banner syncing" role="status"><strong>✓ Enviado</strong><span>{sentNotice} registro(s) guardado(s) no celular foram enviados.</span></div>}
     {!dismissed && (installPrompt || iosHint) && <div className="app-install-hint" role="dialog" aria-label="Instalar app">
       <img src="/icon-192.png" alt="" width={40} height={40}/>
-      <div><strong>Instale o app JC Sistema</strong><span>{installPrompt ? "Abre direto da tela inicial, em tela cheia, e funciona sem internet." : "No Safari, toque em Compartilhar e depois em \"Adicionar à Tela de Início\"."}</span></div>
+      <div><strong>Instale o app JC Sistema</strong><span>{installPrompt ? "Abre direto da tela inicial, em tela cheia, e funciona sem internet." : "No Safari, toque em Compartilhar e depois em \"Adicionar à Tela de Início\". Depois, abra o app e entre uma vez por ele: no iPhone, o login do app é separado do Safari."}</span></div>
       {installPrompt && <button type="button" className="primary" onClick={install}>Instalar</button>}
       <button type="button" className="app-install-close" onClick={dismiss} aria-label="Fechar">×</button>
     </div>}

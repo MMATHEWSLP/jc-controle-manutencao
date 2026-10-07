@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { users } from "../../../../../db/schema";
-import { assertSameOrigin, audit, createSession, FIELD_SESSION_SECONDS, sessionCookie } from "../../../../../lib/auth";
+import { assertSameOrigin, audit, createSession, sessionCookie } from "../../../../../lib/auth";
 import { FieldAuthError, verifyFieldOperator } from "../../../../../lib/field-auth";
 
 // Passo 2 (depois do "Sou eu, continuar"): confere de novo nome + código e abre a sessão de
-// campo (12 h). O que essa sessão pode acessar é limitado em lib/auth.ts (authorize).
+// campo (30 dias, renovada a cada uso — lib/session-rules.ts). O que essa sessão pode acessar é
+// limitado em lib/auth.ts (authorize).
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   try {
@@ -14,9 +15,9 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const db = await getDb();
     await db.update(users).set({ lastAccessAt: now, updatedAt: now }).where(eq(users.id, operator.id));
-    const token = await createSession(operator.id, FIELD_SESSION_SECONDS);
+    const token = await createSession(operator.id, "FIELD");
     try { await audit(operator.id, operator.id, "LOGIN_CAMPO", undefined, { at: now }); } catch { /* auditoria não impede o acesso */ }
-    return Response.json({ ok: true }, { headers: { "Set-Cookie": sessionCookie(token, FIELD_SESSION_SECONDS) } });
+    return Response.json({ ok: true }, { headers: { "Set-Cookie": sessionCookie(token) } });
   } catch (error) {
     if (error instanceof FieldAuthError) return Response.json({ error: error.message }, { status: error.status });
     console.error("[auth.field.login]", error);

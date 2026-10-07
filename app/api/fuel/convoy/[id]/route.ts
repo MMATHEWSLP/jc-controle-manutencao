@@ -2,10 +2,12 @@ import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { approveConvoyRecord, ConvoyError, listConvoyRecords, rejectConvoyRecord, requestConvoyCorrection } from "../../../../../lib/convoy";
 import { checkConvoyPhoto } from "../../../../../lib/convoy-ai";
 import { parseConvoyNumber } from "../../../../../lib/convoy-rules";
+import { isFuelPurpose } from "../../../../../lib/third-party-rules";
 
 type Context = { params: Promise<{ id: string }> };
 
-// Ações do aprovador num registro: approve (com correções e a origem Frente/Porto), reject (motivo
+// Ações do aprovador num registro: approve (com correções e a origem Frente/Porto; nos terceiros,
+// também vincular empresa/veículo/funcionário, trocar a frente e as confirmações), reject (motivo
 // obrigatório), request_correction (o motorista vê o pedido) e ai_check (conferir a foto agora).
 export async function POST(request: Request, { params }: Context) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
@@ -18,6 +20,8 @@ export async function POST(request: Request, { params }: Context) {
     const user = auth.user!;
     if (body.action === "approve") {
       const number = (key: string) => (body[key] === undefined ? undefined : body[key] === null || body[key] === "" ? null : parseConvoyNumber(body[key]));
+      // undefined = mantém o do registro; null/0 = sem (ex.: pessoa física sem veículo).
+      const optionalId = (key: string) => (body[key] === undefined ? undefined : Number(body[key]) || null);
       const liters = number("liters"), reading = number("reading");
       if (liters !== undefined && (liters === null || Number.isNaN(liters))) return Response.json({ error: "Informe a quantidade em litros." }, { status: 400 });
       if (reading !== undefined && reading !== null && Number.isNaN(reading)) return Response.json({ error: "Leitura inválida." }, { status: 400 });
@@ -27,6 +31,11 @@ export async function POST(request: Request, { params }: Context) {
         operatorName: typeof body.operatorName === "string" ? body.operatorName : undefined,
         stockLocation: body.stockLocation === "PORTO" ? "PORTO" : "FRENTE", fuelTypeId: Number(body.fuelTypeId) || undefined,
         note: typeof body.note === "string" ? body.note.slice(0, 300) : null,
+        serviceFrontId: Number(body.serviceFrontId) || undefined, thirdPartyId: Number(body.thirdPartyId) || undefined,
+        thirdPartyVehicleId: optionalId("thirdPartyVehicleId"), thirdPartyEmployeeId: Number(body.thirdPartyEmployeeId) || undefined,
+        fullTank: typeof body.fullTank === "boolean" ? body.fullTank : undefined,
+        purpose: isFuelPurpose(body.purpose) ? body.purpose : undefined, purposeNote: typeof body.purposeNote === "string" ? body.purposeNote.trim().slice(0, 200) || null : undefined,
+        readingException: body.readingException === true, confirmTank: body.confirmTank === true, confirmOutlier: body.confirmOutlier === true,
       });
       return Response.json(result);
     }

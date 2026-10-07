@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, convoyFuelRecords, equipment } from "../db/schema";
+import { auditLogs, convoyFuelRecords, equipment, thirdPartyVehicles } from "../db/schema";
 import { assistantConfig } from "./assistant-config";
 import { aiReadingDiverges } from "./convoy-rules";
 import { readConvoyPhotoBytes } from "./convoy-storage";
@@ -31,8 +31,11 @@ export async function checkConvoyPhoto(recordId: number, options: { force?: bool
   const config = assistantConfig();
   if (!config.configured) return null;
   if (!options.force && !(await convoySettings(db)).aiPhotoCheck) return null;
-  const record = (await db.select({ id: convoyFuelRecords.id, meterPhotoKey: convoyFuelRecords.meterPhotoKey, reading: convoyFuelRecords.reading, unit: convoyFuelRecords.readingUnit, prefix: equipment.prefix })
-    .from(convoyFuelRecords).innerJoin(equipment, eq(equipment.id, convoyFuelRecords.equipmentId)).where(eq(convoyFuelRecords.id, recordId)).limit(1))[0];
+  // Frota: prefixo do equipamento; terceiro: placa do veículo (ou o texto "Não cadastrado").
+  const found = (await db.select({ id: convoyFuelRecords.id, meterPhotoKey: convoyFuelRecords.meterPhotoKey, reading: convoyFuelRecords.reading, unit: convoyFuelRecords.readingUnit, prefix: equipment.prefix, plate: thirdPartyVehicles.plate, pendingVehicle: convoyFuelRecords.pendingVehicle })
+    .from(convoyFuelRecords).leftJoin(equipment, eq(equipment.id, convoyFuelRecords.equipmentId)).leftJoin(thirdPartyVehicles, eq(thirdPartyVehicles.id, convoyFuelRecords.thirdPartyVehicleId))
+    .where(eq(convoyFuelRecords.id, recordId)).limit(1))[0];
+  const record = found ? { ...found, prefix: found.prefix ?? found.plate ?? found.pendingVehicle ?? "do terceiro" } : undefined;
   if (!record?.meterPhotoKey || record.reading === null) return null;
   const photo = await readConvoyPhotoBytes(record.meterPhotoKey);
   if (!photo) return null;
@@ -45,7 +48,7 @@ export async function checkConvoyPhoto(recordId: number, options: { force?: bool
       system: "Você lê fotos do painel de equipamentos florestais (caminhões e máquinas) para conferir a leitura digitada pelo motorista do comboio. Leia só o número do hodômetro (KM) ou do horímetro (horas). Ignore a data, hora e localização impressas no canto da foto. Não invente: se não der para ler com segurança, legivel=false.",
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: photo.contentType as "image/jpeg" | "image/png" | "image/webp", data: photo.buffer.toString("base64") } },
-        { type: "text", text: `Equipamento ${record.prefix}. Leia o ${record.unit === "KM" ? "hodômetro (KM)" : "horímetro (horas)"} desta foto.` },
+        { type: "text", text: `Equipamento ${record.prefix}. Leia o ${record.unit === "KM" ? "hodômetro (KM)" : record.unit === "HOURS" ? "horímetro (horas)" : "hodômetro (KM) ou horímetro (horas)"} desta foto.` },
       ] }],
     });
     if (response.stop_reason === "refusal") result = { status: "ERRO", reading: null };

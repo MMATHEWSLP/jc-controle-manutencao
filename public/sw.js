@@ -14,8 +14,10 @@ const STATIC_CACHE = `jc-static-${VERSION}`;
 const PAGE_CACHE = `jc-pages-${VERSION}`;
 const API_CACHE = `jc-api-${VERSION}`;
 const PRECACHE = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/jc-florestais-logo.png", "/favicon.svg"];
-// Exportações (PDF/Excel/CSV) e login/logout nunca são guardados.
-const API_SKIP = [/^\/api\/ping/, /^\/api\/auth\/(login|logout|theme)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
+// Exportações (PDF/Excel/CSV) e login/logout/sessão nunca são guardados. A sessão não usa cópia
+// salva: sem sinal, o próprio app usa o último usuário confirmado (lib/session-client.ts), e uma
+// cópia velha poderia dizer "deslogado" (ou o usuário errado) depois de trocar de login.
+const API_SKIP = [/^\/api\/ping/, /^\/api\/auth\/(login|logout|theme|session)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE)).catch(() => undefined).then(() => self.skipWaiting()));

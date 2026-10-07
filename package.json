@@ -69,6 +69,8 @@
     "test:android-app": "esbuild tests/android-app.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-android-app.mjs && node --test /tmp/manutencao-preventiva-android-app.mjs",
     "test:convoy-rules": "esbuild tests/convoy-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-convoy-rules.mjs && node --test /tmp/manutencao-preventiva-convoy-rules.mjs",
     "test:comboio-banco": "tsx --test tests/convoy.integration.test.mjs",
+    "test:session-rules": "esbuild tests/session-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-session-rules.mjs && node --test /tmp/manutencao-preventiva-session-rules.mjs",
+    "test:sessao-banco": "tsx --test tests/session.integration.test.mjs",
     "test:field-operators-rules": "esbuild tests/field-operators-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-field-operators-rules.mjs && node --test /tmp/manutencao-preventiva-field-operators-rules.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
