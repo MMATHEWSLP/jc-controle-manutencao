@@ -286,7 +286,7 @@ export async function refreshVehicleLastReading(db: Db, vehicleId: number | null
 }
 
 // ---------------------------------------------------------------------------
-// Saída de combustível para terceiro (Prestadores de Serviço / Saída para terceiros)
+// Saída de combustível para terceiro do cadastro (Prestadores de Serviço / Terceiro/Doações)
 // ---------------------------------------------------------------------------
 export type ThirdPartyFuelRequest = {
   mode: "PRESTADOR" | "GERAL"; thirdPartyId: number; vehicleId: number | null; reading: number | null; fullTank: boolean; quantity: number;
@@ -305,7 +305,7 @@ export async function prepareThirdPartyFuel(db: Db, user: SessionUser, request: 
   const party = (await db.select().from(thirdParties).where(eq(thirdParties.id, request.thirdPartyId)).limit(1))[0];
   if (!party) throw new ThirdPartyError("Terceiro não encontrado no cadastro.", 404);
   if (!party.active && request.current?.thirdPartyId !== party.id) throw new ThirdPartyError(`${party.name} está inativo no cadastro de terceiros.`);
-  if (request.mode === "PRESTADOR" && party.kind === "PESSOA_FISICA") throw new ThirdPartyError("Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Saída para terceiros.");
+  if (request.mode === "PRESTADOR" && party.kind === "PESSOA_FISICA") throw new ThirdPartyError("Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Terceiro/Doações.");
   if (request.destination === "FUNCIONARIO") {
     if (!request.employeeId) throw new ThirdPartyError(`Escolha o funcionário de ${party.name} que recebeu o combustível (ou cadastre com “+ Novo”).`);
     const worker = await requireThirdPartyEmployee(db, party.id, request.employeeId, request.current?.thirdPartyEmployeeId);

@@ -198,6 +198,9 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const [thirdPartyDescription, setThirdPartyDescription] = useState(editing?.thirdPartyDescription ?? "");
   // Terceiro do cadastro. Lançamento antigo (só texto livre) continua com os campos de texto ao editar.
   const legacyThirdParty = Boolean(editing?.thirdParty && !editing.thirdPartyId);
+  // Terceiro/Doações: "Do cadastro" (empresa, veículo ou funcionário do cadastro de Terceiros) ou
+  // "Manual" (só Destino/Descrição em texto livre, sem escolher nada). Novo lançamento começa no Manual.
+  const [donationManual, setDonationManual] = useState(editing ? Boolean(editing.thirdParty && editing.thirdPartyKind !== "PRESTADOR" && !editing.thirdPartyId) : true);
   const thirdPartyOptions = useThirdPartyOptions();
   const [party, setParty] = useState<ThirdPartyOption | null>(null);
   const [vehicle, setVehicle] = useState<VehicleOption | null>(null);
@@ -250,7 +253,9 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   const isProvider = isExit && exitKind === "PRESTADOR";
   const isThirdParty = isExit && exitKind !== "FROTA";
   // Saída para terceiro pelo cadastro (novo formato): empresa + veículo + leitura + tanque cheio.
-  const registered = isThirdParty && !legacyThirdParty;
+  const isDonation = isExit && exitKind === "TERCEIROS";
+  const manualDonation = isDonation && donationManual;
+  const registered = isProvider ? !legacyThirdParty : isDonation && !donationManual;
   const partyKinds: ThirdPartyOption["kind"][] | undefined = isProvider ? ["PRESTADOR", "TERCEIRIZADA"] : undefined;
   const toWorker = registered && party !== null && destination === "FUNCIONARIO";
   const needsVehicle = registered && party !== null && party.kind !== "PESSOA_FISICA" && !toWorker;
@@ -280,7 +285,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
   if (!(quantityValue > 0)) missing.push(["quantity", "Quantidade"]);
   if (isEntry && !historical && !(unitPriceValue > 0)) missing.push(["unitPrice", "Valor por litro"]);
   if (showEquipment && !historical && !equipment) missing.push(["equipment", "Veículo/Máquina"]);
-  if (legacyThirdParty && isExit && exitKind === "TERCEIROS" && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
+  if (manualDonation && !thirdPartyDescription.trim()) missing.push(["description", "Destino/Descrição"]);
   if (legacyThirdParty && isProvider && !providerCompany.trim()) missing.push(["company", "Empresa"]);
   if (legacyThirdParty && isProvider && !providerEquipment.trim()) missing.push(["providerEquipment", "Descrição do Equipamento"]);
   if (registered && !party) missing.push(["party", isProvider ? "Empresa" : "Terceiro"]);
@@ -316,7 +321,7 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
         unitPrice: isEntry ? unitPrice : "",
         ...(historical ? { originConfirmed } : {}),
         thirdParty: isThirdParty, thirdPartyKind: isProvider ? "PRESTADOR" : isThirdParty ? "GERAL" : null,
-        thirdPartyDescription: legacyThirdParty && isExit && exitKind === "TERCEIROS" ? thirdPartyDescription : "",
+        thirdPartyDescription: manualDonation ? thirdPartyDescription : "",
         providerCompany: legacyThirdParty && isProvider ? providerCompany : "", providerEquipment: legacyThirdParty && isProvider ? providerEquipment : "",
         ...(registered ? {
           // Campo próprio: "meterReading" logo abaixo é o do equipamento da frota (vazio aqui) e, com o
@@ -393,8 +398,16 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
           {isExit && (
             <fieldset className="fuel-exit-kind">
               <legend>Tipo de saída</legend>
-              {([["FROTA", "Frota (veículo/máquina)"], ["TERCEIROS", "Saída para terceiros"], ["PRESTADOR", "Prestadores de Serviço"]] as Array<[ExitKind, string]>).map(([value, label]) => (
+              {([["FROTA", "Frota (veículo/máquina)"], ["TERCEIROS", "Terceiro/Doações"], ["PRESTADOR", "Prestadores de Serviço"]] as Array<[ExitKind, string]>).map(([value, label]) => (
                 <button type="button" key={value} className={exitKind === value ? "active" : ""} aria-pressed={exitKind === value} onClick={() => { setExitKind(value); setTouched({}); if (value !== "FROTA") setEquipment(null); }}>{label}</button>
+              ))}
+            </fieldset>
+          )}
+          {isDonation && (
+            <fieldset className="fuel-exit-kind">
+              <legend>Terceiro/Doações</legend>
+              {([[true, "Manual (digitar)"], [false, "Do cadastro de Terceiros"]] as Array<[boolean, string]>).map(([value, label]) => (
+                <button type="button" key={label} className={donationManual === value ? "active" : ""} aria-pressed={donationManual === value} onClick={() => { setDonationManual(value); setTouched({}); }}>{label}</button>
               ))}
             </fieldset>
           )}
@@ -543,11 +556,11 @@ function FuelForm({ summary, authUser, editing, onSaved, onCancel }: { summary: 
             {party?.kind === "PESSOA_FISICA" && !vehicle && !toWorker && <p className="full fuel-hint">Pessoa física sem veículo: veículo e leitura são opcionais.</p>}
           </>
         )}
-        {legacyThirdParty && isExit && exitKind === "TERCEIROS" && (
+        {manualDonation && (
           <label className={`fuel-span-2 ${invalid("description")}`}>
             Destino/Descrição *
-            <input value={thirdPartyDescription} onBlur={touch("description")} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: comunidade, pessoa atendida, placa do veículo de terceiro" />
-            {fieldError("description", "Informe quem recebeu o combustível.")}
+            <input value={thirdPartyDescription} onBlur={touch("description")} onChange={(event) => setThirdPartyDescription(event.target.value)} placeholder="Ex.: doação à prefeitura, comunidade, pessoa atendida, placa do veículo" />
+            {fieldError("description", "Informe para quem foi o combustível.")}
           </label>
         )}
         {isProvider && (
@@ -807,7 +820,7 @@ function FuelHistory({ summary, canManage, flash, onEdit, onDeleted, initial }: 
           </select></label>
         )}
         <label>Combustível<select value={fuelTypeId} onChange={(event) => setFuelTypeId(event.target.value)}><option value="">Todos</option>{summary.fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
-        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída para terceiros</option><option value="PRESTADORES">Saída — Prestador de Serviço</option></select></label>
+        <label>Movimentação<select value={movementType} onChange={(event) => setMovementType(event.target.value)}><option value="">Todas</option>{MOVEMENT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="TERCEIROS">Saída — Terceiro/Doações</option><option value="PRESTADORES">Saída — Prestador de Serviço</option></select></label>
         <label>Estoque<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">Frente e Porto</option>{LOCATIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {/* Pendências da carga de histórico: ao escolher, o período abre desde o início do histórico. */}
         <label>Pendências<select value={pending} onChange={(event) => { setPending(event.target.value); if (event.target.value && period.from > HISTORY_START) setPeriod({ ...period, from: HISTORY_START }); }}><option value="">Nenhum filtro</option><option value="VEICULO">Veículo a identificar</option><option value="ORIGEM">Origem a confirmar</option><option value="IMPORTADOS">Importados do histórico</option></select></label>

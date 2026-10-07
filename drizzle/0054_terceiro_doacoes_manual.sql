@@ -1,0 +1,1 @@
+ALTER TABLE "convoy_fuel_records" ADD COLUMN "third_party_description" text;

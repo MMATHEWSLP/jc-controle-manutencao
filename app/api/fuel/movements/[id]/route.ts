@@ -43,10 +43,11 @@ export async function PUT(request: Request, { params }: Context) {
     // Lançamento da carga de histórico: correção sem os campos obrigatórios dos lançamentos novos.
     const historical = current.importSource !== null;
     // Saída para terceiro do cadastro. Lançamento antigo (só texto livre, sem terceiro do cadastro)
-    // continua editável como era, enquanto ninguém escolhe um terceiro para ele.
+    // continua editável como era, enquanto ninguém escolhe um terceiro para ele. Terceiro/Doações pode
+    // virar Manual (sai o vínculo com o cadastro); Prestadores continua exigindo o cadastro.
     const fields = readThirdPartyFuelFields(body);
     let thirdPartyFields: Awaited<ReturnType<typeof prepareThirdPartyFuel>> | null = null;
-    if (input.thirdParty && (fields.thirdPartyId || current.thirdPartyId)) {
+    if (input.thirdParty && (fields.thirdPartyId || (current.thirdPartyId && input.thirdPartyKind === "PRESTADOR"))) {
       if (!fields.thirdPartyId) return Response.json({ error: "Escolha a empresa/pessoa no cadastro de terceiros." }, { status: 400 });
       thirdPartyFields = await prepareThirdPartyFuel(db, user, {
         ...fields, thirdPartyId: fields.thirdPartyId, mode: input.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "GERAL", quantity: input.quantity,

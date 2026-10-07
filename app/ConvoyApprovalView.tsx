@@ -17,6 +17,8 @@ type Item = {
   exitKind: ConvoyExitKind; exitLabel: string; thirdPartyId: number | null; company: string | null; companyKind: keyof typeof KIND_LABELS | null; destination: "VEICULO" | "FUNCIONARIO" | null;
   thirdPartyVehicleId: number | null; vehiclePlate: string | null; vehicleDescription: string | null; tankCapacity: number | null; thirdPartyEmployeeId: number | null; workerName: string | null;
   purpose: FuelPurpose | null; purposeNote: string | null; purposeLabel: string | null; fullTank: boolean; pendingCompany: string | null; pendingVehicle: string | null; pendingEmployee: string | null;
+  // Terceiro/Doações manual (sem cadastro): destino/descrição digitado pelo motorista.
+  manual: boolean; description: string | null;
   consumption: { value: number; unit: string } | null; noPhoto: boolean; noPhotoReason: NoPhotoReason | null; noPhotoNote: string | null;
   hasMeterPhoto: boolean; hasPumpPhoto: boolean; photoTakenAt: string | null; latitude: number | null; longitude: number | null; gpsAccuracy: number | null; notes: string | null;
   flags: ConvoyFlag[]; warnings: Array<{ code: string; message: string }>; deviceWarnings: string[]; aiReading: number | null; aiStatus: string | null; aiCheckedAt: string | null;
@@ -176,7 +178,9 @@ type QuickCreate = { kind: "party" } | { kind: "vehicle" } | { kind: "worker" } 
 function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }: { item: Item; fuelTypes: FuelType[]; fronts: Front[]; close: () => void; changed: (message: string) => Promise<void>; flash: (message: string) => void; reload: () => Promise<void> }) {
   const open = item.status === "PENDENTE" || item.status === "CORRECAO";
   const third = item.exitKind !== "FROTA";
-  const toWorker = third && item.destination === "FUNCIONARIO";
+  const manualItem = third && item.manual;
+  const toWorker = third && !manualItem && item.destination === "FUNCIONARIO";
+  const [descriptionText, setDescriptionText] = useState(item.description ?? "");
   const [photo, setPhoto] = useState<"meter" | "pump">(item.hasMeterPhoto ? "meter" : "pump");
   const [liters, setLiters] = useState(String(item.liters).replace(".", ","));
   const [reading, setReading] = useState(item.reading !== null ? String(item.reading).replace(".", ",") : "");
@@ -206,11 +210,11 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
     setParties(result.parties); setCanManage(result.canManage);
     return result.parties;
   }, []);
-  useEffect(() => { if (third && open) loadParties().catch(() => setError("Não foi possível carregar o cadastro de terceiros.")); }, [third, open, loadParties]);
+  useEffect(() => { if (third && open && !manualItem) loadParties().catch(() => setError("Não foi possível carregar o cadastro de terceiros.")); }, [third, open, manualItem, loadParties]);
   const party = parties.find((entry) => entry.id === partyId) ?? null;
   const vehicle = party?.vehicles.find((entry) => entry.id === vehicleId) ?? null;
   const worker = party?.employees.find((entry) => entry.id === workerId) ?? null;
-  const missing = third ? [
+  const missing = third && !manualItem ? [
     !partyId ? `a empresa${item.pendingCompany ? ` "${item.pendingCompany}"` : ""}` : null,
     !toWorker && !vehicleId && item.pendingVehicle ? `o veículo "${item.pendingVehicle}"` : null,
     toWorker && !workerId ? `o funcionário${item.pendingEmployee ? ` "${item.pendingEmployee}"` : ""}` : null,
@@ -229,7 +233,9 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
     }
     finally { setBusy(false); }
   }
-  const approve = () => act(third ? {
+  const approve = () => act(manualItem ? {
+    action: "approve", liters, stockLocation, fuelTypeId: Number(fuelTypeId) || undefined, note, serviceFrontId: Number(frontId) || undefined, operatorName: receiver, description: descriptionText,
+  } : third ? {
     action: "approve", liters, ...(toWorker ? {} : { reading: reading === "" ? null : reading, fullTank }), stockLocation, fuelTypeId: Number(fuelTypeId) || undefined, note,
     serviceFrontId: Number(frontId) || undefined, thirdPartyId: partyId ?? undefined, thirdPartyVehicleId: toWorker ? undefined : vehicleId, thirdPartyEmployeeId: toWorker ? workerId ?? undefined : undefined,
     operatorName: receiver, ...(toWorker ? { purpose: purpose || undefined, purposeNote } : {}), readingException,
@@ -262,20 +268,35 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
             {item.hasMeterPhoto && item.hasPumpPhoto && <div className="main-tabs secondary-module-nav"><button className={photo === "meter" ? "active" : ""} onClick={() => setPhoto("meter")}>KM/horímetro</button><button className={photo === "pump" ? "active" : ""} onClick={() => setPhoto("pump")}>Bomba/totalizador</button></div>}
             <ZoomPhoto key={src} src={src} alt={photo === "meter" ? "Foto do KM/horímetro" : "Foto da bomba"} />
           </> : item.noPhoto ? <div className="convoy-typed">SEM FOTO<small>{item.noPhotoReason ? NO_PHOTO_LABELS[item.noPhotoReason] : "—"}{item.noPhotoNote ? ` · ${item.noPhotoNote}` : ""}</small></div>
-            : <div className="convoy-typed">Sem medidor<small>{toWorker ? "Destino funcionário: sem leitura e sem foto do medidor." : "Sem veículo: sem leitura."}</small></div>}
+            : <div className="convoy-typed">Sem medidor<small>{manualItem ? "Terceiro/Doações manual: sem leitura e sem foto do medidor." : toWorker ? "Destino funcionário: sem leitura e sem foto do medidor." : "Sem veículo: sem leitura."}</small></div>}
           {mapsLink(item) && <p><a href={mapsLink(item)!} target="_blank" rel="noopener noreferrer">📍 Ver localização no mapa</a>{item.gpsAccuracy !== null ? ` (±${Math.round(item.gpsAccuracy)} m)` : ""}</p>}
         </div>
         <div className="convoy-review-data">
-          {!toWorker && <div className="convoy-typed">{item.reading !== null ? `${formatNumber(item.reading)} ${unit(item.unit)}` : "sem leitura"}<small>Digitado pelo motorista · última conhecida {item.lastReading !== null ? `${formatNumber(item.lastReading)} ${unit(item.unit)}${item.lastReadingDate ? ` (${brDay(item.lastReadingDate)})` : ""}` : "—"}{item.difference !== null ? ` · diferença ${formatNumber(item.difference)} ${unit(item.unit)}` : ""}{item.consumption ? ` · consumo estimado ${formatNumber(item.consumption.value, 2)} ${item.consumption.unit}` : ""}{third && item.tankCapacity ? ` · tanque ${formatNumber(item.tankCapacity)} L` : ""}</small>{item.aiStatus && <small>Assistente: {item.aiStatus === "CONFERE" ? "foto confere" : item.aiStatus === "DIVERGE" ? `foto mostra ${formatNumber(item.aiReading ?? 0)}` : item.aiStatus === "ILEGIVEL" ? "número ilegível na foto" : "conferência falhou"}</small>}</div>}
+          {!toWorker && !manualItem && <div className="convoy-typed">{item.reading !== null ? `${formatNumber(item.reading)} ${unit(item.unit)}` : "sem leitura"}<small>Digitado pelo motorista · última conhecida {item.lastReading !== null ? `${formatNumber(item.lastReading)} ${unit(item.unit)}${item.lastReadingDate ? ` (${brDay(item.lastReadingDate)})` : ""}` : "—"}{item.difference !== null ? ` · diferença ${formatNumber(item.difference)} ${unit(item.unit)}` : ""}{item.consumption ? ` · consumo estimado ${formatNumber(item.consumption.value, 2)} ${item.consumption.unit}` : ""}{third && item.tankCapacity ? ` · tanque ${formatNumber(item.tankCapacity)} L` : ""}</small>{item.aiStatus && <small>Assistente: {item.aiStatus === "CONFERE" ? "foto confere" : item.aiStatus === "DIVERGE" ? `foto mostra ${formatNumber(item.aiReading ?? 0)}` : item.aiStatus === "ILEGIVEL" ? "número ilegível na foto" : "conferência falhou"}</small>}</div>}
           {item.flags.length > 0 && <p>{item.flags.map((flag) => <span key={flag} className={`convoy-tag ${flag}`}>{CONVOY_FLAG_LABELS[flag]}</span>)}</p>}
           {/* Em aberto, o CADASTRO PENDENTE aparece no quadro de vincular/cadastrar logo abaixo. */}
           {item.warnings.some((warning) => !(open && warning.code === "CADASTRO_PENDENTE")) && <ul className="convoy-warnings">{item.warnings.filter((warning) => !(open && warning.code === "CADASTRO_PENDENTE")).map((warning) => <li key={warning.code}>⚠ {warning.message}</li>)}</ul>}
-          {third ? <p className="table-sub">Tipo: <b>{item.exitLabel}</b> · Empresa: <b>{item.company ?? `${item.pendingCompany ?? "—"} (não cadastrada)`}</b>{item.companyKind ? ` (${KIND_LABELS[item.companyKind]})` : ""} · Destino: <b>{toWorker ? `Funcionário: ${item.workerName ?? `${item.pendingEmployee ?? "—"} (não cadastrado)`}` : `Veículo: ${item.vehiclePlate ?? (item.pendingVehicle ? `${item.pendingVehicle} (não cadastrado)` : "sem veículo")}`}</b>{item.purposeLabel ? ` · Finalidade: ${item.purposeLabel}` : ""}{!toWorker ? ` · ${item.fullTank ? "tanque cheio" : "tanque parcial"}` : ""} · Responsável que recebeu: <b>{item.operatorName}</b> · Frente: <b>{item.front ?? "—"}</b>{item.notes ? ` · Obs.: ${item.notes}` : ""}</p>
+          {manualItem ? <p className="table-sub">Tipo: <b>{item.exitLabel}</b> (manual) · Destino/descrição: <b>{item.description}</b> · Responsável que recebeu: <b>{item.operatorName}</b> · Frente: <b>{item.front ?? "—"}</b>{item.notes ? ` · Obs.: ${item.notes}` : ""}</p>
+            : third ? <p className="table-sub">Tipo: <b>{item.exitLabel}</b> · Empresa: <b>{item.company ?? `${item.pendingCompany ?? "—"} (não cadastrada)`}</b>{item.companyKind ? ` (${KIND_LABELS[item.companyKind]})` : ""} · Destino: <b>{toWorker ? `Funcionário: ${item.workerName ?? `${item.pendingEmployee ?? "—"} (não cadastrado)`}` : `Veículo: ${item.vehiclePlate ?? (item.pendingVehicle ? `${item.pendingVehicle} (não cadastrado)` : "sem veículo")}`}</b>{item.purposeLabel ? ` · Finalidade: ${item.purposeLabel}` : ""}{!toWorker ? ` · ${item.fullTank ? "tanque cheio" : "tanque parcial"}` : ""} · Responsável que recebeu: <b>{item.operatorName}</b> · Frente: <b>{item.front ?? "—"}</b>{item.notes ? ` · Obs.: ${item.notes}` : ""}</p>
             : <p className="table-sub">Motorista/operador: <b>{item.operatorName}</b> · Frente: <b>{item.front ?? "—"}</b>{item.notes ? ` · Obs.: ${item.notes}` : ""}</p>}
           {item.correctionNote && <p className="convoy-warning">Correção pedida: {item.correctionNote}</p>}
           {item.rejectionReason && <p className="convoy-error">Rejeitado por {item.rejectedBy}: {item.rejectionReason}</p>}
           {item.approvedBy && <p className="table-sub">Aprovado por {item.approvedBy} em {item.approvedAt ? when(item.approvedAt) : "—"}. {item.readingUpdateNote}</p>}
-          {open && third && <>
+          {open && manualItem && <>
+            <label>Destino / descrição<input value={descriptionText} onChange={(event) => setDescriptionText(event.target.value)} /></label>
+            <div className="convoy-row">
+              <label>Litros<input inputMode="decimal" value={liters} onChange={(event) => setLiters(event.target.value)} /></label>
+              <label>Responsável que recebeu<input value={receiver} onChange={(event) => setReceiver(event.target.value)} /></label>
+            </div>
+            <div className="convoy-row">
+              <label>Frente (saldo baixado)<select value={frontId} onChange={(event) => setFrontId(event.target.value)}>{!fronts.some((front) => String(front.id) === frontId) && <option value={frontId}>{item.front ?? "—"}</option>}{fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>
+              <label>Origem<select value={stockLocation} onChange={(event) => setStockLocation(event.target.value as "FRENTE" | "PORTO")}><option value="FRENTE">Frente</option><option value="PORTO">Porto</option></select></label>
+              <label>Combustível<select value={fuelTypeId} onChange={(event) => setFuelTypeId(event.target.value)}>{fuelTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
+            </div>
+            <label>Observação da aprovação<input value={note} onChange={(event) => setNote(event.target.value)} /></label>
+            <small className="table-sub">Gravado como Combustível → Saída → Terceiro/Doações (manual, sem cadastro): baixa o saldo da frente e fica fora da média de consumo.</small>
+          </>}
+          {open && third && !manualItem && <>
             {missing.length > 0 && <div className="convoy-pending-box"><b>CADASTRO PENDENTE</b><span>Antes de aprovar, vincule a um cadastro existente{canManage ? " ou cadastre" : " (cadastrar exige a permissão de Terceiros)"}: {missing.join(", ")}.</span></div>}
             <label>Empresa{item.exitKind === "PRESTADOR" ? " (prestadora ou terceirizada)" : ""}
               <ThirdPartyPicker options={parties} kinds={item.exitKind === "PRESTADOR" ? ["PRESTADOR", "TERCEIRIZADA"] : undefined} value={party} onPick={(option) => { setPartyId(option?.id ?? null); setVehicleId(null); setWorkerId(null); }} placeholder={item.pendingCompany ? `Digitado: ${item.pendingCompany} — buscar no cadastro` : undefined} />

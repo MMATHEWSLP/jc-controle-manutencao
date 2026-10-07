@@ -51,12 +51,15 @@ export async function createFuelMovement(db: Db, user: SessionUser, body: Record
   const fuelType = (await db.select({ id: fuelTypes.id }).from(fuelTypes).where(and(eq(fuelTypes.id, input.fuelTypeId), eq(fuelTypes.active, true))).limit(1))[0];
   if (!fuelType) throw new FuelCreateError("Escolha um tipo de combustível válido.");
   const equipment = input.equipmentId ? await fuelEquipmentContext(db, input.equipmentId) : null;
-  // Saída para terceiro: empresa e veículo vêm do cadastro de Terceiros (com leitura, tanque cheio,
-  // capacidade do tanque e consumo conferidos); os textos livres antigos são preenchidos a partir dele.
+  // Saída para terceiro do cadastro: empresa e veículo vêm do cadastro de Terceiros (com leitura, tanque
+  // cheio, capacidade do tanque e consumo conferidos); os textos livres antigos são preenchidos a partir
+  // dele. Terceiro/Doações também pode ser Manual: sem cadastro, só o Destino/Descrição em texto livre
+  // (conferido em validateFuelMovement). Prestadores de Serviço é sempre do cadastro.
   let thirdPartyFields: Awaited<ReturnType<typeof prepareThirdPartyFuel>> | null = null;
-  if (input.thirdParty) {
-    const fields = readThirdPartyFuelFields(body);
-    if (!fields.thirdPartyId) throw new FuelCreateError("Escolha a empresa/pessoa no cadastro de terceiros.");
+  const thirdFields = input.thirdParty ? readThirdPartyFuelFields(body) : null;
+  if (input.thirdParty && (thirdFields!.thirdPartyId || input.thirdPartyKind === "PRESTADOR")) {
+    const fields = thirdFields!;
+    if (!fields.thirdPartyId) throw new FuelCreateError("Escolha a empresa no cadastro de terceiros.");
     thirdPartyFields = await prepareThirdPartyFuel(db, user, {
       ...fields, thirdPartyId: fields.thirdPartyId, mode: input.thirdPartyKind === "PRESTADOR" ? "PRESTADOR" : "GERAL", quantity: input.quantity,
       movementDate: input.movementDate, notes: input.notes, editingId: null, current: null, referenceByDate: options.referenceByDate === true,
@@ -86,7 +89,8 @@ export async function createFuelMovement(db: Db, user: SessionUser, body: Record
   const vehicleId = thirdPartyFields?.thirdPartyVehicleId ?? null;
   const found = vehicleId ? (await consumptionByMovement(db, [vehicleId])).get(created.id) ?? null : null;
   const consumption = found ? { value: found.value, unit: found.unit } : null;
-  const who = thirdPartyFields ? (thirdPartyFields.providerEquipment ?? thirdPartyFields.thirdPartyDescription ?? "terceiro") : equipment?.prefix ?? null;
+  const who = thirdPartyFields ? (thirdPartyFields.providerEquipment ?? thirdPartyFields.thirdPartyDescription ?? "terceiro")
+    : input.thirdParty ? input.thirdPartyDescription ?? input.providerEquipment ?? "terceiro" : equipment?.prefix ?? null;
   const summary = [
     input.movementType === "ENTRADA" ? "Entrada" : input.movementType === "TRANSFERENCIA" ? "Transferência" : "Saída",
     who, `${input.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L`,

@@ -1219,6 +1219,9 @@ export const convoyFuelRecords = pgTable("convoy_fuel_records", {
   purpose: text("purpose", { enum:["MOTOSSERRA","GERADOR","GALAO","MAQUINA_NAO_CADASTRADA","OUTROS"] }),
   purposeNote: text("purpose_note"),
   fullTank: boolean("full_tank").notNull().default(true),
+  // Terceiro/Doações lançado no modo Manual (sem escolher do cadastro): destino/descrição em texto
+  // livre (ex.: "Doação à Prefeitura — trator da estrada"). Preenchido = lançamento manual.
+  thirdPartyDescription: text("third_party_description"),
   // "Não cadastrado": o motorista não cadastra terceiros; digita o nome/placa e o aprovador cadastra
   // ou vincula a um cadastro existente antes de aprovar (etiqueta CADASTRO PENDENTE).
   pendingCompany: text("pending_company"),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aiReadingDiverges, convoyWarnings, estimatedConsumption, fortalezaWallTime, matchesSearch, parseConvoyNumber, readConvoyPayload, thirdPartyConvoyWarnings, thirdPartyPending, validateConvoyPayload } from "../lib/convoy-rules.ts";
+import { aiReadingDiverges, CONVOY_EXIT_LABELS, convoyWarnings, estimatedConsumption, fortalezaWallTime, matchesSearch, parseConvoyNumber, readConvoyPayload, thirdPartyConvoyWarnings, thirdPartyPending, validateConvoyPayload } from "../lib/convoy-rules.ts";
 
 const base = { liters: 300, reading: 8120, unit: "HOURS", lastReading: 8100, lastReadingDate: "2026-10-05", recordDate: "2026-10-06", litersStats: { count: 10, average: 280, max: 350 }, avgPerDay: 10 };
 const codes = (input) => convoyWarnings({ ...base, ...input }).map((warning) => warning.code);
@@ -134,4 +134,24 @@ test("terceiros: avisos (sem bloquear) e etiqueta CADASTRO PENDENTE", () => {
   assert.equal(pending({ thirdPartyId: null, pendingCompany: "Serraria" }), true);
   assert.equal(pending({ thirdPartyVehicleId: null, pendingVehicle: "ABC1D23" }), true);
   assert.equal(pending({ thirdPartyVehicleId: 12, pendingVehicle: "ABC1D23" }), false, "vinculado pelo aprovador");
+});
+
+test("Terceiro/Doações: manual (só destino/descrição) ou do cadastro; Prestadores continua do cadastro", () => {
+  assert.equal(CONVOY_EXIT_LABELS.TERCEIROS, "Terceiro/Doações");
+  assert.equal(CONVOY_EXIT_LABELS.PRESTADOR, "Prestadores de Serviço");
+  const manual = (raw, options = {}) => {
+    const payload = readConvoyPayload({ clientUuid: thirdBase.clientUuid, recordedAt: thirdBase.recordedAt, recordDate: thirdBase.recordDate, liters: "40", operatorName: "Seu Zé", exitKind: "TERCEIROS",
+      thirdParty: { manual: true, description: "Doação à Prefeitura — trator da estrada", thirdPartyId: 5, thirdPartyVehicleId: 9, destination: "VEICULO" }, reading: "1234", noPhoto: true, ...raw });
+    return { payload, problem: validateConvoyPayload(payload, { hasMeterPhoto: false, hasPumpPhoto: false, pumpPhotoRequired: false, today: "2026-10-06", companyKind: null, ...options }) };
+  };
+  const ok = manual({});
+  assert.equal(ok.problem, null, "sem empresa, sem veículo, sem foto e sem leitura");
+  assert.deepEqual([ok.payload.thirdParty.manual, ok.payload.thirdParty.description, ok.payload.thirdParty.thirdPartyId, ok.payload.thirdParty.thirdPartyVehicleId, ok.payload.reading, ok.payload.noPhoto],
+    [true, "Doação à Prefeitura — trator da estrada", null, null, null, false], "dados do cadastro são ignorados no modo manual");
+  assert.match(manual({ thirdParty: { manual: true, description: "" } }).problem, /destino\/descrição/);
+  assert.match(manual({ operatorName: "" }).problem, /quem recebeu/);
+  // Manual só existe em Terceiro/Doações: em Prestadores continua exigindo a empresa do cadastro.
+  assert.match(manual({ exitKind: "PRESTADOR", thirdParty: { manual: true, description: "Doação" } }, { companyKind: null }).problem, /empresa/);
+  // Manual não fica com CADASTRO PENDENTE.
+  assert.equal(thirdPartyPending({ thirdPartyId: null, pendingCompany: null, pendingVehicle: null, pendingEmployee: null, thirdPartyVehicleId: null, thirdPartyEmployeeId: null, thirdPartyDescription: "Doação" }), false);
 });

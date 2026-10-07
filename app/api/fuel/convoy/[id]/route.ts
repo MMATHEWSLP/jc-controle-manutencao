@@ -36,6 +36,7 @@ export async function POST(request: Request, { params }: Context) {
         fullTank: typeof body.fullTank === "boolean" ? body.fullTank : undefined,
         purpose: isFuelPurpose(body.purpose) ? body.purpose : undefined, purposeNote: typeof body.purposeNote === "string" ? body.purposeNote.trim().slice(0, 200) || null : undefined,
         readingException: body.readingException === true, confirmTank: body.confirmTank === true, confirmOutlier: body.confirmOutlier === true,
+        description: typeof body.description === "string" ? body.description.slice(0, 200) : undefined,
       });
       return Response.json(result);
     }
