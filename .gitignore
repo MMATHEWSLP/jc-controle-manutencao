@@ -63,3 +63,6 @@ importacoes/colaboradores_exportacao*.xlsx
 
 # App Android: APK/versao.json publicados no servidor (nunca no repositório)
 /android-releases/
+
+# pacote do build gerado localmente (o deploy monta o seu no GitHub Actions)
+/jc-sistema-build.zip

@@ -372,6 +372,13 @@
       "when": 1791307274559,
       "tag": "0052_abastecimentos_setor",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791390627806,
+      "tag": "0053_sessao_persistente_comboio_terceiros",
+      "breakpoints": true
     }
   ]
 }

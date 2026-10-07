@@ -126,3 +126,15 @@ html[data-theme="dark"] .convoy-driver-pick button.active{background:#16342a}
 .convoy-day[open]>summary{margin-bottom:8px}
 html[data-theme="dark"] .convoy-attention,html[data-theme="dark"] .convoy-yesterday{background:#2a2419;border-color:#5a4a2a}
 html[data-theme="dark"] .convoy-attention h3{color:#f3c77a}
+
+/* Tipo de saída (Frota / Saída para terceiros / Prestadores) e terceiros "Não cadastrado" */
+.convoy-exit-kind{grid-template-columns:repeat(3,1fr)}
+.convoy-exit-kind button{min-height:58px;padding:6px;font-size:13px;line-height:1.2}
+.convoy-not-registered{min-height:44px;margin-top:8px;font-size:14px}
+.convoy-not-registered input{width:22px;height:22px}
+.convoy-check small{display:block;font-size:12px;font-weight:600;color:var(--muted)}
+.convoy-pending-box{display:grid;gap:4px;padding:10px 12px;border:1px solid #d9a441;border-radius:10px;background:#fff6e0;color:#6d4500;font-size:12px}
+.convoy-tag.CADASTRO_PENDENTE{background:#fff1cc;color:#7a4a00;border-color:#d9a441}
+.convoy-tag.ACIMA_TANQUE{background:#fde8e8;color:#9b2c2c}
+html[data-theme="dark"] .convoy-pending-box{background:#3a2c10;color:#f3d8a0;border-color:#8a6a2a}
+@media (max-width:380px){.convoy-exit-kind{grid-template-columns:1fr}}

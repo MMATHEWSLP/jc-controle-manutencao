@@ -155,6 +155,16 @@ export const userSessions = pgTable("user_sessions", {
   tokenHash: text("token_hash").notNull(),
   expiresAt: text("expires_at").notNull(),
   lastSeenAt: text("last_seen_at").notNull().default(isoNow),
+  // Tipo da sessão (lib/auth.ts): FIELD = funcionário de campo (30 dias, renova a cada uso);
+  // REMEMBER = "Manter conectado" (30 dias, renova); SHORT = sem marcar (cai após 12 h sem uso).
+  // Nulo = sessão aberta antes da migração 0053 (vale até a validade antiga).
+  kind: text("kind", { enum:["FIELD","REMEMBER","SHORT"] }),
+  // Fim da sessão por ação (Sair, PIN/senha trocados, acesso inativado): a linha fica guardada por
+  // um tempo com o motivo, para o log dizer por que o celular caiu na tela de login.
+  revokedAt: text("revoked_at"),
+  revokeReason: text("revoke_reason"),
+  // Quando o fim da sessão já foi registrado no log (registra uma vez só por sessão).
+  endLoggedAt: text("end_logged_at"),
   ...timestamps,
 }, (table) => [
   uniqueIndex("user_session_token_unique").on(table.tokenHash),
@@ -1189,16 +1199,35 @@ export const convoyFuelRecords = pgTable("convoy_fuel_records", {
   status: text("status", { enum:["PENDENTE","APROVANDO","APROVADO","REJEITADO","CORRECAO"] }).notNull().default("PENDENTE"),
   registeredBy: integer("registered_by").notNull().references(() => users.id),
   convoyEquipmentId: integer("convoy_equipment_id").references(() => equipment.id),
-  equipmentId: integer("equipment_id").notNull().references(() => equipment.id),
+  // Tipo de saída, igual ao Combustível → Saída: FROTA (equipamento da frota), TERCEIROS (Saída para
+  // terceiros) ou PRESTADOR (Prestadores de Serviço). Nos dois últimos não há equipamento da frota.
+  exitKind: text("exit_kind", { enum:["FROTA","TERCEIROS","PRESTADOR"] }).notNull().default("FROTA"),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
   // Frente do equipamento abastecido quando o registro chegou (base do "Saldo previsto").
   serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
   fuelTypeId: integer("fuel_type_id").references(() => fuelTypes.id),
   // Motorista/operador do equipamento (cadastro de Funcionários); nome guardado como foi escolhido.
   operatorEmployeeId: integer("operator_employee_id").references(() => employees.id),
+  // Terceiros: aqui fica o responsável que recebeu (funcionário da empresa ou nome digitado).
   operatorName: text("operator_name").notNull(),
+  // Terceiros/Prestadores: empresa, destino (veículo ou funcionário da empresa), finalidade e tanque
+  // cheio — os mesmos campos do formulário do computador (lib/third-parties.ts:prepareThirdPartyFuel).
+  thirdPartyId: integer("third_party_id").references((): AnyPgColumn => thirdParties.id),
+  thirdPartyDestination: text("third_party_destination", { enum:["VEICULO","FUNCIONARIO"] }),
+  thirdPartyVehicleId: integer("third_party_vehicle_id").references((): AnyPgColumn => thirdPartyVehicles.id),
+  thirdPartyEmployeeId: integer("third_party_employee_id").references((): AnyPgColumn => thirdPartyEmployees.id),
+  purpose: text("purpose", { enum:["MOTOSSERRA","GERADOR","GALAO","MAQUINA_NAO_CADASTRADA","OUTROS"] }),
+  purposeNote: text("purpose_note"),
+  fullTank: boolean("full_tank").notNull().default(true),
+  // "Não cadastrado": o motorista não cadastra terceiros; digita o nome/placa e o aprovador cadastra
+  // ou vincula a um cadastro existente antes de aprovar (etiqueta CADASTRO PENDENTE).
+  pendingCompany: text("pending_company"),
+  pendingVehicle: text("pending_vehicle"),
+  pendingEmployee: text("pending_employee"),
   liters: doublePrecision("liters").notNull(),
   reading: doublePrecision("reading"),
-  readingUnit: text("reading_unit", { enum:["HOURS","KM"] }).notNull(),
+  // Nulo quando não há leitura possível (terceiro com destino Funcionário ou sem veículo).
+  readingUnit: text("reading_unit", { enum:["HOURS","KM"] }),
   // Última leitura que o celular conhecia (cadastro baixado) — os avisos da hora foram contra ela.
   deviceLastReading: doublePrecision("device_last_reading"),
   // Data/hora do abastecimento no celular (ISO) e o dia (AAAA-MM-DD, horário de Fortaleza).

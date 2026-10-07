@@ -129,7 +129,8 @@ export function ThirdPartyWorkerPicker({ workers, value, onPick, disabled }: { w
 // ---------------------------------------------------------------------------
 // Formulários (também usados no cadastro rápido "+ Novo" do Combustível e da Movimentação)
 // ---------------------------------------------------------------------------
-export function ThirdPartyFormModal({ item, fronts, defaultKind, close, saved }: { item: ThirdParty | null; fronts: Option[]; defaultKind?: Kind; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
+// initialName: nome já digitado (ex.: "Não cadastrado" no comboio), para o aprovador só conferir.
+export function ThirdPartyFormModal({ item, fronts, defaultKind, initialName, close, saved }: { item: ThirdParty | null; fronts: Option[]; defaultKind?: Kind; initialName?: string; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -147,7 +148,7 @@ export function ThirdPartyFormModal({ item, fronts, defaultKind, close, saved }:
       <section className="modal">
         <header><div><p className="eyebrow">TERCEIROS</p><h2>{item ? `Editar ${item.name}` : "Novo terceiro"}</h2><span>Empresa prestadora, terceirizada ou pessoa que não é da JC.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
-          <label className="full">Nome / razão social *<input name="name" required defaultValue={item?.name ?? ""} autoFocus /></label>
+          <label className="full">Nome / razão social *<input name="name" required defaultValue={item?.name ?? initialName ?? ""} autoFocus /></label>
           <label>Tipo *<select name="kind" required defaultValue={item?.kind ?? defaultKind ?? "PRESTADOR"}>{(Object.keys(KIND_LABELS) as Kind[]).map((kind) => <option key={kind} value={kind}>{KIND_LABELS[kind]}</option>)}</select></label>
           <label>CNPJ / CPF<input name="document" inputMode="numeric" defaultValue={item?.document ?? ""} placeholder="Opcional" /></label>
           <label>Contato<input name="contactName" defaultValue={item?.contactName ?? ""} /></label>
@@ -162,7 +163,7 @@ export function ThirdPartyFormModal({ item, fronts, defaultKind, close, saved }:
   );
 }
 
-export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: { thirdParty: { id: number; name: string }; item: ThirdPartyVehicle | null; fuelTypes: Option[]; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
+export function VehicleFormModal({ thirdParty, item, fuelTypes, initialPlate, close, saved }: { thirdParty: { id: number; name: string }; item: ThirdPartyVehicle | null; fuelTypes: Option[]; initialPlate?: string; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
   const [meterType, setMeterType] = useState<MeterType>(item?.meterType ?? "KM");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -181,7 +182,7 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
       <section className="modal">
         <header><div><p className="eyebrow">VEÍCULO / MÁQUINA DE TERCEIRO</p><h2>{item ? `Editar ${item.plate}` : "Novo veículo"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
-          <label>Placa / identificação *<input name="plate" required defaultValue={item?.plate ?? ""} autoFocus /></label>
+          <label>Placa / identificação *<input name="plate" required defaultValue={item?.plate ?? initialPlate ?? ""} autoFocus /></label>
           <label>Modelo / descrição<input name="description" defaultValue={item?.description ?? ""} /></label>
           <label>Tipo *<select name="vehicleType" defaultValue={item?.vehicleType ?? "CAMINHAO"}>{(Object.keys(VEHICLE_LABELS) as VehicleType[]).map((type) => <option key={type} value={type}>{VEHICLE_LABELS[type]}</option>)}</select></label>
           <label>Medição *<select name="meterType" value={meterType} onChange={(event) => setMeterType(event.target.value as MeterType)}><option value="KM">KM (hodômetro)</option><option value="HORIMETRO">Horímetro (horas)</option></select></label>
@@ -198,7 +199,7 @@ export function VehicleFormModal({ thirdParty, item, fuelTypes, close, saved }: 
   );
 }
 
-export function WorkerFormModal({ thirdParty, item, close, saved }: { thirdParty: { id: number; name: string }; item: ThirdPartyWorker | null; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
+export function WorkerFormModal({ thirdParty, item, initialName, close, saved }: { thirdParty: { id: number; name: string }; item: ThirdPartyWorker | null; initialName?: string; close: () => void; saved: (id: number, message: string) => void | Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -216,7 +217,7 @@ export function WorkerFormModal({ thirdParty, item, close, saved }: { thirdParty
       <section className="modal">
         <header><div><p className="eyebrow">FUNCIONÁRIO DE TERCEIRO</p><h2>{item ? `Editar ${item.name}` : "Novo funcionário"}</h2><span>{thirdParty.name}</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
         <form className="modal-form" onSubmit={submit}>
-          <label className="full">Nome *<input name="name" required minLength={3} defaultValue={item?.name ?? ""} autoFocus /></label>
+          <label className="full">Nome *<input name="name" required minLength={3} defaultValue={item?.name ?? initialName ?? ""} autoFocus /></label>
           <label>Função<input name="jobTitle" defaultValue={item?.jobTitle ?? ""} placeholder="Ex.: motosserrista" /></label>
           <label>CPF<input name="cpf" inputMode="numeric" defaultValue={item?.cpf ?? ""} placeholder="Opcional" /></label>
           <label>Telefone<input name="phone" defaultValue={item?.phone ?? ""} placeholder="Opcional" /></label>

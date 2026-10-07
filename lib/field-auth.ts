@@ -10,8 +10,9 @@ import { newSalt, passwordHash, verifyPassword } from "./auth";
 //  - o código é guardado só em hash (salt:hash) e nunca volta para a tela nem para log;
 //  - bloqueio após MAX_FAILS_PER_OPERATOR erros por funcionário e MAX_FAILS_PER_IP por
 //    aparelho/IP dentro de LOCK_MINUTES (impede testar os códigos um por um);
-//  - sessão curta (FIELD_SESSION_SECONDS em lib/auth.ts) e acesso restrito ao Controle Diário
-//    no backend (authorize em lib/auth.ts);
+//  - acesso restrito ao Controle Diário e ao comboio no backend (authorize em lib/auth.ts); a
+//    sessão dura 30 dias renovando a cada uso (lib/session-rules.ts) e cai na hora se o PIN for
+//    trocado ou o acesso inativado;
 //  - todo registro guarda o usuário que lançou; ADMIN/GESTOR troca o código ou inativa a qualquer momento.
 // ---------------------------------------------------------------------------
 export const ACCESS_CODE_PATTERN = /^\d{4,8}$/;

@@ -11,3 +11,9 @@
 .app-offline-banner~.app-install-hint{display:none}
 /* Reserva espaço no fim da página para o aviso fixo nunca cobrir botões (ex.: Revisar e Enviar). */
 body:has(.app-offline-banner),body:has(.app-install-hint){padding-bottom:96px}
+
+/* Login: "Manter conectado" */
+.login-remember{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:11px;color:#41525e;cursor:pointer}
+.login-remember input{width:16px;height:16px;margin:1px 0 0;flex:none}
+.login-remember small{display:block;margin-top:2px;color:#83919c;font-size:10px;line-height:1.4}
+html[data-theme="dark"] .login-remember{color:#c6c4c1}

@@ -1,17 +1,20 @@
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { siteHosts } from "./site";
 import { getDb } from "../db";
 import { auditLogs, authBootstrap, serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../db/schema";
+import {
+  ENDED_SESSION_KEEP_SECONDS, SESSION_COOKIE_SECONDS, isSessionKind, sessionEndReason, sessionExpiry, slidingRenewal,
+  type RevokeReason, type SessionEndReason, type SessionKind,
+} from "./session-rules";
 
 export const SESSION_COOKIE = "maintenance_session";
-const SESSION_SECONDS = 60 * 60 * 24 * 7;
-// Funcionário de campo (perfil CAMPO) entra sem senha: sessão mais curta.
-export const FIELD_SESSION_SECONDS = 60 * 60 * 12;
+// Validade das sessões: lib/session-rules.ts (campo 30 dias e "Manter conectado" 30 dias, renovando a
+// cada uso; sem marcar, cai depois de 12 h sem uso).
 // ÚNICAS rotas de API que uma sessão CAMPO pode chamar. Qualquer outra responde 403 em
 // authorize(), mesmo que alguém tente chamar direto (não depende de esconder botão na tela).
 // AVISO DE SEGURANÇA: login sem senha = quem souber nome + código entra no lugar do colega.
-// Contrapartidas: bloqueio por tentativas (lib/field-auth.ts), código só em hash, sessão de
-// 12 h, acesso restrito a estas rotas e todo registro guarda quem lançou.
+// Contrapartidas: bloqueio por tentativas (lib/field-auth.ts), código só em hash, acesso restrito
+// a estas rotas, trocar o PIN ou inativar derruba a sessão na hora e todo registro guarda quem lançou.
 // "/api/fuel/convoy/field": tela "Abastecimentos" do motorista do comboio (também exige a permissão
 // fuel.convoy_register, que só existe para quem tem a opção marcada no cadastro de campo).
 const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field"];
@@ -253,35 +256,73 @@ export function assertSameOrigin(request:Request) {
   // domínio oficial (SITE_URL, com e sem www) é sempre aceito. O host da própria requisição cobre o
   // uso local. X-Forwarded-Host NÃO entra: é um cabeçalho que o cliente pode inventar.
   const candidatos=[...siteHosts(),request.headers.get("host"),new URL(request.url).host];
-  return candidatos.some((candidato)=>Boolean(candidato)&&candidato!.toLowerCase()===originHost);
+  const ok=candidatos.some((candidato)=>Boolean(candidato)&&candidato!.toLowerCase()===originHost);
+  // Registro para investigar recusas vindas do app instalado ou do proxy da Hostinger.
+  if(!ok)console.warn("[auth.origin] Requisição recusada",{origin,host:request.headers.get("host"),forwardedHost:request.headers.get("x-forwarded-host"),path:new URL(request.url).pathname});
+  return ok;
 }
 
-export function sessionCookie(token:string,seconds=SESSION_SECONDS) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${seconds}`;
+// Persistente (Max-Age): no iPhone, cookie sem validade é apagado quando o app da tela de início
+// é fechado. Lax (e não Strict) para o login valer ao abrir o sistema por link do WhatsApp ou QR;
+// os POSTs continuam protegidos por assertSameOrigin. Sem Domain: o endereço sem "www" é
+// redirecionado para o oficial (next.config.ts), então o cookie fica num domínio só.
+export function sessionCookie(token:string,seconds=SESSION_COOKIE_SECONDS) {
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${seconds}`;
 }
 
 export function clearSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-export async function createSession(userId:number,seconds=SESSION_SECONDS) {
+type Db=Awaited<ReturnType<typeof getDb>>;
+type DbOrTx=Db|Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+// Publicado antes da migração 0053 (colunas kind/revoked_at/... ainda não existem): o login segue
+// funcionando do jeito antigo até a migração rodar.
+function missingColumn(error:unknown) {
+  const code=(error as {code?:string;cause?:{code?:string}})?.code??(error as {cause?:{code?:string}})?.cause?.code;
+  return code==="42703";
+}
+
+export async function createSession(userId:number,kind:SessionKind) {
   const tokenBytes=new Uint8Array(32);
   crypto.getRandomValues(tokenBytes);
   const token=bytesToBase64Url(tokenBytes);
   const now=new Date();
-  const expires=new Date(now.getTime()+seconds*1000).toISOString();
   const db=await getDb();
-  // Faxina: sessões vencidas não servem para nada e só acumulam na tabela.
-  await db.delete(userSessions).where(lt(userSessions.expiresAt,now.toISOString()));
-  await db.insert(userSessions).values({id:crypto.randomUUID(),userId,tokenHash:await tokenHash(token),expiresAt:expires,lastSeenAt:now.toISOString()});
+  // Faxina: sessões vencidas ou encerradas há mais de 30 dias (até lá ficam para o log do motivo).
+  const keepUntil=new Date(now.getTime()-ENDED_SESSION_KEEP_SECONDS*1000).toISOString();
+  const values={id:crypto.randomUUID(),userId,tokenHash:await tokenHash(token),kind,expiresAt:sessionExpiry(kind,now),lastSeenAt:now.toISOString()};
+  try{
+    await db.delete(userSessions).where(or(lt(userSessions.expiresAt,keepUntil),lt(userSessions.revokedAt,keepUntil)));
+    await db.insert(userSessions).values(values);
+  }catch(error){
+    if(!missingColumn(error))throw error;
+    // SQL direto: o insert do Drizzle cita todas as colunas do schema (inclusive as que faltam).
+    await db.delete(userSessions).where(lt(userSessions.expiresAt,now.toISOString()));
+    await db.execute(sql`insert into user_sessions (id, user_id, token_hash, expires_at, last_seen_at) values (${values.id}, ${values.userId}, ${values.tokenHash}, ${values.expiresAt}, ${values.lastSeenAt})`);
+  }
   return token;
 }
 
+// Encerra as sessões abertas de um usuário (PIN/senha trocados, acesso inativado). A linha fica com
+// o motivo: quando o celular dele chamar o servidor de novo, o log diz por que caiu no login.
+export async function revokeUserSessions(db:DbOrTx,userId:number,reason:RevokeReason) {
+  const now=new Date().toISOString();
+  try{await db.update(userSessions).set({revokedAt:now,revokeReason:reason,updatedAt:now}).where(and(eq(userSessions.userId,userId),isNull(userSessions.revokedAt)));}
+  catch(error){if(!missingColumn(error))throw error;await db.delete(userSessions).where(eq(userSessions.userId,userId));}
+}
+
+// Botão Sair.
 export async function destroySession(request:Request) {
   const token=readCookie(request,SESSION_COOKIE);
   if(!token)return;
   const db=await getDb();
-  await db.delete(userSessions).where(eq(userSessions.tokenHash,await tokenHash(token)));
+  const now=new Date().toISOString();
+  // Saiu por conta própria: o fim já fica registrado (LOGOUT), sem outra linha no log depois.
+  const hash=await tokenHash(token);
+  try{await db.update(userSessions).set({revokedAt:now,revokeReason:"LOGOUT",endLoggedAt:now,updatedAt:now}).where(and(eq(userSessions.tokenHash,hash),isNull(userSessions.revokedAt)));}
+  catch(error){if(!missingColumn(error))throw error;await db.delete(userSessions).where(eq(userSessions.tokenHash,hash));}
 }
 
 export async function effectivePermissions(userId:number,profile:Profile) {
@@ -309,25 +350,84 @@ export async function userServiceFrontIds(userId:number) {
   return rows.map((row)=>row.serviceFrontId);
 }
 
-export async function getSessionUser(request:Request):Promise<SessionUser|null> {
+export type SessionLookup = { user:SessionUser|null; token:string|null; ended:SessionEndReason|null };
+
+// Token desconhecido (cookie velho, sessão já apagada pela faxina): registra no máximo uma vez por hora.
+const unknownTokenLogged=new Map<string,number>();
+
+async function logSessionEnd(db:Db,request:Request,reason:SessionEndReason,session:{id:string;userId:number;kind:string|null;expiresAt:string;revokedAt:string|null}|null,hash:string) {
+  try{
+    const now=new Date().toISOString();
+    if(session){
+      // Uma vez só por sessão (vários pedidos chegando juntos com o mesmo cookie).
+      const first=await db.update(userSessions).set({endLoggedAt:now}).where(and(eq(userSessions.id,session.id),isNull(userSessions.endLoggedAt))).returning({id:userSessions.id});
+      if(!first.length)return;
+    }else{
+      const last=unknownTokenLogged.get(hash);
+      if(last&&Date.now()-last<3_600_000)return;
+      if(unknownTokenLogged.size>500)unknownTokenLogged.clear();
+      unknownTokenLogged.set(hash,Date.now());
+    }
+    const detail={motivo:reason,tipo:session?.kind??null,validade:session?.expiresAt??null,revogadaEm:session?.revokedAt??null,
+      aparelho:(request.headers.get("user-agent")??"").slice(0,200),modo:request.headers.get("x-jc-display")?.slice(0,20)??null,rota:new URL(request.url).pathname};
+    console.info("[auth.session.end]",{userId:session?.userId??null,...detail});
+    await db.insert(auditLogs).values({userId:session?.userId??null,entityType:"USER",entityId:String(session?.userId??0),action:"SESSAO_ENCERRADA",newValue:JSON.stringify(detail)});
+  }catch(error){console.error("[auth.session.end] Falha ao registrar",error);}
+}
+
+// Lê a sessão do cookie, renova a validade (sessão deslizante) e, se a sessão não vale mais, diz
+// o motivo (e registra no log). Erro de banco sobe como exceção: quem chama responde 5xx e o
+// celular entende como "sem confirmação agora", nunca como "deslogado".
+export async function readSession(request:Request):Promise<SessionLookup> {
   const token=readCookie(request,SESSION_COOKIE);
-  if(!token)return null;
+  if(!token)return {user:null,token:null,ended:null};
   const db=await getDb();
-  const rows=await db.select({
+  const hash=await tokenHash(token);
+  const userColumns={
     id:users.id,name:users.name,username:users.username,email:users.email,profile:users.role,taskRoleId:users.taskRoleId,status:users.status,
     theme:users.theme,isPrimaryAdmin:users.isPrimaryAdmin,lastAccessAt:users.lastAccessAt,createdAt:users.createdAt,
     serviceFrontId:users.serviceFrontId,serviceFrontName:serviceFronts.name,
     allServiceFronts:users.allServiceFronts,canExport:users.canExport,jobTitle:users.jobTitle,
-  }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(and(eq(userSessions.tokenHash,await tokenHash(token)),gt(userSessions.expiresAt,new Date().toISOString()))).limit(1);
-  const row=rows[0];
-  if(!row||row.status!=="ACTIVE"||!row.username)return null;
+  };
+  let found;
+  let legacy=false;
+  try{
+    found=(await db.select({
+      sessionId:userSessions.id,sessionKind:userSessions.kind,expiresAt:userSessions.expiresAt,lastSeenAt:userSessions.lastSeenAt,revokedAt:userSessions.revokedAt,revokeReason:userSessions.revokeReason,...userColumns,
+    }).from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(eq(userSessions.tokenHash,hash)).limit(1))[0];
+  }catch(error){
+    if(!missingColumn(error))throw error;
+    legacy=true;
+    const old=(await db.select({sessionId:userSessions.id,expiresAt:userSessions.expiresAt,lastSeenAt:userSessions.lastSeenAt,...userColumns})
+      .from(userSessions).innerJoin(users,eq(userSessions.userId,users.id)).leftJoin(serviceFronts,eq(users.serviceFrontId,serviceFronts.id)).where(eq(userSessions.tokenHash,hash)).limit(1))[0];
+    found=old?{...old,sessionKind:null,revokedAt:null,revokeReason:null}:undefined;
+  }
+  const now=new Date();
+  const ended=sessionEndReason(found?{revokedAt:found.revokedAt,revokeReason:found.revokeReason,expiresAt:found.expiresAt,userActive:found.status==="ACTIVE"&&Boolean(found.username)}:null,now);
+  if(ended){
+    if(!legacy)await logSessionEnd(db,request,ended,found?{id:found.sessionId,userId:found.id,kind:found.sessionKind,expiresAt:found.expiresAt,revokedAt:found.revokedAt}:null,hash);
+    return {user:null,token,ended};
+  }
+  const {sessionId,sessionKind,expiresAt,lastSeenAt,revokedAt:_revokedAt,revokeReason:_revokeReason,...row}=found!;
+  void _revokedAt; void _revokeReason;
+  const renewal=legacy?null:slidingRenewal({kind:isSessionKind(sessionKind)?sessionKind:null,lastSeenAt,expiresAt},row.profile,now);
+  if(renewal){
+    try{await db.update(userSessions).set({kind:renewal.kind,expiresAt:renewal.expiresAt,lastSeenAt:now.toISOString()}).where(eq(userSessions.id,sessionId));}
+    catch(error){console.error("[auth.session] Falha ao renovar a validade",error);}
+  }
   const serviceFrontIds=row.allServiceFronts||row.profile==="ADMIN"?[]:await userServiceFrontIds(row.id);
-  return {...row,username:row.username,permissions:await effectivePermissions(row.id,row.profile),serviceFrontIds};
+  return {user:{...row,username:row.username!,permissions:await effectivePermissions(row.id,row.profile),serviceFrontIds},token,ended:null};
+}
+
+export async function getSessionUser(request:Request):Promise<SessionUser|null> {
+  return (await readSession(request)).user;
 }
 
 export async function authorize(request:Request,permission?:Permission) {
-  const user=await getSessionUser(request);
-  if(!user)return {user:null,response:Response.json({error:"Sessão não autenticada."},{status:401})};
+  const session=await readSession(request);
+  const user=session.user;
+  // Sessão que não vale mais: apaga o cookie junto com o 401 (o próximo pedido nem leva o cookie).
+  if(!user)return {user:null,response:Response.json({error:"Sessão não autenticada."},{status:401,headers:session.token?{"Set-Cookie":clearSessionCookie()}:undefined})};
   if(user.profile==="CAMPO"){
     const pathname=new URL(request.url).pathname;
     if(!FIELD_ALLOWED_API.some((prefix)=>pathname===prefix||pathname.startsWith(prefix.endsWith("/")?prefix:`${prefix}/`)))
@@ -369,7 +469,7 @@ export async function ensurePrimaryAdmin() {
       name:"Mathews",username:INITIAL_ADMIN_USERNAME,passwordHash:hash,passwordSalt:salt,
       role:"ADMIN",hierarchyLevel:"ADMIN",taskRoleId:rootRole?.id??null,status:"ACTIVE",isPrimaryAdmin:true,passwordUpdatedAt:now,updatedAt:now,
     }).where(eq(users.id,adminId));
-    await db.delete(userSessions).where(eq(userSessions.userId,adminId));
+    await revokeUserSessions(db,adminId,"SENHA_TROCADA");
   }else{
     const inserted=await db.insert(users).values({
       email:INITIAL_ADMIN_EMAIL,name:"Mathews",username:INITIAL_ADMIN_USERNAME,

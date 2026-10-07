@@ -1,7 +1,7 @@
 import { asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { serviceFronts, taskRoles, userPermissions, userServiceFronts, userSessions, users } from "../../../db/schema";
-import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel } from "../../../lib/auth";
+import { serviceFronts, taskRoles, userPermissions, userServiceFronts, users } from "../../../db/schema";
+import { ALL_PERMISSIONS, PROFILE_DEFAULTS, type Permission, type Profile, assertSameOrigin, audit, authorize, effectivePermissions, newSalt, passwordHash, profileLabel, revokeUserSessions } from "../../../lib/auth";
 import { canChangeTaskRole } from "../../../lib/task-authorization";
 
 async function loadActiveTaskRoleIds() {
@@ -146,7 +146,7 @@ export async function PUT(request:Request){
       const password=clean(body.password);const invalidPassword=passwordError(password);if(invalidPassword)return Response.json({error:invalidPassword},{status:400});
       const salt=newSalt();const now=new Date().toISOString();
       await db.update(users).set({passwordSalt:salt,passwordHash:await passwordHash(password,salt),passwordUpdatedAt:now,updatedAt:now}).where(eq(users.id,id));
-      await db.delete(userSessions).where(eq(userSessions.userId,id));
+      await revokeUserSessions(db,id,"SENHA_TROCADA");
       await audit(auth.user!.id,id,"PASSWORD_RESET",undefined,{at:now});
       return Response.json({ok:true});
     }
@@ -190,7 +190,7 @@ export async function PUT(request:Request){
     if(canChangeFront&&nextServiceFrontIds)await replaceServiceFronts(id,nextAllServiceFronts?[]:nextServiceFrontIds);
     await audit(auth.user!.id,id,"USER_EDITED",before,{name,username,email,profile:nextProfile,taskRoleId:nextTaskRoleId,status:nextStatus,serviceFrontId:nextFrontId,allServiceFronts:nextAllServiceFronts,serviceFrontIds:nextServiceFrontIds});
     if(nextTaskRoleId!==current.taskRoleId)await audit(auth.user!.id,id,"TASK_ROLE_CHANGED",{taskRoleId:current.taskRoleId},{taskRoleId:nextTaskRoleId});
-    if(nextStatus!==current.status){await db.delete(userSessions).where(eq(userSessions.userId,id));await audit(auth.user!.id,id,nextStatus==="ACTIVE"?"USER_ACTIVATED":"USER_DEACTIVATED",{status:current.status},{status:nextStatus});}
+    if(nextStatus!==current.status){await revokeUserSessions(db,id,"INATIVADO");await audit(auth.user!.id,id,nextStatus==="ACTIVE"?"USER_ACTIVATED":"USER_DEACTIVATED",{status:current.status},{status:nextStatus});}
     if(canPermissions&&!editingSelf&&!current.isPrimaryAdmin&&Array.isArray(body.permissions)){
       const previous=await effectivePermissions(id,current.role);const permissions=validPermissions(body.permissions);await replaceOverrides(id,nextProfile as Profile,permissions);await audit(auth.user!.id,id,"PERMISSIONS_CHANGED",{permissions:previous},{permissions});
     }

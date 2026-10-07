@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { auditLogs, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles } from "../db/schema";
+import { auditLogs, convoyFuelRecords, fuelMovements, fuelTypes, serviceFronts, stockExits, thirdParties, thirdPartyEmployees, thirdPartyVehicles } from "../db/schema";
 import type { SessionUser } from "./auth";
 import { computeFuelCosts } from "./fuel-rules";
 import { loadFuelValuations } from "./fuel-valuations";
@@ -154,19 +154,23 @@ export async function updateThirdParty(db: Db, user: SessionUser, id: number, in
   await db.insert(auditLogs).values({ userId: user.id, entityType: "THIRD_PARTY", entityId: String(id), action: active === false ? "TERCEIRO INATIVADO" : active === true ? "TERCEIRO REATIVADO" : "TERCEIRO EDITADO", previousValue: JSON.stringify(current), newValue: JSON.stringify(values) });
 }
 
+// Abastecimentos do comboio (mesmo pendentes) também contam como uso. Antes da migração 0053 as
+// colunas não existem: conta como não usado.
 async function partyUsed(db: Db, id: number) {
-  const [fuel, exit] = await Promise.all([
+  const [fuel, exit, convoy] = await Promise.all([
     db.select({ id: fuelMovements.id }).from(fuelMovements).where(eq(fuelMovements.thirdPartyId, id)).limit(1),
     db.select({ id: stockExits.id }).from(stockExits).where(eq(stockExits.thirdPartyId, id)).limit(1),
+    db.select({ id: convoyFuelRecords.id }).from(convoyFuelRecords).where(eq(convoyFuelRecords.thirdPartyId, id)).limit(1).catch(() => []),
   ]);
-  return fuel.length > 0 || exit.length > 0;
+  return fuel.length > 0 || exit.length > 0 || convoy.length > 0;
 }
 async function vehicleUsed(db: Db, id: number) {
-  const [fuel, exit] = await Promise.all([
+  const [fuel, exit, convoy] = await Promise.all([
     db.select({ id: fuelMovements.id }).from(fuelMovements).where(eq(fuelMovements.thirdPartyVehicleId, id)).limit(1),
     db.select({ id: stockExits.id }).from(stockExits).where(eq(stockExits.thirdPartyVehicleId, id)).limit(1),
+    db.select({ id: convoyFuelRecords.id }).from(convoyFuelRecords).where(eq(convoyFuelRecords.thirdPartyVehicleId, id)).limit(1).catch(() => []),
   ]);
-  return fuel.length > 0 || exit.length > 0;
+  return fuel.length > 0 || exit.length > 0 || convoy.length > 0;
 }
 
 // Excluir de verdade só o que nunca foi usado; com movimentação, só inativar.
@@ -222,11 +226,12 @@ export async function deleteVehicle(db: Db, user: SessionUser, id: number) {
 // Funcionários dos terceiros (aba "Funcionários" da empresa)
 // ---------------------------------------------------------------------------
 async function employeeUsed(db: Db, id: number) {
-  const [fuel, exit] = await Promise.all([
+  const [fuel, exit, convoy] = await Promise.all([
     db.select({ id: fuelMovements.id }).from(fuelMovements).where(eq(fuelMovements.thirdPartyEmployeeId, id)).limit(1),
     db.select({ id: stockExits.id }).from(stockExits).where(eq(stockExits.thirdPartyEmployeeId, id)).limit(1),
+    db.select({ id: convoyFuelRecords.id }).from(convoyFuelRecords).where(eq(convoyFuelRecords.thirdPartyEmployeeId, id)).limit(1).catch(() => []),
   ]);
-  return fuel.length > 0 || exit.length > 0;
+  return fuel.length > 0 || exit.length > 0 || convoy.length > 0;
 }
 
 export async function createThirdPartyEmployee(db: Db, user: SessionUser, thirdPartyId: number, input: ThirdPartyEmployeeInput) {

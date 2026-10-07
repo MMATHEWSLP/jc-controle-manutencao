@@ -12,6 +12,8 @@ export async function POST(request:Request){
     await ensurePrimaryAdmin();
     const body=await request.json() as Record<string,unknown>;
     const credential=clean(body.credential).toLowerCase();const password=clean(body.password);
+    // "Manter conectado": 30 dias renovando a cada uso; sem marcar, cai depois de 12 h sem uso.
+    const remember=body.remember===true;
     if(!credential||!password)return Response.json({error:"Informe usuário ou e-mail e senha."},{status:400});
     const db=await getDb();
     const row=(await db.select().from(users).where(or(eq(users.username,credential),eq(users.email,credential))).limit(1))[0];
@@ -25,8 +27,8 @@ export async function POST(request:Request){
     await recordLoginAttempt(request,row.id,true);
     const now=new Date().toISOString();
     await db.update(users).set({lastAccessAt:now,updatedAt:now}).where(eq(users.id,row.id));
-    const token=await createSession(row.id);
-    try{await audit(row.id,row.id,"LOGIN",undefined,{at:now});}catch{ /* A auditoria não deve impedir um login válido. */ }
+    const token=await createSession(row.id,remember?"REMEMBER":"SHORT");
+    try{await audit(row.id,row.id,"LOGIN",undefined,{at:now,manterConectado:remember});}catch{ /* A auditoria não deve impedir um login válido. */ }
     const front=row.serviceFrontId?(await db.select({name:serviceFronts.name}).from(serviceFronts).where(eq(serviceFronts.id,row.serviceFrontId)).limit(1))[0]:null;
     const serviceFrontIds=row.allServiceFronts||row.role==="ADMIN"?[]:await userServiceFrontIds(row.id);
     const user={id:row.id,name:row.name,username:row.username,email:row.email,profile:row.role,taskRoleId:row.taskRoleId,status:row.status,theme:row.theme,isPrimaryAdmin:row.isPrimaryAdmin,lastAccessAt:now,createdAt:row.createdAt,permissions:await effectivePermissions(row.id,row.role),serviceFrontId:row.serviceFrontId,serviceFrontName:front?.name??null,allServiceFronts:row.allServiceFronts,serviceFrontIds,canExport:row.canExport,jobTitle:row.jobTitle};
