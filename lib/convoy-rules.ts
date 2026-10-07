@@ -6,9 +6,10 @@
 import { isFuelPurpose, type FuelPurpose, type ThirdPartyKindCode } from "./third-party-rules";
 
 export type ConvoyUnit = "HOURS" | "KM";
-// Tipo de saída, igual ao Combustível → Saída do computador.
+// Tipo de saída, igual ao Combustível → Saída do computador. TERCEIROS = "Terceiro/Doações" (antes
+// "Saída para terceiros"): do cadastro de Terceiros ou Manual (só destino/descrição em texto livre).
 export type ConvoyExitKind = "FROTA" | "TERCEIROS" | "PRESTADOR";
-export const CONVOY_EXIT_KINDS: Array<[ConvoyExitKind, string]> = [["FROTA", "Frota (veículo/máquina)"], ["TERCEIROS", "Saída para terceiros"], ["PRESTADOR", "Prestadores de Serviço"]];
+export const CONVOY_EXIT_KINDS: Array<[ConvoyExitKind, string]> = [["FROTA", "Frota (veículo/máquina)"], ["TERCEIROS", "Terceiro/Doações"], ["PRESTADOR", "Prestadores de Serviço"]];
 export const CONVOY_EXIT_LABELS = Object.fromEntries(CONVOY_EXIT_KINDS) as Record<ConvoyExitKind, string>;
 export const isConvoyExitKind = (value: unknown): value is ConvoyExitKind => CONVOY_EXIT_KINDS.some(([key]) => key === value);
 // Prestadores de Serviço só aceitam empresas prestadoras ou terceirizadas (mesma regra do computador).
@@ -151,6 +152,8 @@ export function fortalezaWallTime(iso: string) {
 // "Não cadastrado", só com o nome/placa digitado (pending*). Os *Label guardam o texto mostrado no
 // celular (usado se o cadastro sumir até o envio). operatorName = responsável que recebeu.
 export type ConvoyThirdPartyPayload = {
+  // Terceiro/Doações no modo Manual: sem cadastro, só a descrição (para quem foi o combustível).
+  manual: boolean; description: string | null;
   thirdPartyId: number | null; companyLabel: string | null; pendingCompany: string | null;
   destination: "VEICULO" | "FUNCIONARIO" | null;
   thirdPartyVehicleId: number | null; vehicleLabel: string | null; pendingVehicle: string | null;
@@ -177,9 +180,9 @@ export function readConvoyPayload(raw: Record<string, unknown>): ConvoyPayload {
   // O celular manda os campos do terceiro agrupados em "thirdParty" (formato de ConvoyPayload);
   // campos soltos no payload também são aceitos.
   const nested = raw.thirdParty && typeof raw.thirdParty === "object" ? raw.thirdParty as Record<string, unknown> : null;
-  const thirdParty = exitKind === "FROTA" ? null : readThirdPartyPart(nested ? { ...raw, ...nested } : raw);
-  // Destino Funcionário não tem medidor: não há leitura nem "sem foto".
-  const toWorker = thirdParty?.destination === "FUNCIONARIO";
+  const thirdParty = exitKind === "FROTA" ? null : readThirdPartyPart(nested ? { ...raw, ...nested } : raw, exitKind);
+  // Destino Funcionário e Terceiro/Doações manual não têm medidor: não há leitura nem "sem foto".
+  const toWorker = thirdParty?.destination === "FUNCIONARIO" || thirdParty?.manual === true;
   const noPhoto = !toWorker && raw.noPhoto === true;
   return {
     clientUuid: typeof raw.clientUuid === "string" ? raw.clientUuid.toLowerCase() : "",
@@ -204,7 +207,13 @@ export function readConvoyPayload(raw: Record<string, unknown>): ConvoyPayload {
   };
 }
 
-function readThirdPartyPart(raw: Record<string, unknown>): ConvoyThirdPartyPayload {
+function readThirdPartyPart(raw: Record<string, unknown>, exitKind: ConvoyExitKind): ConvoyThirdPartyPayload {
+  // Manual (só em Terceiro/Doações): nenhum dado do cadastro, só a descrição.
+  if (exitKind === "TERCEIROS" && raw.manual === true) return {
+    manual: true, description: clean(raw.description, 200), thirdPartyId: null, companyLabel: null, pendingCompany: null, destination: null,
+    thirdPartyVehicleId: null, vehicleLabel: null, pendingVehicle: null, thirdPartyEmployeeId: null, employeeLabel: null, pendingEmployee: null,
+    purpose: null, purposeNote: null, fullTank: true,
+  };
   const destination = raw.destination === "FUNCIONARIO" ? "FUNCIONARIO" : raw.destination === "VEICULO" ? "VEICULO" : null;
   const thirdPartyId = id(raw.thirdPartyId);
   const pendingCompany = thirdPartyId ? null : clean(raw.pendingCompany, 120);
@@ -212,6 +221,7 @@ function readThirdPartyPart(raw: Record<string, unknown>): ConvoyThirdPartyPaylo
   const employeeId = destination === "FUNCIONARIO" ? id(raw.thirdPartyEmployeeId) : null;
   const purpose = destination === "FUNCIONARIO" && isFuelPurpose(raw.purpose) ? raw.purpose : null;
   return {
+    manual: false, description: null,
     thirdPartyId, companyLabel: clean(raw.companyLabel, 160), pendingCompany,
     destination,
     thirdPartyVehicleId: vehicleId, vehicleLabel: destination === "VEICULO" ? clean(raw.vehicleLabel, 160) : null,
@@ -223,8 +233,10 @@ function readThirdPartyPart(raw: Record<string, unknown>): ConvoyThirdPartyPaylo
   };
 }
 
-// Algo ainda depende do aprovador cadastrar ou vincular (empresa, veículo ou funcionário).
-export function thirdPartyPending(input: { thirdPartyId: number | null; pendingCompany: string | null; pendingVehicle: string | null; pendingEmployee: string | null; thirdPartyVehicleId: number | null; thirdPartyEmployeeId: number | null }) {
+// Algo ainda depende do aprovador cadastrar ou vincular (empresa, veículo ou funcionário). Terceiro/
+// Doações manual (com descrição) não depende de cadastro.
+export function thirdPartyPending(input: { thirdPartyId: number | null; pendingCompany: string | null; pendingVehicle: string | null; pendingEmployee: string | null; thirdPartyVehicleId: number | null; thirdPartyEmployeeId: number | null; thirdPartyDescription?: string | null }) {
+  if (input.thirdPartyDescription && !input.thirdPartyId) return false;
   return !input.thirdPartyId || (Boolean(input.pendingVehicle) && !input.thirdPartyVehicleId) || (Boolean(input.pendingEmployee) && !input.thirdPartyEmployeeId);
 }
 
@@ -268,8 +280,9 @@ export function validateConvoyPayload(input: ConvoyPayload, options: { hasMeterP
 
 // Mesmas regras de lib/third-parties.ts:prepareThirdPartyFuel, com "Não cadastrado" no lugar do cadastro.
 function validateThirdPartyPart(exitKind: ConvoyExitKind, third: ConvoyThirdPartyPayload, companyKind: ThirdPartyKindCode | null): string | null {
+  if (third.manual) return third.description ? null : "Informe o destino/descrição (para quem foi o combustível).";
   if (!third.thirdPartyId && !third.pendingCompany) return "Escolha a empresa (ou marque \"Não cadastrado\" e digite o nome).";
-  if (companyKind && !exitKindAccepts(exitKind, companyKind)) return "Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Saída para terceiros.";
+  if (companyKind && !exitKindAccepts(exitKind, companyKind)) return "Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Terceiro/Doações.";
   if (!third.destination) return "Escolha o destino: Veículo ou Funcionário.";
   if (third.destination === "FUNCIONARIO") {
     if (!third.thirdPartyEmployeeId && !third.pendingEmployee) return "Escolha o funcionário da empresa que recebeu (ou marque \"Não cadastrado\" e digite o nome).";
@@ -277,8 +290,8 @@ function validateThirdPartyPart(exitKind: ConvoyExitKind, third: ConvoyThirdPart
     if (third.purpose === "OUTROS" && !third.purposeNote) return "Descreva a finalidade em \"Outros\".";
     return null;
   }
-  // Pessoa física pode não ter veículo (igual ao computador). Empresa "Não cadastrada" em Saída para
-  // terceiros pode ser pessoa física: o aprovador decide ao cadastrar.
+  // Pessoa física pode não ter veículo (igual ao computador). Empresa "Não cadastrada" em Terceiro/
+  // Doações pode ser pessoa física: o aprovador decide ao cadastrar.
   const vehicleOptional = companyKind === "PESSOA_FISICA" || (!third.thirdPartyId && exitKind === "TERCEIROS");
   if (!third.thirdPartyVehicleId && !third.pendingVehicle && !vehicleOptional) return "Escolha o veículo/máquina da empresa (ou marque \"Não cadastrado\" e digite a placa).";
   return null;

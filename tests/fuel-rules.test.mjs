@@ -76,7 +76,7 @@ test("saída exige equipamento; saída para terceiros exige descrição e respon
   assert.match(validateFuelMovement({ ...third, thirdPartyDescription: " " }, null, today), /Destino\/Descrição/);
   assert.match(validateFuelMovement({ ...third, thirdPartyDescription: "Comunidade X", responsible: "" }, null, today), /responsável/);
   assert.equal(validateFuelMovement({ ...third, thirdPartyDescription: "Comunidade X" }, null, today), null);
-  assert.equal(fuelMovementLabel({ movementType: "SAIDA", thirdParty: true }), "Saída para terceiros");
+  assert.equal(fuelMovementLabel({ movementType: "SAIDA", thirdParty: true }), "Terceiro/Doações");
 });
 
 test("transferência: destino obrigatório e diferente da origem (Frente ↔ Porto ou outra filial)", () => {

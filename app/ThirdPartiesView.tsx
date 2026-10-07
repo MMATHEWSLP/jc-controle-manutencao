@@ -497,7 +497,7 @@ export function ThirdPartySummaryPanel() {
               <td className="price-cell"><strong>{money(total("totalValue"))}</strong></td>
             </tr></tfoot>}
           </table>
-          {rows.length === 0 && <div className="empty-state">Nenhuma saída para terceiros no período.</div>}
+          {rows.length === 0 && <div className="empty-state">Nenhuma saída para Terceiro/Doações ou Prestadores no período.</div>}
         </div>
       )}
       <p className="table-sub">Combustível em veículos inclui saídas antigas sem destino definido. Valor do combustível pelo custo médio do estoque.</p>

@@ -3,7 +3,8 @@
 export const FUEL_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "TRANSFERENCIA"] as const;
 export type FuelMovementType = typeof FUEL_MOVEMENT_TYPES[number];
 export const FUEL_MOVEMENT_LABELS: Record<FuelMovementType, string> = { ENTRADA: "Entrada", SAIDA: "Saída", TRANSFERENCIA: "Transferência" };
-export const THIRD_PARTY_LABEL = "Saída para terceiros";
+// Antes "Saída para terceiros". Código interno continua GERAL (histórico e filtros não mudam).
+export const THIRD_PARTY_LABEL = "Terceiro/Doações";
 export const PROVIDER_LABEL = "Saída — Prestador de Serviço";
 export type ThirdPartyKind = "GERAL" | "PRESTADOR";
 
@@ -149,13 +150,13 @@ export function validateFuelMovement(input: FuelMovementInput, equipment: FuelEq
     if (input.equipmentId) return "A entrada não é vinculada a veículo/máquina.";
   }
   if (input.thirdParty) {
-    if (input.movementType !== "SAIDA") return "Saída para terceiros só vale para o tipo Saída.";
-    if (input.equipmentId) return "Saída para terceiros não usa equipamento da frota.";
+    if (input.movementType !== "SAIDA") return "Terceiro/Doações e Prestadores só valem para o tipo Saída.";
+    if (input.equipmentId) return "Terceiro/Doações e Prestadores não usam equipamento da frota.";
     if (input.thirdPartyKind === "PRESTADOR") {
       if (!input.providerCompany?.trim()) return "Informe a empresa do prestador de serviço.";
       if (!input.providerEquipment?.trim()) return "Informe a descrição do equipamento do prestador.";
-    } else if (!input.thirdPartyDescription?.trim()) return "Na saída para terceiros, informe o Destino/Descrição (quem recebeu o combustível).";
-  } else if (!historical && input.movementType === "SAIDA" && !input.equipmentId) return "Na saída, informe o veículo/máquina abastecido (ou use Saída para terceiros).";
+    } else if (!input.thirdPartyDescription?.trim()) return "Em Terceiro/Doações, informe o Destino/Descrição (para quem foi o combustível).";
+  } else if (!historical && input.movementType === "SAIDA" && !input.equipmentId) return "Na saída, informe o veículo/máquina abastecido (ou use Terceiro/Doações).";
   if (input.movementType === "TRANSFERENCIA") {
     if (!isFuelLocation(input.destinationLocation)) return "Na transferência, informe o estoque de destino (Frente ou Porto).";
     const destinationFront = input.destinationFrontId ?? input.serviceFrontId;

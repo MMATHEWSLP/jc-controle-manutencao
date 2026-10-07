@@ -113,7 +113,7 @@ export async function GET(request: Request) {
       { header: "Destino da transferência", key: "destination", width: 22 },
       { header: "Veículo/Máquina", key: "equipment", width: 16 },
       { header: "Modelo", key: "model", width: 24 },
-      { header: "Saída para terceiros — destino/descrição", key: "thirdParty", width: 30 },
+      { header: "Terceiro/Doações — destino/descrição", key: "thirdParty", width: 30 },
       { header: "Prestador — empresa", key: "providerCompany", width: 24 },
       { header: "Prestador — equipamento", key: "providerEquipment", width: 26 },
       { header: "Destino (terceiro)", key: "thirdPartyDestination", width: 28 },

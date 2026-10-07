@@ -179,6 +179,7 @@ async function driverFront(db: Db, user: SessionUser) {
 // "Não cadastrado" com o texto que o motorista viu, para o aprovador resolver — o registro offline
 // nunca fica travado no celular por causa de um cadastro alterado depois.
 async function resolveThirdParty(db: Db, input: ConvoyThirdPartyPayload) {
+  if (input.manual) return { resolved: input, kind: null as ThirdPartyKindCode | null, unit: null as ConvoyUnit | null };
   const party = input.thirdPartyId ? (await db.select({ id: thirdParties.id, name: thirdParties.name, kind: thirdParties.kind, active: thirdParties.active }).from(thirdParties).where(eq(thirdParties.id, input.thirdPartyId)).limit(1))[0] : undefined;
   const company = party?.active ? party : null;
   const vehicle = company && input.destination === "VEICULO" && input.thirdPartyVehicleId
@@ -197,7 +198,9 @@ async function resolveThirdParty(db: Db, input: ConvoyThirdPartyPayload) {
 }
 
 // Texto do destino de um lançamento de terceiro: "Empresa · placa" ou "Empresa · funcionário".
-export function thirdPartyTargetLabel(row: { exitKind: string; thirdPartyDestination: string | null; pendingCompany: string | null; pendingVehicle: string | null; pendingEmployee: string | null }, names: { company: string | null; plate: string | null; worker: string | null }) {
+export function thirdPartyTargetLabel(row: { exitKind: string; thirdPartyDestination: string | null; pendingCompany: string | null; pendingVehicle: string | null; pendingEmployee: string | null; thirdPartyDescription?: string | null }, names: { company: string | null; plate: string | null; worker: string | null }) {
+  // Terceiro/Doações manual: só a descrição digitada.
+  if (row.thirdPartyDescription && !names.company) return row.thirdPartyDescription;
   const company = names.company ?? (row.pendingCompany ? `${row.pendingCompany} (não cadastrada)` : "Empresa não informada");
   if (row.thirdPartyDestination === "FUNCIONARIO") return `${company} · ${names.worker ?? (row.pendingEmployee ? `${row.pendingEmployee} (não cadastrado)` : "—")}`;
   return `${company} · ${names.plate ?? (row.pendingVehicle ? `${row.pendingVehicle} (não cadastrado)` : "sem veículo")}`;
@@ -291,7 +294,8 @@ export async function receiveConvoyRecord(user: SessionUser, raw: Record<string,
   }
   const operator = target && payload.operatorEmployeeId ? (await db.select({ id: employees.id, name: employees.name }).from(employees).where(eq(employees.id, payload.operatorEmployeeId)).limit(1))[0] : null;
   const me = (await db.select({ convoyEquipmentId: users.convoyEquipmentId }).from(users).where(eq(users.id, user.id)).limit(1))[0];
-  const toWorker = third?.resolved.destination === "FUNCIONARIO";
+  // Sem medidor: destino Funcionário ou Terceiro/Doações manual.
+  const toWorker = third?.resolved.destination === "FUNCIONARIO" || third?.resolved.manual === true;
   const tp = third?.resolved ?? null;
   let meterKey: string | null = null, pumpKey: string | null = null;
   try {
@@ -310,6 +314,7 @@ export async function receiveConvoyRecord(user: SessionUser, raw: Record<string,
       thirdPartyId: tp?.thirdPartyId ?? null, thirdPartyDestination: tp?.destination ?? null, thirdPartyVehicleId: tp?.thirdPartyVehicleId ?? null,
       thirdPartyEmployeeId: tp?.thirdPartyEmployeeId ?? null, purpose: tp?.purpose ?? null, purposeNote: tp?.purposeNote ?? null, fullTank: tp?.fullTank ?? true,
       pendingCompany: tp?.pendingCompany ?? null, pendingVehicle: tp?.pendingVehicle ?? null, pendingEmployee: tp?.pendingEmployee ?? null,
+      thirdPartyDescription: tp?.manual ? tp.description : null,
       liters: payload.liters, reading: toWorker ? null : payload.reading, readingUnit: unit, deviceLastReading: payload.deviceLastReading,
       recordedAt: payload.recordedAt, recordDate: payload.recordDate, dateJustification: payload.recordDate === fortalezaDay(new Date(payload.recordedAt)) ? null : payload.dateJustification,
       noPhoto: payload.noPhoto, noPhotoReason: payload.noPhotoReason, noPhotoNote: payload.noPhotoNote,
@@ -319,7 +324,7 @@ export async function receiveConvoyRecord(user: SessionUser, raw: Record<string,
     }).returning({ id: convoyFuelRecords.id });
     await log(db, user.id, created.id, "ABASTECIMENTO DO COMBOIO RECEBIDO", undefined, {
       clientUuid: payload.clientUuid, exitKind: payload.exitKind, equipment: target?.prefix ?? null,
-      thirdParty: tp ? { id: tp.thirdPartyId, pendingCompany: tp.pendingCompany, destination: tp.destination, vehicleId: tp.thirdPartyVehicleId, pendingVehicle: tp.pendingVehicle, employeeId: tp.thirdPartyEmployeeId, pendingEmployee: tp.pendingEmployee, purpose: tp.purpose } : null,
+      thirdParty: tp ? { manual: tp.manual, description: tp.description, id: tp.thirdPartyId, pendingCompany: tp.pendingCompany, destination: tp.destination, vehicleId: tp.thirdPartyVehicleId, pendingVehicle: tp.pendingVehicle, employeeId: tp.thirdPartyEmployeeId, pendingEmployee: tp.pendingEmployee, purpose: tp.purpose } : null,
       liters: payload.liters, reading: payload.reading, recordedAt: payload.recordedAt, noPhoto: payload.noPhoto,
       noPhotoReason: payload.noPhotoReason, deviceWarnings: payload.deviceWarnings, latitude: payload.latitude, longitude: payload.longitude,
     });
@@ -343,15 +348,16 @@ export async function myConvoyRecords(user: SessionUser) {
     noPhoto: convoyFuelRecords.noPhoto, rejectionReason: convoyFuelRecords.rejectionReason, correctionNote: convoyFuelRecords.correctionNote, approvedAt: convoyFuelRecords.approvedAt, rejectedAt: convoyFuelRecords.rejectedAt,
     equipmentId: convoyFuelRecords.equipmentId, exitKind: convoyFuelRecords.exitKind, thirdPartyDestination: convoyFuelRecords.thirdPartyDestination,
     pendingCompany: convoyFuelRecords.pendingCompany, pendingVehicle: convoyFuelRecords.pendingVehicle, pendingEmployee: convoyFuelRecords.pendingEmployee,
+    thirdPartyDescription: convoyFuelRecords.thirdPartyDescription,
     company: thirdParties.name, plate: thirdPartyVehicles.plate, worker: thirdPartyEmployees.name,
   }).from(convoyFuelRecords).leftJoin(equipment, eq(equipment.id, convoyFuelRecords.equipmentId))
     .leftJoin(thirdParties, eq(thirdParties.id, convoyFuelRecords.thirdPartyId))
     .leftJoin(thirdPartyVehicles, eq(thirdPartyVehicles.id, convoyFuelRecords.thirdPartyVehicleId))
     .leftJoin(thirdPartyEmployees, eq(thirdPartyEmployees.id, convoyFuelRecords.thirdPartyEmployeeId))
     .where(and(eq(convoyFuelRecords.registeredBy, user.id), gte(convoyFuelRecords.recordDate, since))).orderBy(desc(convoyFuelRecords.recordedAt)).limit(200);
-  return rows.map(({ prefix, company, plate, worker, pendingCompany, pendingVehicle, pendingEmployee, thirdPartyDestination, ...row }) => ({
+  return rows.map(({ prefix, company, plate, worker, pendingCompany, pendingVehicle, pendingEmployee, thirdPartyDestination, thirdPartyDescription, ...row }) => ({
     ...row, status: row.status === "APROVANDO" ? "PENDENTE" : row.status, destination: thirdPartyDestination,
-    equipment: row.exitKind === "FROTA" ? prefix ?? "—" : thirdPartyTargetLabel({ exitKind: row.exitKind, thirdPartyDestination, pendingCompany, pendingVehicle, pendingEmployee }, { company, plate, worker }),
+    equipment: row.exitKind === "FROTA" ? prefix ?? "—" : thirdPartyTargetLabel({ exitKind: row.exitKind, thirdPartyDestination, pendingCompany, pendingVehicle, pendingEmployee, thirdPartyDescription }, { company, plate, worker }),
   }));
 }
 
@@ -451,6 +457,7 @@ function thirdPartyFields(row: ListRow) {
     thirdPartyEmployeeId: r.thirdPartyEmployeeId, workerName: row.workerName, purpose: r.purpose as FuelPurpose | null, purposeNote: r.purposeNote,
     purposeLabel: purposeText(r.purpose as FuelPurpose | null, r.purposeNote), fullTank: r.fullTank,
     pendingCompany: r.pendingCompany, pendingVehicle: r.pendingVehicle, pendingEmployee: r.pendingEmployee,
+    manual: r.exitKind === "TERCEIROS" && !r.thirdPartyId && Boolean(r.thirdPartyDescription), description: r.thirdPartyDescription,
   };
 }
 
@@ -467,7 +474,8 @@ function describeThirdPartyRecord(row: ListRow, fuelings: VehicleFueling[] | und
   const values = known.filter((value): value is number => value !== null && value !== undefined);
   const lastReading = r.thirdPartyVehicleId && values.length ? Math.max(...values) : null;
   const diff = r.reading !== null && lastReading !== null ? r.reading - lastReading : null;
-  const warnings = r.thirdPartyDestination === "FUNCIONARIO" ? thirdPartyConvoyWarnings({ liters: r.liters, reading: null, unit: unit ?? "KM", lastReading: null, tankCapacity: null, litersStats: null })
+  const noMeter = r.thirdPartyDestination === "FUNCIONARIO" || (Boolean(r.thirdPartyDescription) && !r.thirdPartyId);
+  const warnings = noMeter ? thirdPartyConvoyWarnings({ liters: r.liters, reading: null, unit: unit ?? "KM", lastReading: null, tankCapacity: null, litersStats: null })
     : thirdPartyConvoyWarnings({ liters: r.liters, reading: r.reading, unit: unit ?? "KM", lastReading, tankCapacity: row.vehicleTank, litersStats: vehicleLitersStats(fuelings, r.fuelMovementId) });
   const pending = thirdPartyPending(r);
   const flags: ConvoyFlag[] = [
@@ -563,6 +571,8 @@ export type ApproveInput = {
   stockLocation?: "FRENTE" | "PORTO"; fuelTypeId?: number | null; note?: string | null;
   serviceFrontId?: number | null; thirdPartyId?: number | null; thirdPartyVehicleId?: number | null; thirdPartyEmployeeId?: number | null; fullTank?: boolean;
   purpose?: FuelPurpose | null; purposeNote?: string | null; readingException?: boolean; confirmTank?: boolean; confirmOutlier?: boolean;
+  // Terceiro/Doações manual: o aprovador pode ajustar o destino/descrição.
+  description?: string | null;
 };
 
 export async function approveConvoyRecord(user: SessionUser, id: number, input: ApproveInput) {
@@ -685,12 +695,21 @@ async function approveThirdPartyRecord(db: Db, user: SessionUser, record: Convoy
   if (!Number.isFinite(next.liters) || next.liters <= 0) throw new ConvoyError("Informe a quantidade em litros.");
   if (next.reading !== null && (!Number.isFinite(next.reading) || next.reading < 0)) throw new ConvoyError("Informe uma leitura válida.");
   if (!next.fuelTypeId) throw new ConvoyError("Escolha o combustível.");
-  if (!next.thirdPartyId) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule a empresa${record.pendingCompany ? ` "${record.pendingCompany}"` : ""} antes de aprovar.`);
-  const party = (await db.select({ id: thirdParties.id, name: thirdParties.name, kind: thirdParties.kind }).from(thirdParties).where(eq(thirdParties.id, next.thirdPartyId)).limit(1))[0];
-  if (!party) throw new ConvoyError("Empresa não encontrada no cadastro de terceiros.");
-  if (!exitKindAccepts(exitKind, party.kind)) throw new ConvoyError("Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Saída para terceiros.");
-  if (destination === "VEICULO" && !next.vehicleId && record.pendingVehicle) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule o veículo "${record.pendingVehicle}" de ${party.name} antes de aprovar.`);
-  if (destination === "FUNCIONARIO" && !next.employeeId) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule o funcionário${record.pendingEmployee ? ` "${record.pendingEmployee}"` : ""} de ${party.name} antes de aprovar.`);
+  // Terceiro/Doações manual: sem cadastro, só o destino/descrição (como o Manual do computador).
+  const manual = exitKind === "TERCEIROS" && !next.thirdPartyId && Boolean(record.thirdPartyDescription);
+  const description = manual ? (input.description?.trim() || record.thirdPartyDescription || "").slice(0, 200) : null;
+  let party: { id: number; name: string; kind: ThirdPartyKindCode } | null = null;
+  if (manual) {
+    if (!description) throw new ConvoyError("Informe o destino/descrição (para quem foi o combustível).");
+    next.reading = null; next.vehicleId = null; next.employeeId = null; next.purpose = null; next.purposeNote = null; next.fullTank = true;
+  } else {
+    if (!next.thirdPartyId) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule a empresa${record.pendingCompany ? ` "${record.pendingCompany}"` : ""} antes de aprovar.`);
+    party = (await db.select({ id: thirdParties.id, name: thirdParties.name, kind: thirdParties.kind }).from(thirdParties).where(eq(thirdParties.id, next.thirdPartyId)).limit(1))[0] ?? null;
+    if (!party) throw new ConvoyError("Empresa não encontrada no cadastro de terceiros.");
+    if (!exitKindAccepts(exitKind, party.kind)) throw new ConvoyError("Prestadores de Serviço aceitam só empresas prestadoras ou terceirizadas. Para pessoa física, use Terceiro/Doações.");
+    if (destination === "VEICULO" && !next.vehicleId && record.pendingVehicle) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule o veículo "${record.pendingVehicle}" de ${party.name} antes de aprovar.`);
+    if (destination === "FUNCIONARIO" && !next.employeeId) throw new ConvoyError(`CADASTRO PENDENTE: cadastre ou vincule o funcionário${record.pendingEmployee ? ` "${record.pendingEmployee}"` : ""} de ${party.name} antes de aprovar.`);
+  }
   if (!next.serviceFrontId || !inScope(visibleScope(user), next.serviceFrontId)) throw new ConvoyError("Escolha uma frente de serviço que você enxerga.", 403);
   // No computador a justificativa vai em Observações; aqui, na observação da aprovação (as
   // observações do lançamento já levam "Comboio: registrado por ...").
@@ -706,7 +725,8 @@ async function approveThirdPartyRecord(db: Db, user: SessionUser, record: Convoy
   const changes = [
     ...(next.liters !== original.liters ? [{ campo: "litros", de: original.liters, para: next.liters }] : []),
     ...(next.reading !== original.reading ? [{ campo: "leitura", de: original.reading, para: next.reading }] : []),
-    ...(next.thirdPartyId !== original.thirdPartyId ? [{ campo: "empresa", de: original.thirdPartyId ? `#${original.thirdPartyId}` : `não cadastrada: ${record.pendingCompany ?? "—"}`, para: party.name }] : []),
+    ...(party && next.thirdPartyId !== original.thirdPartyId ? [{ campo: "empresa", de: original.thirdPartyId ? `#${original.thirdPartyId}` : record.thirdPartyDescription ? `manual: ${record.thirdPartyDescription}` : `não cadastrada: ${record.pendingCompany ?? "—"}`, para: party.name }] : []),
+    ...(manual && description !== record.thirdPartyDescription ? [{ campo: "destino/descrição", de: record.thirdPartyDescription, para: description }] : []),
     ...(next.vehicleId !== original.vehicleId ? [{ campo: "veículo", de: original.vehicleId ? `#${original.vehicleId}` : `não cadastrado: ${record.pendingVehicle ?? "—"}`, para: next.vehicleId ? `#${next.vehicleId}` : "sem veículo" }] : []),
     ...(next.employeeId !== original.employeeId ? [{ campo: "funcionário", de: original.employeeId ? `#${original.employeeId}` : `não cadastrado: ${record.pendingEmployee ?? "—"}`, para: next.employeeId ? `#${next.employeeId}` : "—" }] : []),
     ...(next.receiver !== original.receiver ? [{ campo: "responsável", de: original.receiver, para: next.receiver }] : []),
@@ -721,7 +741,11 @@ async function approveThirdPartyRecord(db: Db, user: SessionUser, record: Convoy
   const notes = [`Comboio${convoyPrefix ? ` ${convoyPrefix}` : ""}: registrado por ${registeredBy}, aprovado por ${user.name}`, record.noPhoto ? `SEM FOTO (${record.noPhotoReason ? NO_PHOTO_LABELS[record.noPhotoReason as NoPhotoReason] : "—"})` : null, record.notes, input.note?.trim() || null].filter(Boolean).join(" · ");
   let movement: Awaited<ReturnType<typeof createFuelMovement>>;
   try {
-    movement = await createFuelMovement(db, user, {
+    movement = await createFuelMovement(db, user, manual ? {
+      movementType: "SAIDA", thirdParty: true, thirdPartyKind: "GERAL", thirdPartyDescription: description, fuelTypeId: next.fuelTypeId, movementDate: record.recordDate,
+      quantity: next.liters, stockLocation: input.stockLocation === "PORTO" ? "PORTO" : "FRENTE", serviceFrontId: next.serviceFrontId,
+      responsibleEmployeeId: null, responsible: next.receiver, notes, clientRequestId: record.clientUuid,
+    } : {
       movementType: "SAIDA", thirdParty: true, thirdPartyKind: exitKind === "PRESTADOR" ? "PRESTADOR" : "GERAL", fuelTypeId: next.fuelTypeId, movementDate: record.recordDate,
       quantity: next.liters, stockLocation: input.stockLocation === "PORTO" ? "PORTO" : "FRENTE", serviceFrontId: next.serviceFrontId,
       thirdPartyId: next.thirdPartyId, thirdPartyDestination: destination, thirdPartyVehicleId: next.vehicleId, thirdPartyReading: next.reading ?? "", fullTank: next.fullTank,
@@ -738,7 +762,8 @@ async function approveThirdPartyRecord(db: Db, user: SessionUser, record: Convoy
   await db.update(fuelMovements).set({ convoyRecordId: record.id }).where(eq(fuelMovements.id, movement.id));
   const { vehicle, worker } = await names();
   const unitText = vehicle?.meterType === "KM" ? "km" : "h";
-  const readingUpdateNote = destination === "FUNCIONARIO"
+  const readingUpdateNote = manual ? `Terceiro/Doações manual (${description}): sem leitura e fora da média de consumo.`
+    : destination === "FUNCIONARIO"
     ? `Destino funcionário (${worker?.name ?? "—"}): sem leitura e fora da média de consumo.`
     : !vehicle ? "Sem veículo (pessoa física): sem leitura."
       : `Veículo ${vehicle.plate}: última leitura ${vehicle.lastReading !== null ? `${vehicle.lastReading.toLocaleString("pt-BR")} ${unitText}` : "—"}${movement.consumption ? ` · consumo ${movement.consumption.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${movement.consumption.unit}` : next.fullTank ? " · sem consumo (base para o próximo)" : " · tanque parcial"}.`;
@@ -747,10 +772,11 @@ async function approveThirdPartyRecord(db: Db, user: SessionUser, record: Convoy
     status: "APROVADO", approvedBy: user.id, approvedAt: new Date().toISOString(), fuelMovementId: movement.id, readingUpdateNote,
     liters: next.liters, reading: next.reading, serviceFrontId: next.serviceFrontId, readingUnit: vehicle ? meterUnit(vehicle.meterType) : null, fuelTypeId: next.fuelTypeId,
     thirdPartyId: next.thirdPartyId, thirdPartyVehicleId: next.vehicleId, thirdPartyEmployeeId: next.employeeId, purpose: next.purpose, purposeNote: next.purposeNote,
-    fullTank: next.fullTank, operatorName: next.receiver, corrections: corrections.length ? JSON.stringify(corrections) : null, updatedAt: new Date().toISOString(),
+    fullTank: next.fullTank, operatorName: next.receiver, thirdPartyDescription: manual ? description : record.thirdPartyDescription,
+    corrections: corrections.length ? JSON.stringify(corrections) : null, updatedAt: new Date().toISOString(),
   }).where(eq(convoyFuelRecords.id, record.id));
   await log(db, user.id, record.id, "ABASTECIMENTO DO COMBOIO APROVADO", original, {
-    ...next, exitKind, destination, stockLocation: input.stockLocation ?? "FRENTE", fuelMovementId: movement.id, corrections: changes, readingUpdateNote,
+    ...next, exitKind, destination: manual ? "MANUAL" : destination, description, stockLocation: input.stockLocation ?? "FRENTE", fuelMovementId: movement.id, corrections: changes, readingUpdateNote,
     readingException: input.readingException === true, confirmTank: input.confirmTank === true, confirmOutlier: input.confirmOutlier === true,
   });
   return { id: record.id, fuelMovementId: movement.id, duplicate: movement.duplicate, readingUpdateNote, message: `Aprovado: ${movement.message} ${readingUpdateNote}` };
@@ -825,6 +851,7 @@ export async function convoyReport(user: SessionUser, filters: ConvoyReportFilte
     exitKind: convoyFuelRecords.exitKind, thirdPartyId: convoyFuelRecords.thirdPartyId, thirdPartyDestination: convoyFuelRecords.thirdPartyDestination,
     thirdPartyVehicleId: convoyFuelRecords.thirdPartyVehicleId, thirdPartyEmployeeId: convoyFuelRecords.thirdPartyEmployeeId,
     pendingCompany: convoyFuelRecords.pendingCompany, pendingVehicle: convoyFuelRecords.pendingVehicle, pendingEmployee: convoyFuelRecords.pendingEmployee,
+    thirdPartyDescription: convoyFuelRecords.thirdPartyDescription,
     company: thirdParties.name, plate: thirdPartyVehicles.plate, worker: thirdPartyEmployees.name,
   }).from(convoyFuelRecords)
     .leftJoin(equipment, eq(equipment.id, convoyFuelRecords.equipmentId))
@@ -859,7 +886,12 @@ export async function convoyReport(user: SessionUser, filters: ConvoyReportFilte
     group(byDriver, String(row.registeredById), row.registeredBy ?? "—", row);
     group(byKind, row.exitKind, CONVOY_EXIT_LABELS[row.exitKind as ConvoyExitKind] ?? row.exitKind, row);
     if (row.exitKind === "FROTA") group(byEquipment, `E${row.equipmentId}`, row.prefix ?? "—", row);
-    else {
+    else if (row.thirdPartyDescription && !row.thirdPartyId) {
+      // Terceiro/Doações manual: agrupa pela descrição digitada.
+      const key = `D${row.thirdPartyDescription.trim().toUpperCase()}`;
+      group(byEquipment, key, row.thirdPartyDescription, row);
+      group(byCompany, key, `${row.thirdPartyDescription} (manual)`, row);
+    } else {
       // Terceiros: "Por equipamento" mostra o veículo/funcionário da empresa; "Por empresa" soma a empresa.
       const target = row.thirdPartyDestination === "FUNCIONARIO" ? `F${row.thirdPartyEmployeeId ?? row.pendingEmployee}` : `V${row.thirdPartyVehicleId ?? row.pendingVehicle}`;
       group(byEquipment, `T${row.thirdPartyId ?? row.pendingCompany}-${target}`, thirdPartyTargetLabel(row, { company: row.company, plate: row.plate, worker: row.worker }), row);

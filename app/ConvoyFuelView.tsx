@@ -273,6 +273,9 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
   const [purposeNote, setPurposeNote] = useState("");
   const [fullTank, setFullTank] = useState(true);
   const [receiver, setReceiver] = useState("");
+  // Terceiro/Doações: Manual (só destino/descrição digitado) ou Do cadastro. Começa no Manual.
+  const [donationManual, setDonationManual] = useState(true);
+  const [description, setDescription] = useState("");
   const [liters, setLiters] = useState("");
   const [reading, setReading] = useState("");
   const [meterPhoto, setMeterPhoto] = useState<Photo | null>(null);
@@ -295,9 +298,10 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
   const parties = useMemo(() => catalog.thirdParties ?? [], [catalog.thirdParties]);
   const vehicleIsPending = partyPending || vehiclePending;
   const workerIsPending = partyPending || workerPending;
-  const toWorker = !fleet && destination === "FUNCIONARIO";
+  const manualDonation = exitKind === "TERCEIROS" && donationManual;
+  const toWorker = !fleet && !manualDonation && destination === "FUNCIONARIO";
   // Medidor (leitura + foto): Frota, ou terceiro com destino Veículo e um veículo escolhido/digitado.
-  const hasMeter = fleet || (!toWorker && (Boolean(vehicle) || (vehicleIsPending && Boolean(vehicleText.trim()))));
+  const hasMeter = fleet || (!manualDonation && !toWorker && (Boolean(vehicle) || (vehicleIsPending && Boolean(vehicleText.trim()))));
   const meterUnitNow: ConvoyUnit | null = fleet ? equipment?.unit ?? null : vehicle?.unit ?? null;
 
   const today = fortalezaDay(now);
@@ -337,7 +341,7 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
   }
   function resetThirdParty() {
     setParty(null); setPartyPending(false); setPartyText(""); setDestination("VEICULO"); setVehicle(null); setVehiclePending(false); setVehicleText("");
-    setWorker(null); setWorkerPending(false); setWorkerText(""); setPurpose(""); setPurposeNote(""); setFullTank(true); setReceiver("");
+    setWorker(null); setWorkerPending(false); setWorkerText(""); setPurpose(""); setPurposeNote(""); setFullTank(true); setReceiver(""); setDescription("");
   }
   function chooseKind(next: ConvoyExitKind) {
     if (next === exitKind) return;
@@ -379,8 +383,14 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
 
   function thirdPartyPayload(): ConvoyThirdPartyPayload | null {
     if (fleet) return null;
+    if (manualDonation) return {
+      manual: true, description: description.trim() || null, thirdPartyId: null, companyLabel: null, pendingCompany: null, destination: null,
+      thirdPartyVehicleId: null, vehicleLabel: null, pendingVehicle: null, thirdPartyEmployeeId: null, employeeLabel: null, pendingEmployee: null,
+      purpose: null, purposeNote: null, fullTank: true,
+    };
     const vehicleLabel = vehicle ? [vehicle.plate, vehicle.description].filter(Boolean).join(" — ") : null;
     return {
+      manual: false, description: null,
       thirdPartyId: partyPending ? null : party?.id ?? null, companyLabel: partyPending ? partyText.trim() || null : party?.name ?? null, pendingCompany: partyPending ? partyText.trim() || null : null,
       destination,
       thirdPartyVehicleId: !toWorker && !vehicleIsPending ? vehicle?.id ?? null : null, vehicleLabel: !toWorker ? vehicleLabel : null, pendingVehicle: !toWorker && vehicleIsPending ? vehicleText.trim() || null : null,
@@ -406,10 +416,10 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
       photoTakenAt: meterPhoto?.takenAt ?? null, deviceLastReading: lastKnown.value, deviceWarnings: warnings.map((warning) => warning.code), thirdParty: third,
     };
     if (readingValue !== null && Number.isNaN(readingValue)) { setError("Leitura inválida: use só números."); return; }
-    if (!fleet && !parties.length && !partyPending) { setError("A lista de terceiros não está no celular: toque em \"Atualizar\" com internet ou marque \"Não cadastrado\"."); return; }
+    if (!fleet && !manualDonation && !parties.length && !partyPending) { setError("A lista de terceiros não está no celular: toque em \"Atualizar\" com internet ou marque \"Não cadastrado\"."); return; }
     const problem = validateConvoyPayload(payload, { hasMeterPhoto: Boolean(meterPhoto) && !meterOff, hasPumpPhoto: Boolean(pumpPhoto), pumpPhotoRequired: catalog.settings.pumpPhotoRequired, today, companyKind: partyPending ? null : party?.kind ?? null });
     if (problem) { setError(problem); return; }
-    const label = fleet ? equipment!.prefix : [third!.companyLabel ?? "Terceiro", toWorker ? worker?.name ?? workerText.trim() : vehicle?.plate ?? (vehicleText.trim() || "sem veículo")].join(" · ");
+    const label = fleet ? equipment!.prefix : manualDonation ? `Terceiro/Doações · ${description.trim()}` : [third!.companyLabel ?? "Terceiro", toWorker ? worker?.name ?? workerText.trim() : vehicle?.plate ?? (vehicleText.trim() || "sem veículo")].join(" · ");
     setBusy(true);
     try {
       await enqueueConvoy({
@@ -459,40 +469,48 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
               {!operatorMatches.length && <li className="convoy-empty">Ninguém encontrado no cadastro do celular.</li>}</ul>}</>}
       </div>
     </> : <>
-      {!catalog.thirdParties && <p className="convoy-warning">A lista de terceiros ainda não está neste celular. Com internet, toque em &quot;Atualizar&quot;; sem internet, marque &quot;Não cadastrado&quot; e digite.</p>}
-      <div className="convoy-field">
-        <span>Empresa *{exitKind === "PRESTADOR" ? " (prestadora ou terceirizada)" : ""}</span>
-        {partyPending ? <input className="convoy-big" value={partyText} onChange={(event) => setPartyText(event.target.value)} placeholder="Nome da empresa / pessoa" autoComplete="off" />
-          : <ThirdPartyPicker options={parties} kinds={exitKind === "PRESTADOR" ? ["PRESTADOR", "TERCEIRIZADA"] : undefined} value={party} onPick={chooseParty} placeholder="Buscar empresa, pessoa, CNPJ/CPF ou placa..." />}
-        {pendingToggle(partyPending, (value) => { setPartyPending(value); setParty(null); setVehicle(null); setWorker(null); }, "Não cadastrado (o aprovador cadastra)")}
-        {party && <small>{KIND_LABELS[party.kind]}</small>}
-      </div>
-
-      <div className="convoy-field">
-        <span>Destino *</span>
-        <div className="convoy-reasons">{([["VEICULO", "Veículo"], ["FUNCIONARIO", "Funcionário"]] as const).map(([value, label]) => <button key={value} type="button" className={destination === value ? "active" : ""} onClick={() => { setDestination(value); setReading(""); setNoPhoto(false); }}>{label}</button>)}</div>
-      </div>
-
-      {destination === "VEICULO" ? <div className="convoy-field">
-        <span>Veículo/máquina da empresa{party?.kind === "PESSOA_FISICA" ? " (opcional para pessoa física)" : " *"}</span>
-        {vehicleIsPending ? <input className="convoy-big" value={vehicleText} onChange={(event) => setVehicleText(event.target.value)} placeholder="Placa ou identificação" autoComplete="off" />
-          : <ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} onPick={(item) => { setVehicle(item ? party?.vehicles.find((entry) => entry.id === item.id) ?? null : null); setReading(""); }} disabled={!party} />}
-        {!partyPending && pendingToggle(vehiclePending, (value) => { setVehiclePending(value); setVehicle(null); }, "Veículo não cadastrado")}
-      </div> : <>
+      {exitKind === "TERCEIROS" && <div className="convoy-field">
+        <span>Como lançar *</span>
+        <div className="convoy-reasons">{([[true, "Manual (digitar)"], [false, "Do cadastro"]] as const).map(([value, label]) => <button key={label} type="button" className={donationManual === value ? "active" : ""} onClick={() => { setDonationManual(value); setError(""); }}>{label}</button>)}</div>
+      </div>}
+      {manualDonation ? <label className="convoy-field">Destino / descrição *
+        <input className="convoy-big" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Ex.: doação à prefeitura, comunidade, pessoa atendida" autoComplete="off" />
+        <small>Sem escolher do cadastro: sem leitura e sem foto do medidor.</small>
+      </label> : <>
+        {!catalog.thirdParties && <p className="convoy-warning">A lista de terceiros ainda não está neste celular. Com internet, toque em &quot;Atualizar&quot;; sem internet, marque &quot;Não cadastrado&quot; e digite.</p>}
         <div className="convoy-field">
-          <span>Funcionário da empresa *</span>
-          {workerIsPending ? <input className="convoy-big" value={workerText} onChange={(event) => { setWorkerText(event.target.value); if (!receiver.trim() || receiver === workerText) setReceiver(event.target.value); }} placeholder="Nome do funcionário" autoComplete="off" />
-            : <ThirdPartyWorkerPicker workers={party?.employees ?? []} value={worker} onPick={chooseWorker} disabled={!party} />}
-          {!partyPending && pendingToggle(workerPending, (value) => { setWorkerPending(value); setWorker(null); }, "Funcionário não cadastrado")}
+          <span>Empresa *{exitKind === "PRESTADOR" ? " (prestadora ou terceirizada)" : ""}</span>
+          {partyPending ? <input className="convoy-big" value={partyText} onChange={(event) => setPartyText(event.target.value)} placeholder="Nome da empresa / pessoa" autoComplete="off" />
+            : <ThirdPartyPicker options={parties} kinds={exitKind === "PRESTADOR" ? ["PRESTADOR", "TERCEIRIZADA"] : undefined} value={party} onPick={chooseParty} placeholder="Buscar empresa, pessoa, CNPJ/CPF ou placa..." />}
+          {pendingToggle(partyPending, (value) => { setPartyPending(value); setParty(null); setVehicle(null); setWorker(null); }, "Não cadastrado (o aprovador cadastra)")}
+          {party && <small>{KIND_LABELS[party.kind]}</small>}
         </div>
+
         <div className="convoy-field">
-          <span>Finalidade *</span>
-          <div className="convoy-reasons">{FUEL_PURPOSES.map((value) => <button key={value} type="button" className={purpose === value ? "active" : ""} onClick={() => setPurpose(value)}>{FUEL_PURPOSE_LABELS[value]}</button>)}</div>
-          {purpose === "OUTROS" && <input className="convoy-big" value={purposeNote} onChange={(event) => setPurposeNote(event.target.value)} placeholder="Ex.: bomba d'água, roçadeira" />}
-          <small>Sem leitura e sem foto do medidor: não entra na média de consumo.</small>
+          <span>Destino *</span>
+          <div className="convoy-reasons">{([["VEICULO", "Veículo"], ["FUNCIONARIO", "Funcionário"]] as const).map(([value, label]) => <button key={value} type="button" className={destination === value ? "active" : ""} onClick={() => { setDestination(value); setReading(""); setNoPhoto(false); }}>{label}</button>)}</div>
         </div>
+
+        {destination === "VEICULO" ? <div className="convoy-field">
+          <span>Veículo/máquina da empresa{party?.kind === "PESSOA_FISICA" ? " (opcional para pessoa física)" : " *"}</span>
+          {vehicleIsPending ? <input className="convoy-big" value={vehicleText} onChange={(event) => setVehicleText(event.target.value)} placeholder="Placa ou identificação" autoComplete="off" />
+            : <ThirdPartyVehiclePicker vehicles={party?.vehicles ?? []} value={vehicle} onPick={(item) => { setVehicle(item ? party?.vehicles.find((entry) => entry.id === item.id) ?? null : null); setReading(""); }} disabled={!party} />}
+          {!partyPending && pendingToggle(vehiclePending, (value) => { setVehiclePending(value); setVehicle(null); }, "Veículo não cadastrado")}
+        </div> : <>
+          <div className="convoy-field">
+            <span>Funcionário da empresa *</span>
+            {workerIsPending ? <input className="convoy-big" value={workerText} onChange={(event) => { setWorkerText(event.target.value); if (!receiver.trim() || receiver === workerText) setReceiver(event.target.value); }} placeholder="Nome do funcionário" autoComplete="off" />
+              : <ThirdPartyWorkerPicker workers={party?.employees ?? []} value={worker} onPick={chooseWorker} disabled={!party} />}
+            {!partyPending && pendingToggle(workerPending, (value) => { setWorkerPending(value); setWorker(null); }, "Funcionário não cadastrado")}
+          </div>
+          <div className="convoy-field">
+            <span>Finalidade *</span>
+            <div className="convoy-reasons">{FUEL_PURPOSES.map((value) => <button key={value} type="button" className={purpose === value ? "active" : ""} onClick={() => setPurpose(value)}>{FUEL_PURPOSE_LABELS[value]}</button>)}</div>
+            {purpose === "OUTROS" && <input className="convoy-big" value={purposeNote} onChange={(event) => setPurposeNote(event.target.value)} placeholder="Ex.: bomba d'água, roçadeira" />}
+            <small>Sem leitura e sem foto do medidor: não entra na média de consumo.</small>
+          </div>
+        </>}
       </>}
-
       <div className="convoy-field">
         <span>Responsável que recebeu *</span>
         <input className="convoy-big" value={receiver} onChange={(event) => setReceiver(event.target.value)} placeholder="Funcionário da empresa ou digite o nome" autoComplete="off" />
@@ -522,11 +540,11 @@ function ConvoyForm({ catalog, userId, queue, recordDate, yesterday, justificati
     <label className="convoy-field">Observações<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} /></label>
 
     {warnings.length > 0 && <ul className="convoy-warnings">{warnings.map((warning) => <li key={warning.code}>⚠ {warning.message}</li>)}<li className="hint">Confira. Se estiver certo, pode salvar: vai com aviso para a aprovação.</li></ul>}
-    {!fleet && (partyPending || vehicleIsPending && !toWorker || workerIsPending && toWorker) && <p className="convoy-warning">Vai com a etiqueta CADASTRO PENDENTE: o aprovador cadastra (ou vincula) antes de aprovar.</p>}
+    {!fleet && !manualDonation && (partyPending || vehicleIsPending && !toWorker || workerIsPending && toWorker) && <p className="convoy-warning">Vai com a etiqueta CADASTRO PENDENTE: o aprovador cadastra (ou vincula) antes de aprovar.</p>}
     {error && <p className="convoy-error">! {error}</p>}
     <button type="button" className="primary convoy-save" disabled={busy} onClick={() => void save()}>{busy ? "Guardando..." : "Salvar e lançar o próximo"}</button>
     <button type="button" className="secondary" onClick={() => {
-      if ((equipment || party || partyText.trim()) && !window.confirm("O abastecimento preenchido ainda não foi salvo. Concluir mesmo assim?")) return;
+      if ((equipment || party || partyText.trim() || description.trim()) && !window.confirm("O abastecimento preenchido ainda não foi salvo. Concluir mesmo assim?")) return;
       clear(); done();
     }}>{savedCount > 0 ? "Concluir — terminei os de " + (yesterday ? "ontem" : "hoje") : "Fechar"}</button>
   </div>;
