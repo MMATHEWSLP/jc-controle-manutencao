@@ -51,7 +51,7 @@ export default function QrEquipmentPage({token}:{token:string}){
     event.preventDefault();if(!data)return;if(!selected.length){setFormError("Selecione pelo menos uma manutenção realizada.");return;}setBusy(true);setFormError("");const form=new FormData(event.currentTarget);
     const payload={equipmentId:data.equipment.id,planIds:selected,performedAt:form.get("performedAt"),hours:data.equipment.control!=="KM"?form.get("reading"):undefined,km:data.equipment.control==="KM"?form.get("reading"):undefined,workOrder:form.get("workOrder"),cost:0,notes:"Troca registrada pela página do QR Code",authorizeRegression:authorized};
     try{await fetchJson("/api/maintenance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});await load();setSelected([]);setAction(null);flash("Troca registrada no Histórico e novo ciclo iniciado.");}
-    catch(problem){const typed=problem as Error&{data?:{requiresConfirmation?:boolean}};if(typed.data?.requiresConfirmation&&data.viewer.isAdmin&&window.confirm(`${typed.message}\n\nConfirmar como administrador?`)){setBusy(false);return saveMaintenance(event,true);}setFormError(typed.message);}
+    catch(problem){const typed=problem as Error&{data?:{requiresConfirmation?:boolean}};if(typed.data?.requiresConfirmation&&window.confirm(`${typed.message}\n\nConfirmar a troca com essa leitura?`)){setBusy(false);return saveMaintenance(event,true);}setFormError(typed.message);}
     finally{setBusy(false);}
   }
 
