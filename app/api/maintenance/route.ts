@@ -42,10 +42,14 @@ export async function POST(request:Request){
     if(requiresHours&&(hours===null||hours<0))return Response.json({error:"Informe o horímetro no momento da troca."},{status:400});
     if(requiresKm&&(km===null||km<0))return Response.json({error:"Informe a quilometragem no momento da troca."},{status:400});
     const nextHours=requiresHours?hours!:equipment.current_hours;const nextKm=requiresKm?km!:equipment.current_km;
+    // Troca com leitura ABAIXO da atual (ex.: troca feita antes e lançada depois): permitida para quem
+    // registra troca, com confirmação. A leitura atual do equipamento NÃO diminui (Math.max abaixo); a
+    // troca entra no Histórico com a leitura informada e a próxima é calculada a partir dela.
     const regression=(requiresHours&&nextHours<equipment.current_hours)||(requiresKm&&nextKm<equipment.current_km);
-    if(regression){
-      if(auth.user!.profile!=="ADMIN")return Response.json({error:"A leitura da manutenção é inferior à leitura atual. Somente o administrador pode autorizar esse registro."},{status:403});
-      if(body.authorizeRegression!==true)return Response.json({error:"A leitura é inferior à atual. Confirme a correção administrativa para continuar.",requiresConfirmation:true},{status:409});
+    if(regression&&body.authorizeRegression!==true){
+      const fmt=(value:number)=>value.toLocaleString("pt-BR",{maximumFractionDigits:1});
+      const typed=requiresKm&&nextKm<equipment.current_km?`${fmt(nextKm)} km (atual ${fmt(equipment.current_km)} km)`:`${fmt(nextHours)} h (atual ${fmt(equipment.current_hours)} h)`;
+      return Response.json({error:`A leitura da troca, ${typed}, é menor que a leitura atual do ${equipment.prefix}. A leitura atual do equipamento não muda: a troca entra no Histórico com essa leitura e a próxima troca é calculada a partir dela.`,requiresConfirmation:true},{status:409});
     }
     const now=new Date().toISOString();let workOrder=clean(body.workOrder).toUpperCase()||`MAN-${now.slice(0,10).replaceAll("-","")}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
     // Número no formato OS-000123 = O.S. do módulo Ordem de Serviço: precisa existir e ser deste
@@ -95,7 +99,7 @@ export async function POST(request:Request){
     }
     statements.push(d1.prepare(`INSERT INTO audit_logs (user_id,entity_type,entity_id,action,previous_value,new_value,occurred_at) VALUES (?,?,?,?,?,?,?)`)
       .bind(auth.user!.id,"EQUIPMENT",String(equipmentId),"TROCA DE ÓLEO",JSON.stringify({hours:equipment.current_hours,km:equipment.current_km}),
-        JSON.stringify({hours:nextHours,km:nextKm,planIds:selectedIds,workOrder,performedAt,notes}),now));
+        JSON.stringify({hours:nextHours,km:nextKm,planIds:selectedIds,workOrder,performedAt,notes,...(regression?{leituraMenorQueAtual:true}:{})}),now));
     await d1.batch(statements);
     await recalculateMaintenanceCycles(d1,{equipmentId,force:true});
     const inserted=await d1.prepare(`SELECT id FROM maintenances WHERE equipment_id=? AND work_order=? ORDER BY id`).bind(equipmentId,workOrder).all() as {results:Array<{id:number}>};

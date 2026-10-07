@@ -667,7 +667,7 @@ catch (problem) {
             requiresConfirmation?: boolean;
         };
     };
-    if (typed.data?.requiresConfirmation && window.confirm(`${typed.message}\n\nConfirmar como administrador?`)) {
+    if (typed.data?.requiresConfirmation && window.confirm(`${typed.message}\n\nConfirmar a troca com essa leitura?`)) {
         setBusy(false);
         return submit(event, true);
     }
