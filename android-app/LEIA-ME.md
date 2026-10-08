@@ -107,11 +107,61 @@ Play Protect avisar, **Mais detalhes** → **Instalar mesmo assim**).
 | 12 | Modo avião depois de já ter aberto com internet | O sistema continua abrindo (cópia salva) e os lançamentos ficam na fila. |
 | 13 | Modo avião num celular que nunca abriu o sistema | Tela "Sem internet no momento"; ao desligar o modo avião, recarrega sozinho. |
 | 14 | Publicar a **1.0.1** (passo 3) e abrir o app 1.0.0 | "Nova versão disponível. Deseja baixar agora?" → baixa → pede **Permitir desta fonte** (1ª vez) → instala → app abre na 1.0.1, ainda logado. |
+| 15 | Com o passo 6 feito: sino → **Ativar notificações** → Permitir → Notificações → Preferências e aparelhos → **Enviar teste** | Aviso "Teste de notificação" na barra do celular, com o sino pequeno; tocar abre o app. |
+| 16 | Fechar o app e pedir para alguém rejeitar um abastecimento seu do comboio | Chega "Abastecimento rejeitado" com o motivo; tocar abre o app no aviso. |
 
 > O app confere se há versão nova ao abrir, no máximo a cada 6 horas. Para o teste 14 não precisar
 > esperar: no celular, Configurações → Apps → JC Sistema → Armazenamento → **Limpar dados** (pede o
 > login de novo) e abra o app. Uma versão **obrigatória**, depois de vista uma vez, é conferida toda
 > vez que o app abre com internet, até o celular atualizar.
+
+## Passo 6 — Avisos no celular (Firebase, uma vez só, ~15 minutos)
+
+O sino do sistema funciona sem nada disso. Este passo faz o aviso **aparecer na barra de
+notificações do celular Android**, mesmo com o app fechado (no iPhone o aviso já funciona pelo app na
+Tela de Início, sem Firebase). O Firebase é do Google e é **gratuito** para isto.
+
+**A) Criar o projeto e o app Android no Firebase**
+
+1. Abra **https://console.firebase.google.com** com a conta Google da empresa → **Criar um projeto**
+   (ou "Adicionar projeto") → nome `JC Sistema` → pode **desligar o Google Analytics** → Criar.
+2. Na página do projeto, toque no ícone do **Android** ("Adicionar app").
+   - **Nome do pacote Android:** `br.com.jcsistema.campo` (exatamente assim).
+   - Apelido: `JC Sistema`. O campo SHA-1 pode ficar vazio.
+   - **Registrar app** → **Baixar google-services.json** (guarde o arquivo) → nos passos seguintes do
+     assistente, só clique em **Próxima** até **Continuar no console** (não precisa mexer em código).
+
+**B) Cadastrar o arquivo no GitHub (para o APK)**
+
+3. Abra o `google-services.json` no Bloco de Notas e copie **todo** o conteúdo.
+4. No repositório: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+   - Nome: `FIREBASE_GOOGLE_SERVICES_JSON`
+   - Valor: o conteúdo copiado.
+
+**C) Cadastrar a chave do servidor na Hostinger (para o site enviar os avisos)**
+
+5. No Firebase: engrenagem ⚙ ao lado de "Visão geral do projeto" → **Configurações do projeto** →
+   aba **Contas de serviço** → **Gerar nova chave privada** → **Gerar chave**. Baixa um arquivo `.json`.
+   ⚠️ Esse arquivo é uma senha: não mande por WhatsApp/e-mail e não coloque no repositório.
+6. Na **Hostinger** (hPanel) → **Sites** → `jcsistema.online` → aplicação **Node.js** → **Variáveis de
+   ambiente** → adicionar:
+   - Nome: `FIREBASE_SERVICE_ACCOUNT`
+   - Valor: **todo** o conteúdo do arquivo `.json` do passo 5 (abra no Bloco de Notas e copie tudo).
+   Salve e **reinicie** a aplicação (ou faça um deploy). Depois disso, apague o arquivo baixado do
+   computador (se precisar de novo, gere outra chave no Firebase).
+
+**D) Publicar o app novo**
+
+7. Gere uma versão nova (passo 3), por exemplo `1.1.0`, com as novidades "Avisos do sistema no
+   celular". Os celulares recebem o aviso de atualização sozinhos (o link de download continua o mesmo).
+8. No celular, depois de atualizar: abrir o app → sino 🔔 → **Ativar notificações** → **Permitir**.
+   Em Notificações → Preferências e aparelhos → **Enviar teste**: o aviso chega na barra do celular.
+   Se não chegar, o ADMIN vê o motivo em Notificações → **Registro de envios** → Detalhes.
+
+> Sem o secret do passo B, o APK sai normalmente, só sem o aviso no celular (o workflow avisa em
+> amarelo). Sem a variável do passo C, o site registra "FIREBASE_SERVICE_ACCOUNT não configurado na
+> Hostinger" no Registro de envios. O APK de teste ("JC Sistema (teste)") não recebe os avisos:
+> o Firebase foi cadastrado só para o app oficial.
 
 ## Onde ficam as coisas
 
@@ -120,7 +170,10 @@ Play Protect avisar, **Mais detalhes** → **Instalar mesmo assim**).
   - `FileChooser.kt` — câmera e galeria (`<input type="file">` do site)
   - `Downloads.kt` — PDF/Excel na pasta Downloads (inclusive os gerados no navegador)
   - `Updater.kt` — atualização própria (versao.json, download conferido por SHA-256, instalador)
-  - `AppLinks.kt`, `UpdateInfo.kt`, `FileNames.kt` — regras puras, com testes em `app/src/test`
+  - `PushMessaging.kt`, `PushService.kt`, `JCApplication.kt` — avisos pelo Firebase (passo 6): liga o
+    Firebase com os dados do build, entrega o token ao site (`WebBridge.pushState/requestPush`) e
+    mostra o aviso; o toque abre a página do aviso
+  - `AppLinks.kt`, `UpdateInfo.kt`, `FileNames.kt`, `PushRules.kt` — regras puras, com testes em `app/src/test`
 - `app/src/main/res/raw/jc_android.js` — script que o app injeta no site (downloads, imprimir, voltar)
 - Site: `app/app/baixar/page.tsx`, `app/app/versao.json/route.ts`, `app/app/jc-sistema.apk/route.ts`
   e `lib/android-app.ts`. O workflow grava o APK e o versao.json no servidor em

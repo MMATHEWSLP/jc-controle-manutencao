@@ -105,6 +105,45 @@ class MainActivity : AppCompatActivity() {
         permissionLauncher.launch(permissions)
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Avisos do sistema (Firebase): permissão, token para o site e abrir a página do aviso.
+    // ------------------------------------------------------------------------------------------
+    fun notificationPermission(): String = when {
+        PushMessaging.notificationsAllowed(this) -> "granted"
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> "denied"
+        PushMessaging.wasDenied(this) && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> "denied"
+        else -> "default"
+    }
+
+    fun requestPush() {
+        if (!PushMessaging.isConfigured()) return answerPush(null, getString(R.string.push_not_configured))
+        val fetch = { PushMessaging.fetchToken(this) { token, error -> answerPush(token, error) } }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return if (PushMessaging.notificationsAllowed(this)) fetch() else answerPush(null, getString(R.string.push_denied))
+        }
+        askPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) { granted ->
+            PushMessaging.markDenied(this, !granted)
+            if (granted) fetch() else answerPush(null, getString(R.string.push_denied))
+        }
+    }
+
+    private fun answerPush(token: String?, error: String?) {
+        val detail = org.json.JSONObject().put("token", token ?: "").put("error", error ?: "").toString()
+        runOnUiThread {
+            mainWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('jc:android-push',{detail:$detail}))", null)
+        }
+    }
+
+    /** Página do aviso tocado na barra de notificações (só do próprio sistema). */
+    private fun noticeUrl(intent: Intent?): String? =
+        intent?.getStringExtra(PushMessaging.EXTRA_URL)?.takeIf { AppLinks.isSite(it) }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        noticeUrl(intent)?.let { url -> mainWebView?.loadUrl(url) }
+    }
+
     fun askNotificationPermissionOnce() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val prefs = getSharedPreferences("app", MODE_PRIVATE)
@@ -150,10 +189,16 @@ class MainActivity : AppCompatActivity() {
         watchConnection()
         fileChooser.cleanOldPhotos()
 
-        if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
+        val notice = noticeUrl(intent)
+        if (notice != null) {
+            webView.loadUrl(notice)
+        } else if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
             webView.loadUrl(BuildConfig.SITE_URL)
         }
         updater.checkIfDue()
+        // Avisos: canal criado e, com a permissão já dada, o token pronto para o site cadastrar.
+        PushMessaging.createChannel(this)
+        if (PushMessaging.isConfigured() && PushMessaging.notificationsAllowed(this)) PushMessaging.fetchToken(this) { _, _ -> }
     }
 
     // Android 15/16 desenham o app por baixo das barras: margens e teclado tratados aqui.

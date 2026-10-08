@@ -37,7 +37,8 @@ export function timeAgo(value: string) {
 
 export const PUSH_HINT: Record<Exclude<PushSupport, "OK">, string> = {
   IOS_INSTALL: "No iPhone, os avisos chegam pelo app na Tela de Início: no Safari, toque em Compartilhar → \"Adicionar à Tela de Início\", abra o sistema por lá e ative.",
-  ANDROID_APP: "No app Android, os avisos no celular chegam a partir da próxima versão do app. Por enquanto, veja aqui no sino.",
+  ANDROID_APP: "Para receber os avisos no celular, atualize o app JC Sistema (versão nova em www.jcsistema.online/app/baixar). Por enquanto, veja aqui no sino.",
+  ANDROID_SETUP: "Os avisos no celular pelo app Android ainda não foram ligados pelo administrador. Por enquanto, veja aqui no sino.",
   UNSUPPORTED: "Este navegador não recebe avisos fora do sistema. Veja aqui no sino.",
   DENIED: "Os avisos estão bloqueados para este site neste aparelho. Libere nos ajustes do navegador/celular.",
 };

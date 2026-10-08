@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EventDef, EventSetting, NotificationLink } from "../lib/notification-events";
-import { disablePush, enablePush, pushSupport, PUSH_CHANGED_EVENT, syncPush, type PushSupport } from "../lib/push-client";
+import { currentDeviceToken, disablePush, enablePush, pushSupport, PUSH_CHANGED_EVENT, syncPush, type PushSupport } from "../lib/push-client";
 import { NOTIFICATIONS_CHANGED, notificationApi, PUSH_HINT, timeAgo, type NotificationEntry } from "./NotificationBell";
 
 // ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ function Preferences({ flash }: { flash: (message: string) => void }) {
       const [deviceData, prefData] = await Promise.all([request<{ devices: Device[] }>("/api/notifications/devices"), request<{ events: Preference[] }>("/api/notifications/preferences")]);
       setDevices(deviceData.devices); setPrefs(prefData.events);
       const value = pushSupport(); setSupport(value);
-      if (value === "OK") { await syncPush(); const reg = await navigator.serviceWorker.getRegistration(); setHere((await reg?.pushManager.getSubscription())?.endpoint ?? null); }
+      if (value === "OK") { await syncPush(); setHere(await currentDeviceToken()); }
     } catch (problem) { setError(problem instanceof Error ? problem.message : "Falhou."); }
   }, []);
   useEffect(() => { void load(); window.addEventListener(PUSH_CHANGED_EVENT, load); return () => window.removeEventListener(PUSH_CHANGED_EVENT, load); }, [load]);
