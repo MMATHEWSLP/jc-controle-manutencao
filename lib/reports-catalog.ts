@@ -8,17 +8,18 @@
 //  - os demais perfis só veem as categorias liberadas por usuário (reports.<categoria>) e só das
 //    frentes deles (cada rota filtra pelas frentes de lib/access.ts);
 //  - quem já abria um relatório no lugar antigo continua abrindo (legacy: a permissão do módulo de
-//    onde ele saiu), para a mudança de menu não tirar acesso de ninguém.
+//    onde ele saiu), para a mudança de menu não tirar acesso de ninguém. Relatório novo (sem lugar
+//    antigo) só com a permissão da categoria.
 // ---------------------------------------------------------------------------
 import type { Permission } from "./auth";
 
 export const REPORT_CATEGORIES = [
   { key: "producao", label: "Produção", permission: "reports.producao", description: "Controle Diário: horas e KM trabalhados, viagens, volume no porto, toras e baldeio." },
   { key: "combustivel", label: "Combustível", permission: "reports.combustivel", description: "Entradas, saídas e saldos, terceiros/doações, prestadores, comboio e a conferência com o Controle Diário." },
-  { key: "pecas", label: "Peças e produtos", permission: "reports.pecas", description: "Saídas por produto, equipamento, colaborador, departamento e terceiro; produtos com saldo." },
-  { key: "manutencao", label: "Manutenção", permission: "reports.manutencao", description: "Trocas de óleo, trocas vencidas e o status da frota." },
+  { key: "pecas", label: "Peças e produtos", permission: "reports.pecas", description: "Saídas por produto, equipamento, colaborador, departamento e terceiro; produtos com saldo; ajustes de estoque." },
+  { key: "manutencao", label: "Manutenção", permission: "reports.manutencao", description: "Trocas de óleo, trocas vencidas, ordens de serviço, pneus e baterias e o status da frota." },
   { key: "custos", label: "Custos", permission: "reports.custos", description: "Relatórios casados (custo x produção), cada gasto separado e o custo total." },
-  { key: "resumos", label: "Resumos", permission: "reports.resumos", description: "Resumo da operação da semana." },
+  { key: "resumos", label: "Resumos", permission: "reports.resumos", description: "Resumo da operação da semana e do mês." },
 ] as const;
 
 export type ReportCategory = typeof REPORT_CATEGORIES[number]["key"];
@@ -26,8 +27,9 @@ export type ReportPermission = typeof REPORT_CATEGORIES[number]["permission"];
 
 export type ReportId =
   | "producao" | "combustivel-movimentacao" | "combustivel-dia" | "diario-combustivel" | "consumo-terceiros" | "terceiros-empresa" | "comboio"
-  | "estoque-saidas" | "produtos-estoque" | "trocas-oleo" | "trocas-vencidas" | "frota-diario"
-  | "casado-equipamento" | "casado-frente" | "casado-geral" | "custos-consumo" | "outros-gastos" | "resumo-semanal";
+  | "consumo-equipamento" | "combustivel-destino" | "estoque-saidas" | "produtos-estoque" | "ajustes-estoque"
+  | "trocas-oleo" | "trocas-vencidas" | "ordens-servico" | "pneus-baterias" | "frota-diario"
+  | "casado-equipamento" | "casado-frente" | "casado-geral" | "custos-consumo" | "outros-gastos" | "resumo-semanal" | "resumo-mensal";
 
 export type ReportDef = {
   id: ReportId;
@@ -86,6 +88,16 @@ export const REPORTS: readonly ReportDef[] = [
     keywords: "comboio abastecimentos motorista aprovacao aprovados pendentes rejeitados foto", formats: "Tela", legacy: ["fuel.convoy_approve", "fuel.view"],
   },
   {
+    id: "consumo-equipamento", category: "combustivel", title: "Consumo por equipamento (km/L e L/h)",
+    description: "Litros, horas/km rodados e o consumo de cada equipamento comparado à média dos do mesmo tipo, com os que gastam mais.",
+    keywords: "consumo km/l l/h media tipo gasta mais acima da media diesel equipamento", formats: "Excel · PDF",
+  },
+  {
+    id: "combustivel-destino", category: "combustivel", title: "Combustível por destino (gasolina e outros)",
+    description: "Para onde foi cada litro: equipamento da frota, terceiro/doação (veículo ou funcionário, com a finalidade) ou prestador, com o valor.",
+    keywords: "gasolina destino finalidade motosserra gerador galao terceiros doacoes prestador funcionario", formats: "Excel · PDF",
+  },
+  {
     id: "estoque-saidas", category: "pecas", title: "Saídas de produtos",
     description: "Peças e produtos que saíram do estoque, por produto, equipamento, colaborador, departamento ou terceiro, com o valor.",
     keywords: "pecas produtos estoque saidas movimentacao equipamento colaborador funcionario departamento terceiro sai os valor", formats: "Excel", legacy: ["stock.exits_view"],
@@ -98,6 +110,11 @@ export const REPORTS: readonly ReportDef[] = [
     alsoIn: "Produtos",
   },
   {
+    id: "ajustes-estoque", category: "pecas", title: "Ajustes de estoque",
+    description: "Ajustes manuais do saldo e correções de estoque, por produto e frente, com quantidade, valor, motivo e quem fez.",
+    keywords: "ajuste ajustes estoque saldo correcao inventario diferenca produto", formats: "Excel · PDF",
+  },
+  {
     id: "trocas-oleo", category: "manutencao", title: "Trocas de óleo realizadas",
     description: "Histórico das trocas por período, frente, equipamento, categoria e responsável.",
     keywords: "trocas oleo manutencao historico realizadas filtro responsavel os", formats: "Excel · PDF", legacy: ["maintenance.history"],
@@ -108,6 +125,18 @@ export const REPORTS: readonly ReportDef[] = [
     description: "Situação atual dos planos de troca: vencidas, urgentes e perto de vencer, por categoria e frente.",
     keywords: "trocas vencidas alertas urgentes perto de vencer central de alertas planos", formats: "PDF", legacy: ["alerts.view"],
     alsoIn: "Troca de Óleo → Central de alertas",
+  },
+  {
+    id: "ordens-servico", category: "manutencao", title: "Ordens de serviço",
+    description: "O.S. abertas no período: situação, dias em aberto, peças (quantidade e valor), trocas vinculadas e mecânicos.",
+    keywords: "os o.s. ordem ordens de servico abertas fechadas dias pecas mecanicos manutencao corretiva", formats: "Excel · PDF",
+    alsoIn: "Ordem de Serviço",
+  },
+  {
+    id: "pneus-baterias", category: "manutencao", title: "Pneus e baterias: custo e vida útil",
+    description: "Cada pneu e bateria com a situação, o equipamento, o uso, a vida usada, o custo (compra + eventos), o custo por km/h e os alertas.",
+    keywords: "pneus pneu baterias bateria recapagem sulco vida util custo por km alerta fogo", formats: "Excel · PDF",
+    alsoIn: "Pneus e Baterias",
   },
   {
     id: "frota-diario", category: "manutencao", title: "Status da frota do dia",
@@ -144,6 +173,11 @@ export const REPORTS: readonly ReportDef[] = [
     id: "resumo-semanal", category: "resumos", title: "Resumo semanal",
     description: "A semana (segunda a domingo): combustível, custos, manutenção, O.S., checklists e Controle Diário, com o texto do WhatsApp.",
     keywords: "resumo semanal semana whatsapp gestao", formats: "Texto · impressão",
+  },
+  {
+    id: "resumo-mensal", category: "resumos", title: "Resumo mensal",
+    description: "O mês inteiro: combustível, custos, manutenção, O.S., checklists e Controle Diário, com o texto para copiar.",
+    keywords: "resumo mensal mes gestao fechamento", formats: "Texto · impressão",
   },
 ];
 

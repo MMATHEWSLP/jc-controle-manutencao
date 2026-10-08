@@ -29,6 +29,8 @@ test("Custos e Consumo e Resumo semanal abrem o relatório no menu RELATÓRIOS",
   assert.equal(consumirAba("Relatórios")?.aba, "custos-consumo");
   assert.equal(telaAtual("Resumo semanal"), "Relatórios");
   assert.equal(consumirAba("Relatórios")?.aba, "resumo-semanal");
+  assert.equal(telaAtual("Outros gastos"), "Relatórios");
+  assert.equal(consumirAba("Relatórios")?.aba, "outros-gastos");
 });
 
 test("toda tela antiga que vai para RELATÓRIOS aponta para um relatório do catálogo", () => {

@@ -36,6 +36,15 @@ test("texto do WhatsApp com as seções e sem o que está zerado", () => {
   assert.doesNotMatch(weeklyReportText({ ...report, costs: null }), /Custo total/);
 });
 
+test("resumo mensal: título e período no texto", () => {
+  const text = weeklyReportText(report, undefined, "Resumo mensal");
+  assert.match(text, /^\*Resumo mensal — /);
+  assert.match(text, /Trocas registradas no mês: /);
+  assert.match(text, /fechada\(s\) no mês · /);
+  assert.doesNotMatch(text, /na semana/);
+  assert.match(weeklyReportText(report), /Trocas registradas na semana: /);
+});
+
 test("linha única para o modelo da Meta", () => {
   const line = weeklySummaryLine(report);
   assert.doesNotMatch(line, /\n|\s{2,}/);

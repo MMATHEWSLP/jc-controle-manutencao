@@ -19,6 +19,11 @@ const ThirdPartySummaryPanel = dynamic(() => import("./ThirdPartiesView").then((
 const StockExitsReport = dynamic(() => import("./StockExitsView").then((module) => module.StockExitsReport), { loading: Loading });
 const FuelDailySummaryModal = dynamic(() => import("./FuelDailySummary"), { loading: Loading });
 const CostProductionReport = dynamic(() => import("./CostProductionReport"), { loading: Loading });
+const FuelDestinationsReport = dynamic(() => import("./MoreReports").then((module) => module.FuelDestinationsReport), { loading: Loading });
+const ConsumptionReport = dynamic(() => import("./MoreReports").then((module) => module.ConsumptionReport), { loading: Loading });
+const StockAdjustmentsReport = dynamic(() => import("./MoreReports").then((module) => module.StockAdjustmentsReport), { loading: Loading });
+const WorkOrdersReport = dynamic(() => import("./MoreReports").then((module) => module.WorkOrdersReport), { loading: Loading });
+const ComponentsReport = dynamic(() => import("./MoreReports").then((module) => module.ComponentsReport), { loading: Loading });
 const OtherExpensesView = dynamic(() => import("./CostProductionReport").then((module) => module.OtherExpensesView), { loading: Loading });
 
 type User = { id: number; profile: string; permissions: string[]; canExport: boolean; allServiceFronts: boolean; serviceFrontIds: number[] };
@@ -90,7 +95,7 @@ export default function ReportsView({ authUser, flash, fronts, equipment }: Prop
 }
 
 // Relatórios que já têm o próprio título na tela (os demais ganham o título do catálogo).
-const OWN_HEADING = new Set<ReportId>(["custos-consumo", "resumo-semanal"]);
+const OWN_HEADING = new Set<ReportId>(["custos-consumo", "resumo-semanal", "resumo-mensal"]);
 
 function ReportHost({ report, back, children }: { report: ReportDef; back: () => void; children: ReactNode }) {
   const category = categoryOf(report.category);
@@ -116,6 +121,11 @@ function ReportBody({ report, authUser, flash, fronts, equipment, back }: { repo
     case "consumo-terceiros": return <ThirdPartyConsumptionReport />;
     case "terceiros-empresa": return <ThirdPartySummaryPanel />;
     case "comboio": return <ConvoyReport />;
+    case "consumo-equipamento": return <ConsumptionReport fronts={fronts} />;
+    case "combustivel-destino": return <FuelDestinationsReport fronts={fronts} />;
+    case "ajustes-estoque": return <StockAdjustmentsReport fronts={fronts} />;
+    case "ordens-servico": return <WorkOrdersReport fronts={fronts} equipment={equipmentOptions} />;
+    case "pneus-baterias": return <ComponentsReport />;
     case "estoque-saidas": return <StockExitsReport flash={flash} />;
     case "produtos-estoque": return <ProductsExport />;
     case "trocas-oleo": return <OilChangesExport authUser={authUser} fronts={fronts} equipment={equipmentOptions} />;
@@ -127,6 +137,8 @@ function ReportBody({ report, authUser, flash, fronts, equipment, back }: { repo
     case "outros-gastos": return <OtherExpensesView fronts={fronts} equipment={equipmentOptions} flash={flash} />;
     case "custos-consumo": return <FleetCostsView />;
     case "resumo-semanal": return <WeeklyReportView fronts={fronts} flash={flash} />;
+    case "resumo-mensal": return <WeeklyReportView fronts={fronts} flash={flash} mode="mes" />;
+    default: { const missing: never = report.id; return missing; }
   }
 }
 

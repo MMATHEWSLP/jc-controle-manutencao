@@ -393,6 +393,13 @@
       "when": 1791466280453,
       "tag": "0055_outros_gastos",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791468953593,
+      "tag": "0056_assistente_relatorios",
+      "breakpoints": true
     }
   ]
 }

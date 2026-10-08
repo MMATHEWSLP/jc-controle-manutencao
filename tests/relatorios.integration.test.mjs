@@ -8,13 +8,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { eq } from "drizzle-orm";
 import { getD1, getDb } from "../db/index.ts";
-import { componentEvents, components, dailyRecords, dailyRecordTrips, equipment, fuelMovements, fuelTypes, maintenances, maintenanceTypes, productStockMovements, products, serviceFronts, users } from "../db/schema.ts";
+import { componentEvents, components, dailyRecords, dailyRecordTrips, equipment, fuelMovements, fuelTypes, maintenances, maintenanceTypes, productStockMovements, products, serviceFronts, thirdParties, thirdPartyEmployees, users, workOrderItems, workOrderMechanics, workOrders } from "../db/schema.ts";
 import { ALL_PERMISSIONS } from "../lib/auth.ts";
 import { costProductionReport, parseCostProductionFilters } from "../lib/cost-production.ts";
 import { dieselConferencia, producao } from "../lib/daily-reports.ts";
 import { fleetCostReport } from "../lib/fleet-costs.ts";
 import { fuelCosts } from "../lib/fuel.ts";
 import { createOtherExpense, deleteOtherExpense, OtherExpenseError, updateOtherExpense } from "../lib/other-expenses.ts";
+import { fuelByDestination, stockAdjustments, workOrdersReport } from "../lib/more-reports.ts";
 import { listStockMovements } from "../lib/stock-history.ts";
 
 const testUrl = process.env.TEST_DATABASE_URL ?? "";
@@ -191,4 +192,56 @@ test("Outros gastos: validação, frente da pessoa e edição", { skip: !enabled
   await updateOtherExpense(db, sessao, id, { ...base, category: "OUTROS", amount: 100 });
   assert.deepEqual([(await lido()).manutencao, (await lido()).outros], [0, 100]);
   await assert.rejects(updateOtherExpense(db, sessao, id, { ...base, serviceFrontId: outra.id }), (error) => error instanceof OtherExpenseError && error.status === 403);
+});
+
+test("combustível por destino, ajustes de estoque e ordens de serviço (parte 3c)", { skip: !enabled }, async () => {
+  const db = await getDb();
+  const [frente] = await db.insert(serviceFronts).values({ name: `MR${s} FRENTE` }).returning();
+  const [trator] = await db.insert(equipment).values({ code: `MT-${s}`, prefix: `MT-${s}`, type: "TRATOR", brand: "M", model: "X", controlType: "HOURS", serviceFrontId: frente.id }).returning();
+  const tipos = await db.select().from(fuelTypes);
+  const gasolina = tipos.find((tipo) => tipo.code.startsWith("GASOLINA"));
+  const [empresa] = await db.insert(thirdParties).values({ name: `Empresa ${s}`, kind: "TERCEIRIZADA" }).returning();
+  const [joao] = await db.insert(thirdPartyEmployees).values({ thirdPartyId: empresa.id, name: "João da motosserra" }).returning();
+  await db.insert(fuelMovements).values([
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "ENTRADA", movementDate: "2026-07-01", quantity: 100, unitPrice: 7 },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "SAIDA", movementDate: "2026-07-02", quantity: 10, equipmentId: trator.id },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "SAIDA", movementDate: "2026-07-03", quantity: 5, thirdParty: true, thirdPartyKind: "GERAL", thirdPartyId: empresa.id, thirdPartyDestination: "FUNCIONARIO", thirdPartyEmployeeId: joao.id, purpose: "MOTOSSERRA" },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "SAIDA", movementDate: "2026-07-04", quantity: 5, thirdParty: true, thirdPartyKind: "GERAL", thirdPartyId: empresa.id, thirdPartyDestination: "FUNCIONARIO", thirdPartyEmployeeId: joao.id, purpose: "MOTOSSERRA" },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "SAIDA", movementDate: "2026-07-05", quantity: 3, thirdParty: true, thirdPartyKind: "GERAL", thirdPartyDescription: "Doação à comunidade" },
+  ]);
+  const periodo = { from: "2026-07-01", to: "2026-07-31", frontId: frente.id };
+  const destinos = await fuelByDestination({ ...periodo, fuelTypeId: gasolina.id }, "ALL");
+  assert.deepEqual(destinos.rows.map((row) => [row.kind, row.destination, row.purpose, row.count, row.liters, row.value]), [
+    ["Terceiro/Doações", `${empresa.name} · João da motosserra`, "Motosserra", 2, 10, 70],
+    ["Frota JC", trator.prefix, null, 1, 10, 70],
+    ["Terceiro/Doações", "Doação à comunidade", null, 1, 3, 21],
+  ]);
+  assert.deepEqual(destinos.totals, { count: 4, liters: 23, value: 161 });
+
+  const [produto] = await db.insert(products).values({ tag: `MR${s}`, name: "Correia teste", price: 50 }).returning();
+  await db.insert(productStockMovements).values([
+    { productId: produto.id, serviceFrontId: frente.id, delta: 3, reason: "Contagem do inventário", source: "ADJUSTMENT", movementDate: "2026-07-10" },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -2, reason: "Correção", source: "HISTORY_IMPORT", historyKind: "AJUSTE", movementDate: "2026-07-11", unitPrice: 40, affectsBalance: false },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -1, reason: "Saída comum (não é ajuste)", source: "STOCK_EXIT", movementDate: "2026-07-12", unitPrice: 50 },
+  ]);
+  const ajustes = await stockAdjustments({ ...periodo, q: `MR${s}` }, [frente.id]);
+  assert.deepEqual(ajustes.totals, { count: 2, increases: 1, decreases: 1, increaseValue: 150, decreaseValue: -80 });
+
+  const [aberta, fechada] = await db.insert(workOrders).values([
+    { equipmentId: trator.id, serviceFrontId: frente.id, openedAt: "2026-07-20T08:00:00", meterUnit: "HOURS", description: "Vazamento hidráulico" },
+    { equipmentId: trator.id, serviceFrontId: frente.id, openedAt: "2026-07-01T08:00:00", meterUnit: "HOURS", description: "Troca de embreagem", status: "CLOSED", closedAt: "2026-07-05T17:00:00" },
+  ]).returning();
+  await db.insert(workOrderItems).values([
+    { workOrderId: fechada.id, productId: produto.id, quantity: 2, launchDate: "2026-07-02", withdrawnBy: "Mecânico", unitPrice: 50 },
+    { workOrderId: fechada.id, productId: produto.id, quantity: 9, launchDate: "2026-07-02", withdrawnBy: "Mecânico", unitPrice: 50, removedAt: "2026-07-03T00:00:00Z" },
+  ]);
+  await db.insert(workOrderMechanics).values([{ workOrderId: fechada.id, mechanicName: "Carlos" }, { workOrderId: fechada.id, mechanicName: "Ana" }]);
+  const os = await workOrdersReport({ ...periodo, status: null, equipmentId: null }, [frente.id], "2026-07-25");
+  const linhaFechada = os.rows.find((row) => row.id === fechada.id);
+  const linhaAberta = os.rows.find((row) => row.id === aberta.id);
+  assert.deepEqual([linhaFechada.days, linhaFechada.items, linhaFechada.partsTotal, linhaFechada.mechanics], [4, 1, 100, "Ana, Carlos"]);
+  assert.deepEqual([linhaAberta.status, linhaAberta.days], ["OPEN", 5]);
+  assert.deepEqual(os.totals, { count: 2, open: 1, closed: 1, partsTotal: 100, averageDaysClosed: 4 });
+  assert.equal((await workOrdersReport({ ...periodo, status: "OPEN", equipmentId: null }, [frente.id], "2026-07-25")).rows.length, 1);
+  assert.equal((await workOrdersReport({ ...periodo, status: null, equipmentId: null }, [frente.id + 100000], "2026-07-25")).rows.length, 0);
 });
