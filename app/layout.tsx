@@ -15,6 +15,7 @@ import "./convoy.css";
 import "./ui-fixes.css";
 import "./assistant.css";
 import "./reports.css";
+import "./notifications.css";
 import AppRuntime from "./AppRuntime";
 
 const geistSans = Geist({

@@ -1,4 +1,6 @@
 import { authorize, assertSameOrigin } from "../../../lib/auth";
+import { notifyChecklistProblem } from "../../../lib/daily-notify";
+import { runAfterResponse } from "../../../lib/notifications";
 import { checklistErrorResponse, checklistForEquipment, listChecklists, readSubmitPayload, submitChecklist } from "../../../lib/checklists";
 import { canRegister, canViewAll } from "../../../lib/daily-records";
 
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
       if (match && value instanceof File && value.size > 0) photos.set(Number(match[1]), value);
     }
     const result = await submitChecklist(auth.user!, readSubmitPayload(String(form.get("payload") ?? "")), photos);
+    if (!result.duplicate && result.status !== "OK") { const userId = auth.user!.id; runAfterResponse("pendencia.new", () => notifyChecklistProblem(result.id, userId)); }
     const message = result.duplicate ? "Este checklist já tinha sido enviado." : result.status === "OK" ? "Checklist enviado: tudo OK." : result.status === "BLOQUEADO"
       ? `Checklist enviado: item que BLOQUEIA com problema — não opere o equipamento.${result.workOrderNumber ? ` ${result.createdOrder ? "Aberta a" : "Ligado à"} ${result.workOrderNumber}.` : ""}`
       : `Checklist enviado com pendência.${result.workOrderNumber ? ` ${result.createdOrder ? "Aberta a" : "Ligado à"} ${result.workOrderNumber}.` : ""}`;

@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { assertSameOrigin, authorize } from "../../../../../../lib/auth";
 import { ConvoyError, myConvoyRecords, receiveConvoyRecord } from "../../../../../../lib/convoy";
 import { checkConvoyPhoto } from "../../../../../../lib/convoy-ai";
+import { notifyConvoyPending } from "../../../../../../lib/convoy-notify";
+import { runAfterResponse } from "../../../../../../lib/notifications";
 
 // "Meus abastecimentos" do motorista do comboio (status, motivo da rejeição, pedido de correção).
 export async function GET(request: Request) {
@@ -29,6 +31,8 @@ export async function POST(request: Request) {
     const result = await receiveConvoyRecord(auth.user!, payload, { meter: file("meterPhoto"), pump: file("pumpPhoto") });
     // Conferência automática da foto (se ligada): depois da resposta, sem atrasar o celular.
     if (!result.duplicate) after(() => checkConvoyPhoto(result.id).then(() => undefined).catch((error) => console.error("[convoy.ai.after]", error)));
+    // Quem aprova fica sabendo ("N abastecimentos aguardando aprovação" na frente).
+    if (!result.duplicate) runAfterResponse("convoy.pending", () => notifyConvoyPending(result.id));
     return Response.json({ ...result, message: result.duplicate ? "Este abastecimento já tinha sido recebido." : "Registrado — aguardando aprovação." }, { status: result.duplicate ? 200 : 201 });
   } catch (error) {
     if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });

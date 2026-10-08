@@ -121,6 +121,14 @@ O que faz: lista dados que precisam de correção: saídas de combustível sem v
 Caminho: USUÁRIOS (quem tem permissão).
 O que faz: cria usuários, define perfil (ADMIN, GESTOR, usuário), frentes que enxerga, permissões por módulo e cargo de tarefas; ativa/desativa e redefine senha. Motoristas e operadores entram por "Sou operador" com nome (ou matrícula) + PIN de 4 dígitos e só veem o Controle Diário da sua frente. O acesso é criado sozinho para os funcionários de funções marcadas "Opera equipamento" (FUNCIONÁRIOS → Funções); na demissão é desativado. Aba Usuários → Operadores: situação (ativo/bloqueado/desativado), último acesso, "Redefinir PIN" e "Criar acessos pendentes" (gera o PDF com os PINs, que só aparecem nessa hora). 5 PINs errados bloqueiam por 15 minutos.
 
+## Notificações
+Caminho: sino 🔔 na barra de cima (também no acesso de campo). "Ver todas" abre a tela Notificações.
+O que faz: avisa o que precisa de atenção: abastecimento do comboio aguardando aprovação (agrupado: "5 abastecimentos aguardando aprovação"), abastecimento aprovado/rejeitado/correção pedida (para o motorista), pedido e resposta de mudança de frente, checklist com pendência ou bloqueado e problema no Controle Diário, tarefa recebida/concluída/vencendo, e uma vez por dia trocas de óleo vencidas, estoque baixo (saldo menor que 1 mês do consumo médio) e consumo fora da média. Tocar no aviso abre a tela certa. O número vermelho no sino são as não lidas.
+Aviso no celular: no sino ou em Notificações → Preferências e aparelhos → "Ativar notificações neste aparelho" e permitir. No iPhone (iOS 16.4 ou mais novo) só funciona com o sistema adicionado à Tela de Início: no Safari, Compartilhar → "Adicionar à Tela de Início", abrir por lá e ativar. "Enviar teste" confere se chega. No app Android, os avisos no celular chegam a partir da nova versão do app.
+Preferências: em Notificações → Preferências e aparelhos, desmarcar o que não quer receber. Ao sair do sistema, o aparelho para de receber daquele login.
+"Notificar": ao aprovar, rejeitar ou pedir correção de um abastecimento do comboio e ao aprovar/recusar mudança de frente, a caixa "Notificar" (marcada) avisa a pessoa; dá para escrever uma mensagem.
+ADMIN: Notificações → Configurar (ligar/desligar cada aviso, celular sim/não, quem recebe: quem tem a permissão, perfis, pessoas, só quem enxerga a frente; "Verificar agora" roda a verificação diária), Enviar (aviso avulso para todos, perfis, pessoas ou frentes) e Registro de envios (quem recebeu, quem leu e as falhas no celular).
+
 ## Assistente JC
 Caminho: botão "✦ Assistente JC" no canto da tela.
 O que faz: responde perguntas sobre os dados do sistema, mostra tabelas com "Baixar Excel" e "Ver no sistema", lê fotos de fichas de abastecimento ("📷 Enviar ficha") para gerar a planilha de importação e monta a lista de "Lançamentos pendentes". Respeita as frentes e os módulos liberados para cada usuário.

@@ -7,7 +7,7 @@ import type { SessionUser } from "./auth";
 // Perfil (ADMIN/GESTOR/USUÁRIO) define o que a pessoa PODE FAZER; frente define o que ela ENXERGA.
 // São coisas independentes: um USUÁRIO comum pode enxergar todas as frentes, e um GESTOR pode
 // enxergar só uma.
-export function frentesVisiveis(user: SessionUser): number[] | "ALL" {
+export function frentesVisiveis(user: Pick<SessionUser, "profile" | "allServiceFronts" | "serviceFrontIds">): number[] | "ALL" {
   if (user.profile === "ADMIN") return "ALL";
   if (user.allServiceFronts) return "ALL";
   return user.serviceFrontIds;

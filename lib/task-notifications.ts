@@ -8,6 +8,8 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db";
 import { taskNotifications } from "../db/schema";
+import type { EventKey } from "./notification-events";
+import { queueNotification } from "./notifications";
 
 export type NotificationType =
   | "TASK_RECEIVED" | "TASK_REASSIGNED_TO_YOU"
@@ -15,9 +17,25 @@ export type NotificationType =
   | "TASK_NOT_DONE_REQUESTED" | "TASK_NOT_DONE_AUTHORIZED" | "TASK_NOT_DONE_DENIED"
   | "TASK_CANCELLED";
 
+// Cada aviso de Tarefas também vai para a central de notificações (sino do sistema e celular), com
+// o evento que o ADMIN liga/desliga e a pessoa pode silenciar (lib/notification-events.ts).
+const CENTRAL: Record<NotificationType, { event: EventKey; title: string }> = {
+  TASK_RECEIVED: { event: "task.assigned", title: "Tarefa recebida" },
+  TASK_REASSIGNED_TO_YOU: { event: "task.assigned", title: "Tarefa recebida" },
+  TASK_COMPLETION_REQUESTED: { event: "task.completed", title: "Conclusão de tarefa aguardando sua aprovação" },
+  TASK_COMPLETION_APPROVED: { event: "task.completed", title: "Conclusão da tarefa aprovada" },
+  TASK_COMPLETION_REJECTED: { event: "task.updated", title: "Conclusão da tarefa recusada" },
+  TASK_NOT_DONE_REQUESTED: { event: "task.updated", title: "Pedido para não realizar uma tarefa" },
+  TASK_NOT_DONE_AUTHORIZED: { event: "task.updated", title: "Não realização autorizada" },
+  TASK_NOT_DONE_DENIED: { event: "task.updated", title: "Não realização negada" },
+  TASK_CANCELLED: { event: "task.updated", title: "Tarefa cancelada" },
+};
+
 export async function notifyUser(userId: number, taskId: number, type: NotificationType, message: string) {
   const db = await getDb();
   await db.insert(taskNotifications).values({ userId, taskId, type, message });
+  const central = CENTRAL[type];
+  queueNotification({ event: central.event, to: [userId], title: central.title, body: message, link: { secao: "Tarefas", aba: `tarefa:${taskId}` } });
 }
 
 export type TaskNotificationRow = {

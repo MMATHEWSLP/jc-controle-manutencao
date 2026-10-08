@@ -1,7 +1,9 @@
 import { assertSameOrigin, authorize } from "../../../../../lib/auth";
 import { approveConvoyRecord, ConvoyError, listConvoyRecords, rejectConvoyRecord, requestConvoyCorrection } from "../../../../../lib/convoy";
 import { checkConvoyPhoto } from "../../../../../lib/convoy-ai";
+import { notifyConvoyAction } from "../../../../../lib/convoy-notify";
 import { parseConvoyNumber } from "../../../../../lib/convoy-rules";
+import { notifyOptions, runAfterResponse } from "../../../../../lib/notifications";
 import { isFuelPurpose } from "../../../../../lib/third-party-rules";
 
 type Context = { params: Promise<{ id: string }> };
@@ -9,6 +11,7 @@ type Context = { params: Promise<{ id: string }> };
 // Ações do aprovador num registro: approve (com correções e a origem Frente/Porto; nos terceiros,
 // também vincular empresa/veículo/funcionário, trocar a frente e as confirmações), reject (motivo
 // obrigatório), request_correction (o motorista vê o pedido) e ai_check (conferir a foto agora).
+// notify (padrão true) e notifyMessage: avisar o motorista no sino/celular, com uma mensagem opcional.
 export async function POST(request: Request, { params }: Context) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Origem da solicitação não autorizada." }, { status: 403 });
   const auth = await authorize(request, "fuel.convoy_approve");
@@ -18,6 +21,8 @@ export async function POST(request: Request, { params }: Context) {
     if (!Number.isInteger(id) || id <= 0) return Response.json({ error: "Registro inválido." }, { status: 400 });
     const body = (await request.json()) as Record<string, unknown>;
     const user = auth.user!;
+    const told = notifyOptions(body);
+    const tell = (action: "approved" | "rejected" | "correction") => runAfterResponse("convoy.action", () => notifyConvoyAction(id, action, { actorId: user.id, ...told }));
     if (body.action === "approve") {
       const number = (key: string) => (body[key] === undefined ? undefined : body[key] === null || body[key] === "" ? null : parseConvoyNumber(body[key]));
       // undefined = mantém o do registro; null/0 = sem (ex.: pessoa física sem veículo).
@@ -38,10 +43,11 @@ export async function POST(request: Request, { params }: Context) {
         readingException: body.readingException === true, confirmTank: body.confirmTank === true, confirmOutlier: body.confirmOutlier === true,
         description: typeof body.description === "string" ? body.description.slice(0, 200) : undefined,
       });
+      tell("approved");
       return Response.json(result);
     }
-    if (body.action === "reject") return Response.json(await rejectConvoyRecord(user, id, String(body.reason ?? "")));
-    if (body.action === "request_correction") return Response.json(await requestConvoyCorrection(user, id, String(body.note ?? "")));
+    if (body.action === "reject") { const result = await rejectConvoyRecord(user, id, String(body.reason ?? "")); tell("rejected"); return Response.json(result); }
+    if (body.action === "request_correction") { const result = await requestConvoyCorrection(user, id, String(body.note ?? "")); tell("correction"); return Response.json(result); }
     if (body.action === "ai_check") {
       if (!(await listConvoyRecords(user, { status: "TODOS", from: null, to: null, frontId: null, id })).length) return Response.json({ error: "Registro não encontrado." }, { status: 404 });
       const result = await checkConvoyPhoto(id, { force: true, actorId: user.id });

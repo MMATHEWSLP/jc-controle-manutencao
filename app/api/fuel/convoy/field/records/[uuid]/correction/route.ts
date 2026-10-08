@@ -1,5 +1,7 @@
 import { assertSameOrigin, authorize } from "../../../../../../../../lib/auth";
 import { answerConvoyCorrection, ConvoyError } from "../../../../../../../../lib/convoy";
+import { notifyConvoyPending } from "../../../../../../../../lib/convoy-notify";
+import { runAfterResponse } from "../../../../../../../../lib/notifications";
 
 type Context = { params: Promise<{ uuid: string }> };
 
@@ -13,6 +15,7 @@ export async function POST(request: Request, { params }: Context) {
     const payload = JSON.parse(String(form.get("payload") ?? "{}")) as Record<string, unknown>;
     const photo = form.get("meterPhoto");
     const result = await answerConvoyCorrection(auth.user!, (await params).uuid, payload, photo instanceof File && photo.size > 0 ? photo : null);
+    if (!result.duplicate) runAfterResponse("convoy.corrected", () => notifyConvoyPending(result.id, true));
     return Response.json({ ...result, message: "Correção enviada — aguardando aprovação." });
   } catch (error) {
     if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });

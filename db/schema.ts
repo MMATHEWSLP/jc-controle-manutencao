@@ -2176,3 +2176,106 @@ export const otherExpenses = pgTable("other_expenses", {
   deletedBy: integer("deleted_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("other_expenses_front_date_idx").on(table.serviceFrontId, table.expenseDate), index("other_expenses_equipment_idx").on(table.equipmentId)]);
+
+// ---------------------------------------------------------------------------
+// Central de notificações (sino do sistema + aviso no celular). Cada evento (lib/notification-events.ts)
+// vira um "disparo" (notification_dispatches) e uma linha por destinatário (notifications). Eventos
+// agrupáveis (ex.: "5 abastecimentos aguardando aprovação") atualizam a linha ainda não lida do mesmo
+// grupo em vez de criar outra. O envio para o celular (Web Push no iPhone/navegador, FCM no app
+// Android) fica registrado por aparelho em notification_deliveries.
+// ---------------------------------------------------------------------------
+export const notificationDispatches = pgTable("notification_dispatches", {
+  id: serial("id").primaryKey(),
+  event: text("event").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  // Tela que abre ao tocar: {"secao":"Combustível","aba":"aprovacao"} (lib/assistente-nav.ts).
+  link: text("link"),
+  serviceFrontId: integer("service_front_id").references(() => serviceFronts.id),
+  recipients: integer("recipients").notNull().default(0),
+  // Quem disparou (envio avulso, "Notificar" numa ação). Nulo = o próprio sistema.
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("notification_dispatches_created_idx").on(table.createdAt), index("notification_dispatches_event_idx").on(table.event, table.createdAt)]);
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  dispatchId: integer("dispatch_id").references(() => notificationDispatches.id),
+  event: text("event").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  link: text("link"),
+  // Agrupamento: mesma chave + não lida = a linha é atualizada (contador groupCount).
+  groupKey: text("group_key"),
+  groupCount: integer("group_count").notNull().default(1),
+  readAt: text("read_at"),
+  ...timestamps,
+}, (table) => [
+  index("notifications_user_idx").on(table.userId, table.readAt, table.updatedAt),
+  index("notifications_group_idx").on(table.userId, table.groupKey),
+  index("notifications_dispatch_idx").on(table.dispatchId),
+]);
+
+// Aparelhos que recebem aviso fora do sistema. WEB = Web Push (iPhone com o app na Tela de Início,
+// navegador do computador/Android); ANDROID = app Android (token do Firebase Cloud Messaging).
+export const notificationDevices = pgTable("notification_devices", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  kind: text("kind", { enum:["WEB","ANDROID"] }).notNull(),
+  // WEB: endpoint da inscrição; ANDROID: token do FCM.
+  token: text("token").notNull(),
+  p256dh: text("p256dh"),
+  auth: text("auth"),
+  label: text("label"),
+  lastSeenAt: text("last_seen_at"),
+  lastSuccessAt: text("last_success_at"),
+  lastError: text("last_error"),
+  failures: integer("failures").notNull().default(0),
+  // Desligado pelo usuário, pela troca de login no aparelho ou porque o serviço disse que o token não vale mais.
+  disabledAt: text("disabled_at"),
+  disabledReason: text("disabled_reason"),
+  ...timestamps,
+}, (table) => [uniqueIndex("notification_devices_token_unique").on(table.token), index("notification_devices_user_idx").on(table.userId, table.disabledAt)]);
+
+// Configuração de cada evento pelo ADMIN (tela "Configurar notificações"). Sem linha = padrão do código.
+export const notificationEventSettings = pgTable("notification_event_settings", {
+  event: text("event").primaryKey(),
+  enabled: boolean("enabled").notNull(),
+  push: boolean("push").notNull(),
+  // Destinatários dos eventos de grupo: quem tem a permissão do evento, perfis e pessoas escolhidas,
+  // e se só quem enxerga a frente do evento recebe. JSON: ["GESTOR"] / [12, 40].
+  includePermission: boolean("include_permission").notNull().default(true),
+  profiles: text("profiles").notNull().default("[]"),
+  userIds: text("user_ids").notNull().default("[]"),
+  onlyFront: boolean("only_front").notNull().default(true),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+});
+
+// Eventos que a própria pessoa silenciou (não aparecem no sino nem no celular).
+export const notificationMutes = pgTable("notification_mutes", {
+  userId: integer("user_id").notNull().references(() => users.id),
+  event: text("event").notNull(),
+  ...timestamps,
+}, (table) => [primaryKey({ columns: [table.userId, table.event] })]);
+
+export const notificationDeliveries = pgTable("notification_deliveries", {
+  id: serial("id").primaryKey(),
+  dispatchId: integer("dispatch_id").references(() => notificationDispatches.id),
+  notificationId: integer("notification_id").references(() => notifications.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  deviceId: integer("device_id").references(() => notificationDevices.id),
+  channel: text("channel", { enum:["WEB_PUSH","FCM"] }).notNull(),
+  status: text("status", { enum:["SENT","FAILED","INVALID"] }).notNull(),
+  error: text("error"),
+  ...timestamps,
+}, (table) => [index("notification_deliveries_dispatch_idx").on(table.dispatchId), index("notification_deliveries_created_idx").on(table.createdAt, table.status)]);
+
+// Estado interno: chaves VAPID geradas pelo sistema, última rotina diária e o que já foi avisado
+// (para não repetir o mesmo aviso todo dia).
+export const notificationState = pgTable("notification_state", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  ...timestamps,
+});
