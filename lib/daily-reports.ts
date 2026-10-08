@@ -40,12 +40,14 @@ function onde(user: SessionUser, f: ReportFilters): SQL {
   return sql.join(partes, sql` AND `);
 }
 
+// As contagens das viagens usam count(t.id): com count(*) e o FILTER só sobre "d", o Postgres trata o
+// agregado como da consulta de fora e recusa ("aggregate functions are not allowed in FROM clause").
 const BASE = sql`FROM daily_records d
   JOIN equipment e ON e.id = d.equipment_id
   JOIN users u ON u.id = d.user_id
   LEFT JOIN users fo ON fo.id = d.field_operator_id
   LEFT JOIN service_fronts sf ON sf.id = ${FRENTE_ID}
-  LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE d.production_type = 'PORTO') AS porto, count(*) FILTER (WHERE d.production_type = 'BALDEIO') AS baldeio,
+  LEFT JOIN LATERAL (SELECT count(t.id) FILTER (WHERE d.production_type = 'PORTO') AS porto, count(t.id) FILTER (WHERE d.production_type = 'BALDEIO') AS baldeio,
     coalesce(sum(t.logs_quantity), 0) AS toras, sum(t.meters) AS volume FROM daily_record_trips t WHERE t.daily_record_id = d.id) tr ON true
   LEFT JOIN LATERAL (SELECT coalesce(sum(f.liters), 0) AS litros FROM daily_record_fuelings f WHERE f.daily_record_id = d.id) fu ON true`;
 

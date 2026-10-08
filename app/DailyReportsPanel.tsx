@@ -2,8 +2,9 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
 
-// Controle Diário → Relatórios: produção por frente/local/operador/equipamento (KM/horas, viagens,
-// volume no porto, diesel informado) e a conferência "Diário x Combustível", com Excel e PDF.
+// RELATÓRIOS → Produção do Controle Diário (por frente/local/operador/equipamento: KM/horas, viagens,
+// volume no porto, diesel informado) e RELATÓRIOS → Conferência Diário x Combustível, com Excel e PDF.
+// mode fixa um dos dois (cada um é um cartão do catálogo); sem mode mostra as duas abas.
 type Front = { id: number; name: string };
 type Equip = { id: number; prefix: string };
 type Producao = { chave: string; registros: number; importados: number; conferir: number; km: number; horas: number; viagensPorto: number; volumePorto: number; torasPorto: number; viagensBaldeio: number; viagens: number; dieselInformado: number };
@@ -13,8 +14,8 @@ const n = (valor: number, casas = 2) => valor.toLocaleString("pt-BR", { maximumF
 const dia = (valor: string) => valor.split("-").reverse().join("/");
 function hoje() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 
-export default function DailyReportsPanel({ fronts, equipment }: { fronts: Front[]; equipment: Equip[] }) {
-  const [tipo, setTipo] = useState<"producao" | "diesel">("producao");
+export default function DailyReportsPanel({ fronts, equipment, mode }: { fronts: Front[]; equipment: Equip[]; mode?: "producao" | "diesel" }) {
+  const [tipo, setTipo] = useState<"producao" | "diesel">(mode ?? "producao");
   const [por, setPor] = useState<"frente" | "local" | "operador" | "equipamento">("frente");
   const [de, setDe] = useState(`${hoje().slice(0, 7)}-01`);
   const [ate, setAte] = useState(hoje());
@@ -45,10 +46,10 @@ export default function DailyReportsPanel({ fronts, equipment }: { fronts: Front
   const total = producao.reduce((t, x) => ({ registros: t.registros + x.registros, km: t.km + x.km, horas: t.horas + x.horas, viagens: t.viagens + x.viagens, volume: t.volume + x.volumePorto, diesel: t.diesel + x.dieselInformado }), { registros: 0, km: 0, horas: 0, viagens: 0, volume: 0, diesel: 0 });
 
   return <article className="panel module-panel daily-reports">
-    <div className="main-tabs secondary-module-nav daily-reports-tabs">
+    {!mode && <div className="main-tabs secondary-module-nav daily-reports-tabs">
       <button type="button" className={tipo === "producao" ? "active" : ""} onClick={() => { setTipo("producao"); setDados(null); }}>Produção e KM/horas</button>
       <button type="button" className={tipo === "diesel" ? "active" : ""} onClick={() => { setTipo("diesel"); setDados(null); }}>Diário x Combustível</button>
-    </div>
+    </div>}
     <div className="daily-reports-filters">
       {tipo === "producao" && <label>Agrupar por<select value={por} onChange={(event) => setPor(event.target.value as typeof por)}><option value="frente">Frente</option><option value="local">Local</option><option value="operador">Operador</option><option value="equipamento">Equipamento</option></select></label>}
       <label>De<input type="date" value={de} max={ate} onChange={(event) => event.target.value && setDe(event.target.value)} /></label>

@@ -139,6 +139,15 @@ export const PERMISSION_GROUPS = [
   { label:"Frentes de Serviço", items:[
     ["service_fronts.manage","Cadastrar, renomear e ativar/desativar frentes de serviço"],
   ]},
+  // Menu RELATÓRIOS (lib/reports-catalog.ts): uma permissão por categoria, sempre só das frentes da pessoa.
+  { label:"Relatórios", items:[
+    ["reports.producao","Relatórios de Produção (Controle Diário)"],
+    ["reports.combustivel","Relatórios de Combustível (entradas, saídas, terceiros, comboio, conferência com o Diário)"],
+    ["reports.pecas","Relatórios de Peças e produtos (saídas e produtos com saldo)"],
+    ["reports.manutencao","Relatórios de Manutenção (trocas de óleo, vencidas, status da frota)"],
+    ["reports.custos","Relatórios de Custos (valores em R$ por equipamento e frente)"],
+    ["reports.resumos","Resumos da operação (semanal)"],
+  ]},
 ] as const;
 
 export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((group) => group.items.map(([key]) => key));
@@ -158,7 +167,9 @@ export const PROFILE_DEFAULTS: Record<Profile, Permission[]> = {
     // Terceiros: o administrador pediu explicitamente que GESTOR cadastre/edite/inative terceiros.
     "third_parties.manage",
     // Aprovação do comboio: o administrador pediu explicitamente ADMIN e GESTOR (configurável por usuário).
-    "fuel.convoy_approve"],
+    "fuel.convoy_approve",
+    // Menu RELATÓRIOS: o administrador pediu explicitamente "ADMIN e GESTOR veem tudo" (configurável por usuário).
+    "reports.producao","reports.combustivel","reports.pecas","reports.manutencao","reports.custos","reports.resumos"],
   OFICINA:["equipment.view","equipment.edit_plan","meter.view","meter.create","maintenance.view","maintenance.create","maintenance.edit","maintenance.history","alerts.view","fleet.view","fleet.update","fleet.report"],
   OPERADOR:[],
   // Fixo: o funcionário de campo só registra o Controle Diário (overrides são ignorados). O motorista
@@ -423,7 +434,8 @@ export async function getSessionUser(request:Request):Promise<SessionUser|null> 
   return (await readSession(request)).user;
 }
 
-export async function authorize(request:Request,permission?:Permission) {
+// permission: uma permissão ou uma lista (basta ter uma delas).
+export async function authorize(request:Request,permission?:Permission|readonly Permission[]) {
   const session=await readSession(request);
   const user=session.user;
   // Sessão que não vale mais: apaga o cookie junto com o 401 (o próximo pedido nem leva o cookie).
@@ -433,7 +445,8 @@ export async function authorize(request:Request,permission?:Permission) {
     if(!FIELD_ALLOWED_API.some((prefix)=>pathname===prefix||pathname.startsWith(prefix.endsWith("/")?prefix:`${prefix}/`)))
       return {user:null,response:Response.json({error:"Acesso de campo permite apenas o Controle Diário."},{status:403})};
   }
-  if(permission&&!user.permissions.includes(permission))return {user:null,response:Response.json({error:"Você não possui permissão para esta ação."},{status:403})};
+  const required=permission===undefined?[]:typeof permission==="string"?[permission]:permission;
+  if(required.length&&!required.some((item)=>user.permissions.includes(item)))return {user:null,response:Response.json({error:"Você não possui permissão para esta ação."},{status:403})};
   return {user,response:null};
 }
 

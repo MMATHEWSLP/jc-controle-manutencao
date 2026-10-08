@@ -11,7 +11,8 @@ function csvCell(value: string) {
 }
 
 export async function GET(request: Request) {
-  const auth = await authorize(request, "products.view");
+  // Também RELATÓRIOS → Peças e produtos (reports.pecas).
+  const auth = await authorize(request, ["products.view", "reports.pecas"]);
   if (auth.response) return auth.response;
   try {
     const url = new URL(request.url);

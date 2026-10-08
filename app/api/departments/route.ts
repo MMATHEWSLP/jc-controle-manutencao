@@ -4,7 +4,7 @@ import { createDepartment, listDepartments } from "../../../lib/departments";
 import { stockErrorResponse } from "../../../lib/stock";
 
 // Lista única de Departamentos (Movimentação e Solicitação de Pedidos).
-const VIEW: Permission[] = ["stock.exits_view", "purchases.view", "departments.manage"];
+const VIEW: Permission[] = ["stock.exits_view", "purchases.view", "departments.manage", "reports.pecas"];
 
 export async function GET(request: Request) {
   const auth = await authorize(request);

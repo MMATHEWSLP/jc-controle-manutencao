@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const auth = await authorize(request);
   if (auth.response) return auth.response;
   const user = auth.user!;
-  if (!hasAny(user, ["products.view", "stock.exits_create", "work_orders.manage", "purchases.request", "purchases.buy"]))
+  if (!hasAny(user, ["products.view", "stock.exits_create", "work_orders.manage", "purchases.request", "purchases.buy", "reports.pecas"]))
     return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
     const url = new URL(request.url);

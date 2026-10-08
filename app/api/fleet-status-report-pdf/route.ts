@@ -29,7 +29,8 @@ function statusIntersects(events: Row[], status: FleetStatus, start: string, end
 }
 
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fleet.report");
+  // Também RELATÓRIOS → Manutenção (reports.manutencao).
+  const auth = await authorize(request, ["fleet.report", "reports.manutencao"]);
   if (auth.response) return auth.response;
   try {
     const url = new URL(request.url);

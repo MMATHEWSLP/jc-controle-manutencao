@@ -14,6 +14,7 @@ import "./compact-tables.css";
 import "./convoy.css";
 import "./ui-fixes.css";
 import "./assistant.css";
+import "./reports.css";
 import AppRuntime from "./AppRuntime";
 
 const geistSans = Geist({

@@ -8,8 +8,9 @@ import { frentesVisiveis } from "../../../lib/access";
 const BATCH_SIZE = 1000;
 const MAX_ROWS = 20000;
 
-function canExportUser(user: { profile: string; canExport: boolean }) {
-  return user.profile === "ADMIN" || user.profile === "GESTOR" || user.canExport;
+// Também RELATÓRIOS → Manutenção (reports.manutencao).
+function canExportUser(user: { profile: string; canExport: boolean; permissions: readonly string[] }) {
+  return user.profile === "ADMIN" || user.profile === "GESTOR" || user.canExport || user.permissions.includes("reports.manutencao");
 }
 
 function parseDateOnly(value: string | null) {

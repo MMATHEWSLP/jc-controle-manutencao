@@ -1,14 +1,14 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import ConvoyApprovalView, { ConvoyHistoryView, ConvoyReport } from "./ConvoyApprovalView";
+import ConvoyApprovalView, { ConvoyHistoryView } from "./ConvoyApprovalView";
 import { CodesResult, type AcessoCriado } from "./FieldOperatorsAdd";
 
 // Comboio dentro do Combustível (antes era o menu ABASTECIMENTOS):
-//  - Aprovação: Aprovar (o que o motorista do comboio lançou, pendente até alguém conferir e aprovar),
-//    Histórico (os já tratados, com filtros e exportação) e Relatório (por período, comboio, motorista);
+//  - Aprovação: Aprovar (o que o motorista do comboio lançou, pendente até alguém conferir e aprovar) e
+//    Histórico (os já tratados, com filtros e exportação). O relatório do comboio fica em RELATÓRIOS → Combustível;
 //  - Motorista comboio: quem lança (nome + PIN no "Sou operador"; entra direto em Abastecimentos).
-export type ConvoyApprovalTab = "approve" | "history" | "report";
+export type ConvoyApprovalTab = "approve" | "history";
 export type ConvoyApprovalStart = { tab: ConvoyApprovalTab; driver?: { id: number; name: string } | null };
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -33,7 +33,7 @@ export function useConvoyPending(enabled: boolean) {
   return { pending, refresh };
 }
 
-// Combustível → Aprovação: abas internas Aprovar | Histórico | Relatório.
+// Combustível → Aprovação: abas internas Aprovar | Histórico.
 export function ConvoyApprovalPanel({ flash, pending, start }: { flash: (message: string) => void; pending: number; start?: ConvoyApprovalStart }) {
   const [tab, setTab] = useState<ConvoyApprovalTab>(start?.tab ?? "approve");
   const changed = () => window.dispatchEvent(new Event("jc:convoy-changed"));
@@ -41,11 +41,9 @@ export function ConvoyApprovalPanel({ flash, pending, start }: { flash: (message
     <div className="main-tabs secondary-module-nav convoy-inner-tabs" aria-label="Aprovação do comboio">
       <button type="button" className={tab === "approve" ? "active" : ""} onClick={() => setTab("approve")}>Aprovar{pending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{pending}</b>}</button>
       <button type="button" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button>
-      <button type="button" className={tab === "report" ? "active" : ""} onClick={() => setTab("report")}>Relatório</button>
     </div>
     {tab === "approve" ? <ConvoyApprovalView flash={flash} onChanged={changed} />
-      : tab === "history" ? <ConvoyHistoryView flash={flash} initialDriver={start?.tab === "history" ? start.driver ?? null : null} onChanged={changed} />
-      : <ConvoyReport />}
+      : <ConvoyHistoryView flash={flash} initialDriver={start?.tab === "history" ? start.driver ?? null : null} onChanged={changed} />}
   </div>;
 }
 

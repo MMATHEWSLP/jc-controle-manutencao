@@ -74,6 +74,8 @@
     "test:telas-antigas": "esbuild tests/telas-antigas.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-telas-antigas.mjs && node --test /tmp/manutencao-preventiva-telas-antigas.mjs",
     "test:sessao-banco": "tsx --test tests/session.integration.test.mjs",
     "test:troca-oleo-banco": "tsx --test tests/troca-oleo-leitura-menor.integration.test.mjs",
+    "test:relatorios-banco": "tsx --test tests/relatorios.integration.test.mjs",
+    "test:reports-catalog": "esbuild tests/reports-catalog.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-reports-catalog.mjs && node --test tests/.tmp-reports-catalog.mjs",
     "test:field-operators-rules": "esbuild tests/field-operators-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-field-operators-rules.mjs && node --test /tmp/manutencao-preventiva-field-operators-rules.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },

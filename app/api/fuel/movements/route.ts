@@ -9,7 +9,8 @@ const PAGE_SIZE = 50;
 
 // Aba "Histórico": lançamentos das frentes em exibição (como origem ou como filial destino).
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fuel.view");
+  // Também RELATÓRIOS → Combustível (reports.combustivel), só leitura.
+  const auth = await authorize(request, ["fuel.view", "reports.combustivel"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

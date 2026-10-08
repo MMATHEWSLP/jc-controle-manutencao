@@ -16,7 +16,8 @@ const litersBr = (value: number) => `${value.toLocaleString("pt-BR", { minimumFr
 const brDay = (value: string) => value.split("-").reverse().join("/");
 
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fuel.view");
+  // Também RELATÓRIOS → Combustível (reports.combustivel), só leitura.
+  const auth = await authorize(request, ["fuel.view", "reports.combustivel"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

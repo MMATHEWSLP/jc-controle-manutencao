@@ -25,7 +25,8 @@ export function thirdPartyErrorResponse(error: unknown) {
 // Consultar/selecionar: quem já usa Combustível ou Movimentação. Cadastrar/editar/inativar:
 // third_parties.manage (ADMIN e GESTOR por padrão).
 export function canViewThirdParties(user: SessionUser) {
-  return ["third_parties.manage", "fuel.view", "fuel.register", "stock.exits_view", "stock.exits_create"].some((permission) => user.permissions.includes(permission as never));
+  // reports.*: filtros por terceiro nos relatórios (RELATÓRIOS → Combustível e Peças), só consulta.
+  return ["third_parties.manage", "fuel.view", "fuel.register", "stock.exits_view", "stock.exits_create", "reports.combustivel", "reports.pecas"].some((permission) => user.permissions.includes(permission as never));
 }
 export const canManageThirdParties = (user: SessionUser) => user.permissions.includes("third_parties.manage");
 

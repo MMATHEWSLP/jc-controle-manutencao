@@ -10,7 +10,8 @@ import { pendingConvoyLiters } from "../../../lib/convoy";
 // do Histórico: saldo atual acumulado + entradas/saídas do mês corrente, separados em Frente e Porto.
 // Escopo = frente(s) do seletor global ∩ frentes que a pessoa enxerga.
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fuel.view");
+  // Também RELATÓRIOS → Combustível (reports.combustivel), só leitura.
+  const auth = await authorize(request, ["fuel.view", "reports.combustivel"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

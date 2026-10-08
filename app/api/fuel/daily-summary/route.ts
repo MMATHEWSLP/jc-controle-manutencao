@@ -13,7 +13,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LOCATIONS: DailyLocation[] = ["FRENTE", "PORTO", "TODOS"];
 
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fuel.view");
+  const auth = await authorize(request, ["fuel.view", "reports.combustivel"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

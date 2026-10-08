@@ -16,7 +16,8 @@ function list(search:URLSearchParams,key:string){return [...new Set(search.getAl
 function periodLabel(from:string,to:string){if(from&&to)return `${from.split("-").reverse().join("/")} a ${to.split("-").reverse().join("/")}`;if(from)return `A partir de ${from.split("-").reverse().join("/")}`;if(to)return `Até ${to.split("-").reverse().join("/")}`;return "Todo o período disponível";}
 
 export async function GET(request:Request){
-  const auth=await authorize(request,"maintenance.history");if(auth.response)return auth.response;
+  // Também RELATÓRIOS → Manutenção (reports.manutencao).
+  const auth=await authorize(request,["maintenance.history","reports.manutencao"]);if(auth.response)return auth.response;
   try{
     const url=new URL(request.url);const categories=list(url.searchParams,"category");const fronts=list(url.searchParams,"front");const equipmentIds=list(url.searchParams,"equipment").map(Number).filter((id)=>Number.isInteger(id)&&id>0);
     const statuses=list(url.searchParams,"status").filter((value):value is ReportStatus=>validStatuses.has(value as ReportStatus));const kinds=list(url.searchParams,"kind").filter((value)=>validKinds.has(value));

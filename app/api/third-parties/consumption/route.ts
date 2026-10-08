@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { getDb } from "../../../../db";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { authorize } from "../../../../lib/auth";
+import { reportGrants } from "../../../../lib/reports-catalog";
 import { fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, monthStart } from "../../../../lib/fuel";
 import { thirdPartyConsumptionReport } from "../../../../lib/third-parties";
 
@@ -12,7 +13,7 @@ const positive = (value: string | null) => { const parsed = Number(value); retur
 // média, última leitura, fora da média) e total por empresa. ?formato=xlsx exporta em Excel.
 // Escopo = frentes que a pessoa enxerga ∩ seletor global ∩ filtro de frente.
 export async function GET(request: Request) {
-  const auth = await authorize(request, "fuel.view");
+  const auth = await authorize(request, reportGrants("consumo-terceiros"));
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

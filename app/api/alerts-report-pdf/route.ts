@@ -16,7 +16,8 @@ function periodLabel(from:string,to:string){if(from&&to)return `${from.split("-"
 function numeric(value:unknown){if(value===null||value===undefined||value==="")return null;const parsed=Number(value);return Number.isFinite(parsed)?parsed:null;}
 
 export async function GET(request:Request){
-  const auth=await authorize(request,"alerts.view");if(auth.response)return auth.response;
+  // Também RELATÓRIOS → Manutenção (reports.manutencao).
+  const auth=await authorize(request,["alerts.view","reports.manutencao"]);if(auth.response)return auth.response;
   try{
     const url=new URL(request.url);const categories=list(url.searchParams,"category");const fronts=list(url.searchParams,"front");const equipmentIds=list(url.searchParams,"equipment").map(Number).filter((id)=>Number.isInteger(id)&&id>0);
     const statuses=list(url.searchParams,"status").filter((value):value is ReportStatus=>validStatuses.has(value as ReportStatus));
