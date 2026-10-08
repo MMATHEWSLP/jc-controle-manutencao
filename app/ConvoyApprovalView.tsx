@@ -1,9 +1,10 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable @next/next/no-img-element -- fotos servidas por rota própria com permissão (link temporário) */
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CONVOY_FLAG_LABELS, CONVOY_STATUS_LABELS, NO_PHOTO_LABELS, formatNumber, type ConvoyExitKind, type ConvoyFlag, type ConvoyStatus, type NoPhotoReason } from "../lib/convoy-rules";
 import { FUEL_PURPOSES, FUEL_PURPOSE_LABELS, type FuelPurpose } from "../lib/third-party-rules";
+import { PhotoLightbox, PhotoZoom, type PhotoItem } from "./PhotoViewer";
 import { KIND_LABELS, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, ThirdPartyWorkerPicker, VehicleFormModal, WorkerFormModal, type ThirdPartyOption } from "./ThirdPartiesView";
 
 type Front = { id: number; name: string };
@@ -132,29 +133,6 @@ function ConvoySettingsBox({ settings, flash, saved }: { settings: ListResponse[
   </details>;
 }
 
-// Foto grande com zoom (roda do mouse, pinça/arrastar, botões).
-function ZoomPhoto({ src, alt }: { src: string; alt: string }) {
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  const zoomAt = (next: number, px: number, py: number) => {
-    const bounded = Math.min(6, Math.max(1, next));
-    setOffset((current) => bounded === 1 ? { x: 0, y: 0 } : { x: px - (px - current.x) * (bounded / scale), y: py - (py - current.y) * (bounded / scale) });
-    setScale(bounded);
-  };
-  const wheel = (event: ReactWheelEvent) => { const rect = box.current!.getBoundingClientRect(); zoomAt(scale * (event.deltaY < 0 ? 1.2 : 1 / 1.2), event.clientX - rect.left, event.clientY - rect.top); };
-  const down = (event: ReactPointerEvent) => { drag.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y }; (event.target as Element).setPointerCapture?.(event.pointerId); };
-  const move = (event: ReactPointerEvent) => { if (drag.current && scale > 1) setOffset({ x: drag.current.ox + event.clientX - drag.current.x, y: drag.current.oy + event.clientY - drag.current.y }); };
-  const center = () => { const rect = box.current?.getBoundingClientRect(); return rect ? [rect.width / 2, rect.height / 2] as const : [0, 0] as const; };
-  return <div>
-    <div ref={box} className="convoy-zoom" onWheel={wheel} onPointerDown={down} onPointerMove={move} onPointerUp={() => { drag.current = null; }} onPointerLeave={() => { drag.current = null; }}>
-      <img src={src} alt={alt} draggable={false} style={{ width: "100%", transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }} />
-    </div>
-    <div className="convoy-zoom-controls"><button type="button" className="secondary" onClick={() => zoomAt(scale * 1.5, ...center())}>＋ Zoom</button><button type="button" className="secondary" onClick={() => zoomAt(scale / 1.5, ...center())}>－</button><button type="button" className="secondary" onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}>Ajustar</button><a className="secondary" href={src} target="_blank" rel="noopener noreferrer">Abrir em nova aba</a></div>
-  </div>;
-}
-
 type SearchOption = { id: number; label: string; detail: string };
 function SearchPick({ label, value, kind, onPick }: { label: string; value: string; kind: "equipment" | "employees"; onPick: (option: SearchOption | null) => void }) {
   const [query, setQuery] = useState("");
@@ -258,7 +236,12 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
     else if (kind === "vehicle") setVehicleId(id);
     else { setWorkerId(id); }
   }
-  const src = `/api/fuel/convoy/photo/${item.id}${photo === "pump" ? "?tipo=bomba" : ""}`;
+  const photos: Array<PhotoItem & { key: "meter" | "pump" }> = [
+    ...(item.hasMeterPhoto ? [{ key: "meter" as const, src: `/api/fuel/convoy/photo/${item.id}`, label: "Foto do KM/horímetro" }] : []),
+    ...(item.hasPumpPhoto ? [{ key: "pump" as const, src: `/api/fuel/convoy/photo/${item.id}?tipo=bomba`, label: "Foto da bomba/totalizador" }] : []),
+  ];
+  const shown = photos.find((entry) => entry.key === photo) ?? photos[0];
+  const [fullscreen, setFullscreen] = useState<number | null>(null);
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section className="modal fuel-daily-modal" role="dialog" aria-label="Conferir abastecimento do comboio">
       <header><div><p className="eyebrow">COMBOIO{item.convoy ? ` · ${item.convoy}` : ""} · {third ? `${item.exitLabel.toUpperCase()} · ` : ""}{CONVOY_STATUS_LABELS[item.status].toUpperCase()}</p><h2>{item.equipment} · {formatNumber(item.liters, 2)} L</h2><span>{when(item.recordedAt)} · registrado por {item.registeredBy}{item.dateJustification ? ` · dia anterior: ${item.dateJustification}` : ""}</span></div><button onClick={close} aria-label="Fechar">×</button></header>
@@ -266,7 +249,7 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
         <div>
           {(item.hasMeterPhoto || item.hasPumpPhoto) ? <>
             {item.hasMeterPhoto && item.hasPumpPhoto && <div className="main-tabs secondary-module-nav"><button className={photo === "meter" ? "active" : ""} onClick={() => setPhoto("meter")}>KM/horímetro</button><button className={photo === "pump" ? "active" : ""} onClick={() => setPhoto("pump")}>Bomba/totalizador</button></div>}
-            <ZoomPhoto key={src} src={src} alt={photo === "meter" ? "Foto do KM/horímetro" : "Foto da bomba"} />
+            {shown && <PhotoZoom key={shown.src} src={shown.src} alt={shown.label} onExpand={() => setFullscreen(photos.indexOf(shown))} />}
           </> : item.noPhoto ? <div className="convoy-typed">SEM FOTO<small>{item.noPhotoReason ? NO_PHOTO_LABELS[item.noPhotoReason] : "—"}{item.noPhotoNote ? ` · ${item.noPhotoNote}` : ""}</small></div>
             : <div className="convoy-typed">Sem medidor<small>{manualItem ? "Terceiro/Doações manual: sem leitura e sem foto do medidor." : toWorker ? "Destino funcionário: sem leitura e sem foto do medidor." : "Sem veículo: sem leitura."}</small></div>}
           {mapsLink(item) && <p><a href={mapsLink(item)!} target="_blank" rel="noopener noreferrer">📍 Ver localização no mapa</a>{item.gpsAccuracy !== null ? ` (±${Math.round(item.gpsAccuracy)} m)` : ""}</p>}
@@ -353,6 +336,7 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
         </div>
       </div>
     </section>
+    {fullscreen !== null && <PhotoLightbox photos={photos} start={fullscreen} onClose={() => setFullscreen(null)} />}
     {creating?.kind === "party" && <ThirdPartyFormModal item={null} fronts={fronts} defaultKind={item.exitKind === "PRESTADOR" ? "PRESTADOR" : "PESSOA_FISICA"} initialName={item.pendingCompany ?? undefined} close={() => setCreating(null)} saved={(id, message) => created("party", id, message)} />}
     {creating?.kind === "vehicle" && party && <VehicleFormModal thirdParty={party} item={null} fuelTypes={fuelTypes} initialPlate={item.pendingVehicle ?? undefined} close={() => setCreating(null)} saved={(id, message) => created("vehicle", id, message)} />}
     {creating?.kind === "worker" && party && <WorkerFormModal thirdParty={party} item={null} initialName={item.pendingEmployee ?? undefined} close={() => setCreating(null)} saved={(id, message) => created("worker", id, message)} />}
