@@ -389,7 +389,8 @@ export function createDailyHistoryPdf(input:DailyHistoryPdfInput){
 // colunas escolhidas pela rota (com empresa, placa, leitura e consumo para saídas de terceiros).
 export type FuelHistoryPdfCard={label:string;value:string;detail:string;tone:"green"|"red"|"blue"|"gray"};
 export type FuelHistoryPdfColumn={x:number;label:string;max:number;align?:"right"};
-type FuelHistoryPdfInput={generatedAt:string;generatedBy:string;filters:string[];cards:FuelHistoryPdfCard[];cardsNote:string;total:number;truncated:boolean;columns:FuelHistoryPdfColumn[];rows:string[][]};
+// title/subtitle/footer opcionais: a mesma página serve a outras listas (ex.: Histórico da aprovação do comboio).
+type FuelHistoryPdfInput={generatedAt:string;generatedBy:string;filters:string[];cards:FuelHistoryPdfCard[];cardsNote:string;total:number;truncated:boolean;columns:FuelHistoryPdfColumn[];rows:string[][];title?:string;subtitle?:string;footer?:string;emptyText?:string};
 const toneColor:Record<FuelHistoryPdfCard["tone"],string>={green:"0.09 0.51 0.37",red:"0.78 0.24 0.26",blue:"0.12 0.42 0.61",gray:"0.42 0.51 0.58"};
 
 export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
@@ -399,7 +400,7 @@ export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
   const pages=Array.from({length:pageCount},(_,pageIndex)=>{
     const rows=input.rows.slice(pageIndex*perPage,(pageIndex+1)*perPage);let content="";
     content+="1 1 1 rg 0 514 842 81 re f\n";content+="0.16 0.48 0.66 rg 0 514 842 5 re f\n";content+=logo(28,531,88);
-    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,"MOVIMENTAÇÃO DE COMBUSTÍVEL",true,"0.08 0.25 0.36");content+=text(130,531,7.5,"Somente os lançamentos que atendem aos filtros abaixo",false,"0.31 0.46 0.55");
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · MANUTENÇÃO PREVENTIVA",true,"0.08 0.49 0.35");content+=text(130,548,16,input.title??"MOVIMENTAÇÃO DE COMBUSTÍVEL",true,"0.08 0.25 0.36");content+=text(130,531,7.5,input.subtitle??"Somente os lançamentos que atendem aos filtros abaixo",false,"0.31 0.46 0.55");
     content+=text(640,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(640,556,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");
     content+=text(640,542,7,"POR",true,"0.31 0.46 0.55");content+=text(662,542,8,truncate(input.generatedBy,30),false,"0.08 0.25 0.36");
     content+=text(640,528,7,`PÁGINA ${pageIndex+1}/${pageCount}`,true,"0.16 0.48 0.66");
@@ -412,13 +413,13 @@ export function createFuelHistoryPdf(input:FuelHistoryPdfInput){
     if(input.truncated)content+=text(560,409,6.8,`Exibindo os primeiros ${input.rows.length} — refine os filtros.`,true,"0.64 0.40 0.05");
     content+="0.06 0.25 0.36 rg 28 378 786 22 re f\n";
     for(const column of input.columns)content+=text(column.x,386,6.3,column.label,true,"1 1 1");
-    if(rows.length===0)content+=text(250,330,12,"Nenhum lançamento encontrado para os filtros selecionados.",true,"0.33 0.47 0.55");
+    if(rows.length===0)content+=text(250,330,12,input.emptyText??"Nenhum lançamento encontrado para os filtros selecionados.",true,"0.33 0.47 0.55");
     rows.forEach((row,index)=>{
       const top=362-(index*24);if(index%2===0)content+=`0.968 0.978 0.984 rg 28 ${top-9} 786 24 re f\n`;
       input.columns.forEach((column,columnIndex)=>{content+=text(column.x,top,6.8,truncate(row[columnIndex]??"—",column.max),column.align==="right");});
       content+=`0.88 0.91 0.93 RG 0.35 w 28 ${top-9} m 814 ${top-9} l S\n`;
     });
-    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,"Totais e lançamentos calculados com os mesmos filtros da tela (todas as páginas). Não inclui saldo de estoque. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,input.footer??"Totais e lançamentos calculados com os mesmos filtros da tela (todas as páginas). Não inclui saldo de estoque. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
     return content;
   });
   return buildPdf(pages,{width:842,height:595});

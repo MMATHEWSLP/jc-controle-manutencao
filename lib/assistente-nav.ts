@@ -22,3 +22,28 @@ export function consumirFiltros(secao: string): NavegacaoAssistente | null {
     return data;
   } catch { return null; }
 }
+
+// Telas que viraram subabas: o nome antigo (Assistente JC, atalhos) abre o lugar novo.
+// "Abastecimentos" (menu ABASTECIMENTOS, removido) → Combustível → Aprovação.
+export const TELAS_ANTIGAS: Record<string, { secao: string; aba: string }> = {
+  Abastecimentos: { secao: "Combustível", aba: "aprovacao" },
+};
+let abaPedida: { secao: string; aba: string; detalhe?: Record<string, unknown>; em: number } | null = null;
+
+// Pede que a tela abra numa subaba (vale por 1 minuto e só uma vez).
+export function pedirAba(secao: string, aba: string, detalhe?: Record<string, unknown>) {
+  abaPedida = { secao, aba, detalhe, em: Date.now() };
+}
+export function consumirAba(secao: string): { aba: string; detalhe?: Record<string, unknown> } | null {
+  const pedido = abaPedida;
+  if (!pedido || pedido.secao !== secao || Date.now() - pedido.em > 60_000) return null;
+  abaPedida = null;
+  return { aba: pedido.aba, detalhe: pedido.detalhe };
+}
+// Nome de tela que pode ser antigo → tela atual (e a subaba pedida, se houver).
+export function telaAtual(secao: string) {
+  const nova = TELAS_ANTIGAS[secao];
+  if (!nova) return secao;
+  pedirAba(nova.secao, nova.aba);
+  return nova.secao;
+}

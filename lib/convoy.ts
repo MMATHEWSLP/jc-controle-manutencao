@@ -400,9 +400,29 @@ const approver = alias(users, "convoy_approver");
 const rejecter = alias(users, "convoy_rejecter");
 const convoyEquipment = alias(equipment, "convoy_equipment");
 
-export type ConvoyListFilters = { status: ConvoyStatus | "ABERTOS" | "TODOS"; from: string | null; to: string | null; frontId: number | null; id?: number | null };
+// TRATADOS = aprovados e rejeitados (Aprovação → Histórico). Histórico também filtra por motorista do
+// comboio (quem registrou), comboio e equipamento, e lista do mais novo para o mais antigo.
+export type ConvoyListFilters = {
+  status: ConvoyStatus | "ABERTOS" | "TODOS" | "TRATADOS"; from: string | null; to: string | null; frontId: number | null; id?: number | null;
+  driverId?: number | null; convoyId?: number | null; equipmentId?: number | null; newestFirst?: boolean; limit?: number;
+};
+export const CONVOY_LIST_LIMIT = 500;
+export const CONVOY_EXPORT_LIMIT = 5000;
+const LIST_STATUSES = ["ABERTOS", "TODOS", "TRATADOS", "PENDENTE", "APROVADO", "REJEITADO", "CORRECAO"];
+const LIST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-async function queryRecords(db: Db, where: ReturnType<typeof and>) {
+// Mesma leitura dos filtros na tela, na lista e na exportação (?status, from, to, frontId, driver, convoy, equipment, order=desc).
+export function parseConvoyListFilters(params: URLSearchParams): ConvoyListFilters {
+  const id = (name: string) => { const value = Number(params.get(name)); return Number.isInteger(value) && value > 0 ? value : null; };
+  const date = (name: string) => (LIST_DATE.test(params.get(name) ?? "") ? params.get(name) : null);
+  return {
+    status: LIST_STATUSES.includes(params.get("status") ?? "") ? params.get("status") as ConvoyListFilters["status"] : "ABERTOS",
+    from: date("from"), to: date("to"), frontId: id("frontId"), id: id("id"),
+    driverId: id("driver"), convoyId: id("convoy"), equipmentId: id("equipment"), newestFirst: params.get("order") === "desc",
+  };
+}
+
+async function queryRecords(db: Db, where: ReturnType<typeof and>, options: { newestFirst?: boolean; limit?: number } = {}) {
   return db.select({
     record: convoyFuelRecords, equipmentPrefix: equipment.prefix, equipmentPlate: equipment.plate, equipmentModel: sql<string>`trim(concat(${equipment.brand}, ' ', ${equipment.model}))`,
     controlType: equipment.controlType, currentHours: equipment.currentHours, currentKm: equipment.currentKm, equipmentFrontId: equipment.serviceFrontId,
@@ -419,7 +439,9 @@ async function queryRecords(db: Db, where: ReturnType<typeof and>) {
     .leftJoin(approver, eq(approver.id, convoyFuelRecords.approvedBy))
     .leftJoin(rejecter, eq(rejecter.id, convoyFuelRecords.rejectedBy))
     .leftJoin(convoyEquipment, eq(convoyEquipment.id, convoyFuelRecords.convoyEquipmentId))
-    .where(where).orderBy(asc(convoyFuelRecords.recordedAt), asc(convoyFuelRecords.id)).limit(500);
+    .where(where)
+    .orderBy(...(options.newestFirst ? [desc(convoyFuelRecords.recordedAt), desc(convoyFuelRecords.id)] : [asc(convoyFuelRecords.recordedAt), asc(convoyFuelRecords.id)]))
+    .limit(options.limit ?? CONVOY_LIST_LIMIT);
 }
 type ListRow = Awaited<ReturnType<typeof queryRecords>>[number];
 
@@ -430,12 +452,17 @@ export async function listConvoyRecords(user: SessionUser, filters: ConvoyListFi
   const conditions = [
     scope === null ? undefined : scope.length ? inArray(convoyFuelRecords.serviceFrontId, scope) : eq(convoyFuelRecords.id, -1),
     filters.id ? eq(convoyFuelRecords.id, filters.id) : undefined,
-    filters.status === "ABERTOS" ? inArray(convoyFuelRecords.status, ["PENDENTE", "CORRECAO", "APROVANDO"]) : filters.status === "TODOS" ? undefined : eq(convoyFuelRecords.status, filters.status),
+    filters.status === "ABERTOS" ? inArray(convoyFuelRecords.status, ["PENDENTE", "CORRECAO", "APROVANDO"])
+      : filters.status === "TRATADOS" ? inArray(convoyFuelRecords.status, ["APROVADO", "REJEITADO"])
+      : filters.status === "TODOS" ? undefined : eq(convoyFuelRecords.status, filters.status),
     filters.from ? gte(convoyFuelRecords.recordDate, filters.from) : undefined,
     filters.to ? lte(convoyFuelRecords.recordDate, filters.to) : undefined,
     filters.frontId ? eq(convoyFuelRecords.serviceFrontId, filters.frontId) : undefined,
+    filters.driverId ? eq(convoyFuelRecords.registeredBy, filters.driverId) : undefined,
+    filters.convoyId ? eq(convoyFuelRecords.convoyEquipmentId, filters.convoyId) : undefined,
+    filters.equipmentId ? eq(convoyFuelRecords.equipmentId, filters.equipmentId) : undefined,
   ];
-  const rows = await queryRecords(db, and(...conditions));
+  const rows = await queryRecords(db, and(...conditions), { newestFirst: filters.newestFirst, limit: filters.limit });
   const oldest = rows.reduce((min, row) => (row.record.recordDate < min ? row.record.recordDate : min), fortalezaDay());
   const since = new Date(Date.parse(`${oldest}T12:00:00Z`) - 180 * 86_400_000).toISOString().slice(0, 10);
   const fleet = rows.flatMap((row) => (row.record.equipmentId !== null && row.record.exitKind === "FROTA" ? [{ id: row.record.equipmentId, unit: (row.record.readingUnit ?? "HOURS") as ConvoyUnit, currentHours: row.currentHours ?? 0, currentKm: row.currentKm ?? 0 }] : []));
@@ -545,6 +572,32 @@ export async function pendingConvoyCount(user: SessionUser) {
   const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(convoyFuelRecords)
     .where(and(eq(convoyFuelRecords.status, "PENDENTE"), scope === null ? undefined : scope.length ? inArray(convoyFuelRecords.serviceFrontId, scope) : eq(convoyFuelRecords.id, -1)));
   return Number(row?.count ?? 0);
+}
+
+// Opções dos filtros do Histórico da aprovação: motoristas (quem registrou), comboios e equipamentos
+// que já aparecem nos abastecimentos do comboio das frentes visíveis.
+export async function convoyFilterOptions(user: SessionUser) {
+  if (!canApproveConvoy(user)) throw new ConvoyError("Você não aprova abastecimentos do comboio.", 403);
+  const db = await getDb();
+  const scope = visibleScope(user);
+  const where = scope === null ? undefined : scope.length ? inArray(convoyFuelRecords.serviceFrontId, scope) : eq(convoyFuelRecords.id, -1);
+  const [drivers, convoys, machines] = await Promise.all([
+    db.selectDistinct({ id: registrar.id, label: registrar.name }).from(convoyFuelRecords).innerJoin(registrar, eq(registrar.id, convoyFuelRecords.registeredBy)).where(where),
+    db.selectDistinct({ id: convoyEquipment.id, label: convoyEquipment.prefix }).from(convoyFuelRecords).innerJoin(convoyEquipment, eq(convoyEquipment.id, convoyFuelRecords.convoyEquipmentId)).where(where),
+    db.selectDistinct({ id: equipment.id, label: equipment.prefix }).from(convoyFuelRecords).innerJoin(equipment, eq(equipment.id, convoyFuelRecords.equipmentId)).where(where),
+  ]);
+  const sorted = (list: Array<{ id: number; label: string | null }>) => list.map((item) => ({ id: item.id, label: item.label ?? "—" })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
+  return { drivers: sorted(drivers), convoys: sorted(convoys), equipment: sorted(machines) };
+}
+
+// Último lançamento e pendentes de cada motorista do comboio (Combustível → Motorista comboio).
+export async function convoyDriverActivity(db: Db, driverIds: number[]) {
+  if (!driverIds.length) return new Map<number, { lastRecordAt: string | null; pending: number }>();
+  const rows = await db.select({
+    driverId: convoyFuelRecords.registeredBy, lastRecordAt: sql<string | null>`max(${convoyFuelRecords.recordedAt})`,
+    pending: sql<number>`count(*) filter (where ${convoyFuelRecords.status} in ('PENDENTE','CORRECAO','APROVANDO'))::int`,
+  }).from(convoyFuelRecords).where(inArray(convoyFuelRecords.registeredBy, driverIds)).groupBy(convoyFuelRecords.registeredBy);
+  return new Map(rows.map((row) => [row.driverId, { lastRecordAt: row.lastRecordAt, pending: Number(row.pending) }]));
 }
 
 // Litros ainda não aprovados por frente e combustível ("Saldo previsto" = saldo − pendentes).

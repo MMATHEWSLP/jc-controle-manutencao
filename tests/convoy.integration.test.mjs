@@ -14,8 +14,8 @@ import { getDb } from "../db/index.ts";
 import { auditLogs, convoyFuelRecords, employees, equipment, fuelMovements, fuelTypes, meterReadings, serviceFronts, users } from "../db/schema.ts";
 import { effectivePermissions } from "../lib/auth.ts";
 import {
-  answerConvoyCorrection, approveConvoyBatch, approveConvoyRecord, convoyFieldCatalog, convoyReport, listConvoyRecords, myConvoyRecords, pendingConvoyLiters,
-  receiveConvoyRecord, rejectConvoyRecord, requestConvoyCorrection,
+  answerConvoyCorrection, approveConvoyBatch, approveConvoyRecord, convoyDriverActivity, convoyFieldCatalog, convoyFilterOptions, convoyReport, listConvoyRecords, myConvoyRecords,
+  parseConvoyListFilters, pendingConvoyLiters, receiveConvoyRecord, rejectConvoyRecord, requestConvoyCorrection,
 } from "../lib/convoy.ts";
 import { fuelBalances, fuelHistory, parseFuelFilters } from "../lib/fuel.ts";
 
@@ -154,6 +154,30 @@ test("comboio: pendente não mexe no saldo; aprovar baixa e atualiza leitura; re
   assert.equal(report.totals.approvedLiters, 635); assert.equal(report.totals.noPhotoByReason["Equipamento fechado"], 1);
   const actions = (await db.select().from(auditLogs).where(eq(auditLogs.entityType, "CONVOY_FUEL"))).filter((log) => [a.id, b.id, c.id, d.id, e.id].map(String).includes(log.entityId)).map((log) => log.action);
   for (const action of ["ABASTECIMENTO DO COMBOIO RECEBIDO", "ABASTECIMENTO DO COMBOIO APROVADO", "ABASTECIMENTO DO COMBOIO REJEITADO", "CORREÇÃO PEDIDA AO MOTORISTA", "CORREÇÃO ENVIADA PELO MOTORISTA"]) assert.ok(actions.includes(action), action);
+
+  // Combustível → Aprovação → Histórico: só os tratados (aprovados e rejeitados), do mais novo para o
+  // mais antigo, com os filtros de motorista, comboio e equipamento; quem aprovou/rejeitou e as correções.
+  const treated = await listConvoyRecords(approver, { status: "TRATADOS", from: today, to: today, frontId: null, driverId: driverRow.id, convoyId: cc.id, newestFirst: true });
+  assert.deepEqual(treated.map((item) => item.id).sort((x, y) => x - y), [a.id, b.id, c.id, d.id].sort((x, y) => x - y));
+  assert.ok(treated.every((item, index) => index === 0 || treated[index - 1].recordedAt > item.recordedAt || treated[index - 1].recordedAt === item.recordedAt && treated[index - 1].id > item.id), "mais novo primeiro");
+  assert.equal(treated.find((item) => item.id === a.id).approvedBy, approver.name);
+  assert.equal(treated.find((item) => item.id === a.id).corrections[0].campo, "litros");
+  assert.equal(treated.find((item) => item.id === c.id).rejectedBy, approver.name);
+  const onlyCm = await listConvoyRecords(approver, { status: "TRATADOS", from: null, to: null, frontId: front.id, equipmentId: cm.id });
+  assert.ok(onlyCm.length >= 2 && onlyCm.every((item) => item.equipmentId === cm.id));
+  assert.equal((await listConvoyRecords(approver, { status: "TRATADOS", from: today, to: today, frontId: null, driverId: approverRow.id })).length, 0, "filtro por motorista");
+  const filterOptions = await convoyFilterOptions(approver);
+  assert.ok(filterOptions.drivers.some((item) => item.id === driverRow.id && item.label === driver.name));
+  assert.ok(filterOptions.convoys.some((item) => item.id === cc.id));
+  assert.ok(filterOptions.equipment.some((item) => item.id === pc.id) && filterOptions.equipment.some((item) => item.id === cm.id));
+  await assert.rejects(convoyFilterOptions(driver), /não aprova/);
+  const parsed = parseConvoyListFilters(new URLSearchParams({ status: "TRATADOS", driver: String(driverRow.id), convoy: "abc", order: "desc", from: "2026-10-01", to: "ontem" }));
+  assert.deepEqual([parsed.status, parsed.driverId, parsed.convoyId, parsed.newestFirst, parsed.from, parsed.to], ["TRATADOS", driverRow.id, null, true, "2026-10-01", null]);
+  assert.equal(parseConvoyListFilters(new URLSearchParams({ status: "QUALQUER" })).status, "ABERTOS");
+  // Motorista comboio: último lançamento e quantos ainda aguardam (o "e", que ficou fora do lote).
+  const activity = (await convoyDriverActivity(db, [driverRow.id])).get(driverRow.id);
+  assert.equal(activity.pending, 1);
+  assert.ok(activity.lastRecordAt >= recordD.recordedAt);
 
   await rm(path.join(process.cwd(), "uploads", "convoy"), { recursive: true, force: true }).catch(() => undefined);
 });

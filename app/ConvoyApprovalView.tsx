@@ -26,7 +26,7 @@ type Item = {
   corrections: Array<{ campo?: string; de?: unknown; para?: unknown; por?: string; em?: string; origem?: string }>; correctionNote: string | null; rejectionReason: string | null;
   approvedBy: string | null; approvedAt: string | null; rejectedBy: string | null; rejectedAt: string | null; fuelMovementId: number | null; readingUpdateNote: string | null;
 };
-type ListResponse = { records: Item[]; settings: { pumpPhotoRequired: boolean; aiPhotoCheck: boolean }; canConfigure: boolean };
+type ListResponse = { records: Item[]; settings: { pumpPhotoRequired: boolean; aiPhotoCheck: boolean }; canConfigure: boolean; limit?: number };
 
 // O erro leva os dados da resposta (ex.: confirm "TANK"/"OUTLIER" ou exception na leitura menor).
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -42,7 +42,7 @@ const brDay = (value: string | null) => (value ? value.slice(0, 10).split("-").r
 const mapsLink = (item: Item) => (item.latitude !== null && item.longitude !== null ? `https://www.google.com/maps?q=${item.latitude},${item.longitude}` : null);
 const STATUS_FILTERS: Array<[string, string]> = [["ABERTOS", "Pendentes e correção"], ["PENDENTE", "Pendentes"], ["CORRECAO", "Correção pedida"], ["APROVADO", "Aprovados"], ["REJEITADO", "Rejeitados"], ["TODOS", "Todos"]];
 
-// Setor ABASTECIMENTOS → Aprovação: abastecimentos lançados pelo motorista do comboio, pendentes até
+// Combustível → Aprovação → Aprovar: abastecimentos lançados pelo motorista do comboio, pendentes até
 // alguém conferir a foto e aprovar (só então viram saída de combustível e baixam o saldo).
 export default function ConvoyApprovalView({ flash, onChanged }: { flash: (message: string) => void; onChanged: () => void }) {
   const [context, setContext] = useState<{ fronts: Front[]; fuelTypes: FuelType[] }>({ fronts: [], fuelTypes: [] });
@@ -116,6 +116,94 @@ export default function ConvoyApprovalView({ flash, onChanged }: { flash: (messa
         </tbody>
       </table></div>
       {open && <ReviewModal item={open} fuelTypes={fuelTypes} fronts={fronts} close={() => setOpen(null)} changed={changed} flash={flash} reload={load} />}
+  </section>;
+}
+
+const HISTORY_STATUS: Array<[string, string]> = [["TRATADOS", "Aprovados e rejeitados"], ["APROVADO", "Aprovados"], ["REJEITADO", "Rejeitados"], ["CORRECAO", "Correção pedida"], ["TODOS", "Todos"]];
+type FilterOptions = { drivers: Array<{ id: number; label: string }>; convoys: Array<{ id: number; label: string }>; equipment: Array<{ id: number; label: string }> };
+const todayFortaleza = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const photosOf = (item: Item): PhotoItem[] => [
+  ...(item.hasMeterPhoto ? [{ src: `/api/fuel/convoy/photo/${item.id}`, label: `${item.equipment} · KM/horímetro` }] : []),
+  ...(item.hasPumpPhoto ? [{ src: `/api/fuel/convoy/photo/${item.id}?tipo=bomba`, label: `${item.equipment} · bomba/totalizador` }] : []),
+];
+
+// Combustível → Aprovação → Histórico: os já tratados (aprovados e rejeitados; também correção pedida),
+// com foto, quem registrou e quem aprovou/rejeitou, as correções feitas e exportação Excel/PDF.
+// initialDriver: atalho "Ver histórico" do Motorista comboio (abre já filtrado, todo o período).
+export function ConvoyHistoryView({ flash, initialDriver, onChanged }: { flash: (message: string) => void; initialDriver?: { id: number; name: string } | null; onChanged: () => void }) {
+  const [context, setContext] = useState<{ fronts: Front[]; fuelTypes: FuelType[] }>({ fronts: [], fuelTypes: [] });
+  const [options, setOptions] = useState<FilterOptions>({ drivers: [], convoys: [], equipment: [] });
+  useEffect(() => {
+    api<{ fronts: Front[]; fuelTypes: FuelType[] }>("/api/fuel/convoy/context").then(setContext).catch(() => undefined);
+    api<FilterOptions>("/api/fuel/convoy/filters").then(setOptions).catch(() => undefined);
+  }, []);
+  const today = todayFortaleza();
+  const [filters, setFilters] = useState({ from: initialDriver ? "" : `${today.slice(0, 7)}-01`, to: initialDriver ? "" : today, frontId: "", driver: initialDriver ? String(initialDriver.id) : "", convoy: "", equipment: "", status: "TRATADOS" });
+  // O motorista escolhido pelo atalho aparece no filtro mesmo sem lançamento (ou antes da lista de opções chegar).
+  const drivers = initialDriver && !options.drivers.some((item) => item.id === initialDriver.id) ? [{ id: initialDriver.id, label: initialDriver.name }, ...options.drivers] : options.drivers;
+  const [data, setData] = useState<ListResponse | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<Item | null>(null);
+  const [photos, setPhotos] = useState<PhotoItem[] | null>(null);
+  const query = new URLSearchParams(Object.entries({ ...filters, order: "desc" }).filter(([, value]) => value)).toString();
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setData(await api<ListResponse>(`/api/fuel/convoy?${query}`)); }
+    catch (problem) { setError(problem instanceof Error ? problem.message : "Falha ao carregar."); }
+    finally { setLoading(false); }
+  }, [query]);
+  useEffect(() => { void load(); }, [load]);
+  const set = (key: keyof typeof filters) => (value: string) => setFilters((current) => ({ ...current, [key]: value }));
+  const records = data?.records ?? [];
+  const total = (status?: ConvoyStatus) => records.filter((item) => !status || item.status === status).reduce((sum, item) => sum + item.liters, 0);
+  const changed = async (message: string) => { flash(message); setOpen(null); await load(); onChanged(); };
+  const treated = (item: Item) => item.approvedBy ? <>{item.approvedBy}<small className="table-sub">aprovou {item.approvedAt ? when(item.approvedAt) : ""}</small></>
+    : item.rejectedBy ? <>{item.rejectedBy}<small className="table-sub">rejeitou {item.rejectedAt ? when(item.rejectedAt) : ""}</small>{item.rejectionReason && <small className="table-sub" title={item.rejectionReason}>motivo: {item.rejectionReason}</small>}</>
+    : item.correctionNote ? <small className="table-sub" title={item.correctionNote}>correção pedida: {item.correctionNote}</small> : "—";
+  return <section className="panel convoy-approval">
+    <div className="convoy-approval-toolbar">
+      <label>De<input type="date" value={filters.from} onChange={(event) => set("from")(event.target.value)} /></label>
+      <label>Até<input type="date" value={filters.to} onChange={(event) => set("to")(event.target.value)} /></label>
+      {context.fronts.length > 1 && <label>Frente<select value={filters.frontId} onChange={(event) => set("frontId")(event.target.value)}><option value="">Todas</option>{context.fronts.map((front) => <option key={front.id} value={front.id}>{front.name}</option>)}</select></label>}
+      <label>Motorista do comboio<select value={filters.driver} onChange={(event) => set("driver")(event.target.value)}><option value="">Todos</option>{drivers.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+      <label>Comboio<select value={filters.convoy} onChange={(event) => set("convoy")(event.target.value)}><option value="">Todos</option>{options.convoys.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+      <label>Equipamento<select value={filters.equipment} onChange={(event) => set("equipment")(event.target.value)}><option value="">Todos</option>{options.equipment.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+      <label>Situação<select value={filters.status} onChange={(event) => set("status")(event.target.value)}>{HISTORY_STATUS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <button type="button" className="secondary" onClick={() => void load()} disabled={loading}>{loading ? "Carregando..." : "Atualizar"}</button>
+      <a className="secondary convoy-export" href={`/api/fuel/convoy/export?formato=xlsx&${query}`}>⇩ Excel</a>
+      <a className="secondary convoy-export" href={`/api/fuel/convoy/export?formato=pdf&${query}`}>⇩ PDF</a>
+    </div>
+    {error && <div className="fleet-form-error">! {error}</div>}
+    {data && <div className="fuel-daily-cards">
+      <article className="gray"><span>Registros</span><strong>{records.length}</strong><small>{formatNumber(total(), 2)} L</small></article>
+      <article className="green"><span>Aprovados</span><strong>{formatNumber(total("APROVADO"), 2)} L</strong><small>{records.filter((item) => item.status === "APROVADO").length} registro(s)</small></article>
+      <article className="red"><span>Rejeitados</span><strong>{formatNumber(total("REJEITADO"), 2)} L</strong><small>{records.filter((item) => item.status === "REJEITADO").length} registro(s)</small></article>
+      <article className="blue"><span>Com correção</span><strong>{records.filter((item) => item.corrections.length > 0).length}</strong><small>litros, leitura ou equipamento corrigidos</small></article>
+    </div>}
+    {data && records.length >= (data.limit ?? 500) && <p className="convoy-warning">Mostrando os {records.length} mais recentes. Refine os filtros ou exporte (até 5.000 linhas).</p>}
+    <div className="table-scroll"><table className="products-table convoy-approval-table convoy-history-table">
+      <thead><tr><th>Data/hora</th><th>Comboio · registrou</th><th>Equipamento / terceiro</th><th>Motorista / recebeu</th><th>Litros</th><th>Leitura</th><th>Foto</th><th>Situação</th><th>Aprovou / rejeitou</th><th>Correções</th><th></th></tr></thead>
+      <tbody>
+        {records.map((item) => <tr key={item.id}>
+          <td>{when(item.recordedAt)}</td>
+          <td>{item.convoy ?? "—"}<small className="table-sub">{item.registeredBy}</small></td>
+          <td>{item.exitKind !== "FROTA" && <span className={`fuel-type-pill ${item.exitKind === "PRESTADOR" ? "prestador" : "terceiros"}`}>{item.exitLabel}</span>}<b>{item.equipment}</b><small className="table-sub">{item.front}</small></td>
+          <td>{item.operatorName}</td>
+          <td className="num"><b>{formatNumber(item.liters, 2)} L</b></td>
+          <td>{item.reading !== null ? `${formatNumber(item.reading)} ${unit(item.unit)}` : "—"}</td>
+          <td className="convoy-thumbs">{photosOf(item).length ? photosOf(item).map((photo, index) => <img key={photo.src} className="convoy-thumb" src={photo.src} alt={photo.label} loading="lazy" onClick={() => setPhotos([...photosOf(item).slice(index), ...photosOf(item).slice(0, index)])} />)
+            : item.noPhoto ? <span className="convoy-tag SEM_FOTO">SEM FOTO</span> : <small className="table-sub">sem medidor</small>}</td>
+          <td><span className={`convoy-status-pill ${item.status}`}>{CONVOY_STATUS_LABELS[item.status]}</span></td>
+          <td>{treated(item)}</td>
+          <td>{item.corrections.length ? <details className="convoy-history-corrections"><summary>{item.corrections.length} correção(ões)</summary><ul className="convoy-corrections">{item.corrections.map((change, index) => <li key={index}>{change.campo}: {String(change.de ?? "—")} → {String(change.para ?? "—")} · {change.por}{change.origem === "MOTORISTA" ? " (motorista)" : ""}</li>)}</ul></details> : "—"}</td>
+          <td><button type="button" className="secondary" onClick={() => setOpen(item)}>Abrir</button></td>
+        </tr>)}
+        {!records.length && <tr><td colSpan={11} className="empty-state">{loading ? "Carregando..." : "Nenhum abastecimento do comboio para estes filtros."}</td></tr>}
+      </tbody>
+    </table></div>
+    {open && <ReviewModal item={open} fuelTypes={context.fuelTypes} fronts={context.fronts} close={() => setOpen(null)} changed={changed} flash={flash} reload={load} />}
+    {photos && <PhotoLightbox photos={photos} start={0} onClose={() => setPhotos(null)} />}
   </section>;
 }
 
