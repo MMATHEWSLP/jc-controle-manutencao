@@ -117,6 +117,32 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/jc-sistema.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/jc-sistema.jks" >> "$GITHUB_ENV"
 
+      - name: Firebase (avisos no celular)
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+          MODE: ${{ steps.v.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            if [ "$MODE" = "release" ]; then echo "::warning::Secret FIREBASE_GOOGLE_SERVICES_JSON não cadastrado: o app sai sem aviso no celular (o sino do sistema continua). Veja android-app/LEIA-ME.md, passo 6."; fi
+            exit 0
+          fi
+          # Do google-services.json, os dados do app br.com.jcsistema.campo (o gradle lê ORG_GRADLE_PROJECT_*).
+          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          client = next((c for c in data.get("client", []) if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == "br.com.jcsistema.campo"), None)
+          if client is None:
+              print("::error::O google-services.json não tem o app Android br.com.jcsistema.campo. Confira o nome do pacote no Firebase (LEIA-ME, passo 6)."); sys.exit(1)
+          values = {"fcmAppId": client["client_info"]["mobilesdk_app_id"], "fcmApiKey": client["api_key"][0]["current_key"],
+                    "fcmProjectId": data["project_info"]["project_id"], "fcmSenderId": data["project_info"]["project_number"]}
+          with open(__import__("os").environ["GITHUB_ENV"], "a") as env:
+              for key, value in values.items():
+                  print(f"::add-mask::{value}")
+                  env.write(f"ORG_GRADLE_PROJECT_{key}={value}\n")
+          print("Firebase ligado no app (projeto " + values["fcmProjectId"] + ").")
+          '
+
       - name: Compila e testa
         env:
           VERSION: ${{ steps.v.outputs.version }}

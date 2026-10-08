@@ -14,6 +14,11 @@ val appVersionCode = appVersionName.split(".").let { parts ->
     parts[0].toInt() * 10000 + parts[1].toInt() * 100 + parts[2].toInt()
 }
 
+// Avisos no celular (Firebase): dados do google-services.json, passados pelo workflow
+// (ORG_GRADLE_PROJECT_fcmAppId etc., a partir do secret FIREBASE_GOOGLE_SERVICES_JSON). Vazios = o app
+// funciona igual, só sem aviso no celular (o sino do sistema continua).
+fun firebaseValue(name: String): String = ((findProperty(name) as String?) ?: "").trim().replace("\"", "")
+
 // Chave de assinatura: só no build de release, vinda dos secrets do GitHub (nunca do repositório).
 val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
 
@@ -29,6 +34,10 @@ android {
         versionName = appVersionName
         buildConfigField("String", "SITE_URL", "\"https://www.jcsistema.online/\"")
         buildConfigField("String", "UPDATE_URL", "\"https://www.jcsistema.online/app/versao.json\"")
+        buildConfigField("String", "FCM_APP_ID", "\"${firebaseValue("fcmAppId")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${firebaseValue("fcmApiKey")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${firebaseValue("fcmProjectId")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${firebaseValue("fcmSenderId")}\"")
     }
 
     signingConfigs {
@@ -92,6 +101,8 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Avisos do sistema no celular (sem o plugin google-services: ligado em PushMessaging.init).
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
 
     testImplementation("junit:junit:4.13.2")
     // org.json de verdade nos testes (no Android ele vem do sistema).

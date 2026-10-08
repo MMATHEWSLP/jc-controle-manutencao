@@ -5,7 +5,8 @@
 //  - Tarefas: o aviso do módulo também cai no sino central, com a tarefa para abrir;
 //  - rotina diária: trocas vencidas, estoque baixo e tarefas vencendo, só o que é novo;
 //  - Web Push de verdade contra um serviço de push local (HTTPS): o aviso chega criptografado
-//    (aes128gcm) e assinado (VAPID ES256), e a falha/aparelho desativado ficam no registro.
+//    (aes128gcm) e assinado (VAPID ES256), e a falha/aparelho desativado ficam no registro; o app
+//    Android sem a conta de serviço do Firebase registra a falha com o motivo.
 // Só roda com TEST_DATABASE_URL (nunca DATABASE_URL, que costuma ser a produção) e recusa o Supabase.
 //   TEST_DATABASE_URL=postgres://localhost/jc_teste npm run test:notificacoes-banco
 import assert from "node:assert/strict";
@@ -255,6 +256,15 @@ test("Web Push: aviso criptografado e assinado chega; falha e aparelho desativad
     const [linha] = (await dispatchLog({ from: today, to: today, event: "manual", onlyFailures: true })).filter((item) => item.id === result.dispatchId);
     assert.deepEqual([linha.recipients, linha.sent, linha.failed, linha.createdBy], [1, 1, 2, outra.name]);
     assert.equal((await dispatchDetail(result.dispatchId))[0].deliveries.length, 3);
+
+    // App Android (Firebase): sem a conta de serviço na Hostinger, a falha fica no registro com o motivo.
+    const before = process.env.FIREBASE_SERVICE_ACCOUNT;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT;
+    await registerDevice(outra.id, { kind: "ANDROID", token: `fcm-token-${s}`, label: "Android · app JC Sistema" });
+    const android = await notify({ event: "manual", to: [outra.id], title: "Aviso Android", body: "Teste", actorId: pessoa.id });
+    const [semFirebase] = await getDb().then((conn) => conn.select().from(notificationDeliveries).where(eq(notificationDeliveries.dispatchId, android.dispatchId)));
+    assert.deepEqual([semFirebase.channel, semFirebase.status, semFirebase.error], ["FCM", "FAILED", "FIREBASE_SERVICE_ACCOUNT não configurado na Hostinger"]);
+    if (before !== undefined) process.env.FIREBASE_SERVICE_ACCOUNT = before;
 
     // Outro login no mesmo aparelho: o aparelho passa para ele.
     await registerDevice(outra.id, { kind: "WEB", token: `${base}/ok/${s}`, ...keys, label: "iPhone · app" });

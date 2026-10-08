@@ -47,4 +47,10 @@
     <string name="install_permission_title">Permitir a instalação</string>
     <string name="install_permission_message">Para instalar a atualização, permita que o JC Sistema instale apps: na próxima tela, ligue "Permitir desta fonte" e volte para o app.</string>
     <string name="open_settings">Abrir configurações</string>
+
+    <!-- Avisos do sistema (Firebase) -->
+    <string name="channel_notices">Avisos do sistema</string>
+    <string name="channel_notices_description">Abastecimentos do comboio, mudanças de frente, tarefas e outros avisos do JC Sistema.</string>
+    <string name="push_not_configured">Os avisos no celular ainda não foram ligados neste app.</string>
+    <string name="push_denied">Sem permissão, o aviso não chega neste celular. Libere as notificações do JC Sistema nos ajustes do celular.</string>
 </resources>

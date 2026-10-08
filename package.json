@@ -76,6 +76,7 @@
     "test:troca-oleo-banco": "tsx --test tests/troca-oleo-leitura-menor.integration.test.mjs",
     "test:relatorios-banco": "tsx --test tests/relatorios.integration.test.mjs",
     "test:notification-events": "tsx --test tests/notification-events.test.mjs",
+    "test:fcm": "tsx --test tests/fcm.test.mjs",
     "test:notificacoes-banco": "tsx --test tests/notificacoes.integration.test.mjs",
     "test:cost-production-rules": "esbuild tests/cost-production-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-cost-production-rules.mjs && node --test /tmp/manutencao-preventiva-cost-production-rules.mjs",
     "test:reports-catalog": "esbuild tests/reports-catalog.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-reports-catalog.mjs && node --test tests/.tmp-reports-catalog.mjs",

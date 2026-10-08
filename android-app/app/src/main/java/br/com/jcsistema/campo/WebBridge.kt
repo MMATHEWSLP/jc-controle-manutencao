@@ -2,6 +2,7 @@ package br.com.jcsistema.campo
 
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import org.json.JSONObject
 
 /**
  * Métodos que o script injetado (res/raw/jc_android.js) chama como window.JCAndroid.*.
@@ -31,5 +32,26 @@ class WebBridge(private val activity: MainActivity) {
     fun print() {
         if (!activity.siteLoaded) return
         activity.runOnUiThread { activity.printMainPage() }
+    }
+
+    /**
+     * Avisos no celular (lib/push-client.ts): {"available": Firebase configurado neste app,
+     * "permission": granted|denied|default, "token": token do Firebase já obtido}.
+     */
+    @JavascriptInterface
+    fun pushState(): String {
+        if (!activity.siteLoaded) return ""
+        return JSONObject()
+            .put("available", PushMessaging.isConfigured())
+            .put("permission", activity.notificationPermission())
+            .put("token", PushMessaging.cachedToken(activity))
+            .toString()
+    }
+
+    /** "Ativar notificações": pede a permissão e o token; a resposta volta no evento jc:android-push. */
+    @JavascriptInterface
+    fun requestPush() {
+        if (!activity.siteLoaded) return
+        activity.runOnUiThread { activity.requestPush() }
     }
 }

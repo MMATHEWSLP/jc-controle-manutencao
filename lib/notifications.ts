@@ -4,12 +4,13 @@ import { getDb } from "../db";
 import { auditLogs, notificationDeliveries, notificationDevices, notificationDispatches, notificationEventSettings, notificationMutes, notifications, userPermissions, userServiceFronts, users } from "../db/schema";
 import { resolvePermissions, type Profile, type SessionUser } from "./auth";
 import { EVENTS, clip, eventDef, groupRecipients, manualRecipients, parseSetting, type Candidate, type EventKey, type EventSetting, type ManualTarget, type NotificationLink } from "./notification-events";
+import { sendFcm } from "./fcm";
 import { sendWebPush, type PushPayload } from "./push";
 import { siteUrl } from "./site";
 
 // ---------------------------------------------------------------------------
 // Central de notificações: grava o aviso no sino de cada destinatário e manda para os aparelhos dele
-// (Web Push agora; app Android na parte 4b). Regras de quem recebe em lib/notification-events.ts.
+// (Web Push no iPhone/navegador, Firebase no app Android). Regras de quem recebe em lib/notification-events.ts.
 //
 // Quem chama nunca deve falhar por causa de notificação: use queueNotification() nas rotas (roda
 // depois da resposta, com o erro só no log).
@@ -139,10 +140,12 @@ async function deliverPush(dispatchId: number, rows: readonly { id: number; user
   await Promise.all(devices.map(async (device) => {
     const row = rows.find((item) => item.userId === device.userId)!;
     const payload: PushPayload = { title: clip(row.title ?? message.title, 80), body: clip(message.body, 180), url: `${base}/?notificacao=${row.id}`, tag: message.tag };
-    if (device.kind !== "WEB" || !device.p256dh || !device.auth) return;
-    const result = await sendWebPush({ endpoint: device.token, p256dh: device.p256dh, auth: device.auth }, payload);
+    // WEB = Web Push (iPhone/navegador); ANDROID = app Android pelo Firebase (lib/fcm.ts).
+    const android = device.kind === "ANDROID";
+    if (!android && (!device.p256dh || !device.auth)) return;
+    const result = android ? await sendFcm(device.token, payload) : await sendWebPush({ endpoint: device.token, p256dh: device.p256dh!, auth: device.auth! }, payload);
     const at = now();
-    await db.insert(notificationDeliveries).values({ dispatchId, notificationId: row.id, userId: device.userId, deviceId: device.id, channel: "WEB_PUSH", status: result.ok ? "SENT" : result.invalid ? "INVALID" : "FAILED", error: result.ok ? null : result.error });
+    await db.insert(notificationDeliveries).values({ dispatchId, notificationId: row.id, userId: device.userId, deviceId: device.id, channel: android ? "FCM" : "WEB_PUSH", status: result.ok ? "SENT" : result.invalid ? "INVALID" : "FAILED", error: result.ok ? null : result.error });
     if (result.ok) await db.update(notificationDevices).set({ lastSuccessAt: at, lastError: null, failures: 0, updatedAt: at }).where(eq(notificationDevices.id, device.id));
     else await db.update(notificationDevices).set({ lastError: result.error, failures: sql`${notificationDevices.failures} + 1`, updatedAt: at, ...(result.invalid ? { disabledAt: at, disabledReason: "INVALIDO" } : {}) }).where(eq(notificationDevices.id, device.id));
   }));
