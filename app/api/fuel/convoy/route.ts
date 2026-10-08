@@ -1,9 +1,6 @@
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
-import { approveConvoyBatch, ConvoyError, convoySettings, listConvoyRecords, type ConvoyListFilters } from "../../../../lib/convoy";
+import { approveConvoyBatch, CONVOY_LIST_LIMIT, ConvoyError, convoySettings, listConvoyRecords, parseConvoyListFilters } from "../../../../lib/convoy";
 import { getDb } from "../../../../db";
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const STATUSES = ["ABERTOS", "TODOS", "PENDENTE", "APROVADO", "REJEITADO", "CORRECAO"];
 
 // Aba "Aprovação do comboio": lista com as etiquetas (SEM FOTO, leitura menor, salto alto,
 // litragem alta, foto diverge), leitura digitada × última leitura e consumo estimado.
@@ -11,14 +8,9 @@ export async function GET(request: Request) {
   const auth = await authorize(request, "fuel.convoy_approve");
   if (auth.response) return auth.response;
   try {
-    const params = new URL(request.url).searchParams;
-    const status = STATUSES.includes(params.get("status") ?? "") ? params.get("status") as ConvoyListFilters["status"] : "ABERTOS";
-    const filters: ConvoyListFilters = {
-      status, from: DATE.test(params.get("from") ?? "") ? params.get("from") : null, to: DATE.test(params.get("to") ?? "") ? params.get("to") : null,
-      frontId: Number(params.get("frontId")) || null, id: Number(params.get("id")) || null,
-    };
+    const filters = parseConvoyListFilters(new URL(request.url).searchParams);
     const [records, settings] = await Promise.all([listConvoyRecords(auth.user!, filters), convoySettings(await getDb())]);
-    return Response.json({ records, settings, canConfigure: auth.user!.profile === "ADMIN" });
+    return Response.json({ records, settings, canConfigure: auth.user!.profile === "ADMIN", limit: filters.limit ?? CONVOY_LIST_LIMIT });
   } catch (error) {
     if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });
     console.error("[convoy.list]", error);

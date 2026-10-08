@@ -1,15 +1,15 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import ConvoyApprovalView, { ConvoyReport } from "./ConvoyApprovalView";
+import ConvoyApprovalView, { ConvoyHistoryView, ConvoyReport } from "./ConvoyApprovalView";
 import { CodesResult, type AcessoCriado } from "./FieldOperatorsAdd";
 
-// Setor ABASTECIMENTOS (menu principal): tudo do comboio num lugar só, fora do Controle Diário.
-//  - Aprovação: o que o motorista do comboio lançou no dia, pendente até alguém conferir e aprovar;
-//  - Motoristas do comboio: quem lança (nome + PIN no "Sou operador"; entra direto em Abastecimentos);
-//  - Relatório: por período, comboio, motorista e equipamento.
-type AuthUser = { id: number; permissions: string[] };
-type Tab = "approval" | "drivers" | "report";
+// Comboio dentro do Combustível (antes era o menu ABASTECIMENTOS):
+//  - Aprovação: Aprovar (o que o motorista do comboio lançou, pendente até alguém conferir e aprovar),
+//    Histórico (os já tratados, com filtros e exportação) e Relatório (por período, comboio, motorista);
+//  - Motorista comboio: quem lança (nome + PIN no "Sou operador"; entra direto em Abastecimentos).
+export type ConvoyApprovalTab = "approve" | "history" | "report";
+export type ConvoyApprovalStart = { tab: ConvoyApprovalTab; driver?: { id: number; name: string } | null };
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...options });
@@ -18,32 +18,42 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 const jsonInit = (method: string, body: unknown): RequestInit => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca entrou");
+const formatDateTime = (value: string | null, empty = "nunca entrou") => (value ? new Date(value).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : empty);
 const norm = (value: string | null | undefined) => (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase("pt-BR");
 
-export default function FuelingSectorView({ authUser, flash }: { authUser: AuthUser; flash: (message: string) => void }) {
-  const canApprove = authUser.permissions.includes("fuel.convoy_approve");
-  const canDrivers = authUser.permissions.includes("daily.field_operators");
-  const [tab, setTab] = useState<Tab>(canApprove ? "approval" : "drivers");
+// Contador de pendentes do comboio (subaba Aprovação e aba interna Aprovar).
+export function useConvoyPending(enabled: boolean) {
   const [pending, setPending] = useState(0);
-  const loadCount = useCallback(() => { if (canApprove) api<{ pending: number }>("/api/fuel/convoy/count").then((result) => setPending(result.pending)).catch(() => undefined); }, [canApprove]);
-  useEffect(() => { loadCount(); }, [loadCount]);
-  const changed = () => { loadCount(); window.dispatchEvent(new Event("jc:convoy-changed")); };
-  return <div className="fueling-sector">
-    <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do setor Abastecimentos">
-      {canApprove && <button className={tab === "approval" ? "active" : ""} onClick={() => { setTab("approval"); loadCount(); }}>Aprovação{pending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{pending}</b>}</button>}
-      {canDrivers && <button className={tab === "drivers" ? "active" : ""} onClick={() => setTab("drivers")}>Motoristas do comboio</button>}
-      {canApprove && <button className={tab === "report" ? "active" : ""} onClick={() => setTab("report")}>Relatório</button>}
+  const refresh = useCallback(() => { if (enabled) api<{ pending: number }>("/api/fuel/convoy/count").then((result) => setPending(result.pending)).catch(() => undefined); }, [enabled]);
+  useEffect(() => {
+    refresh();
+    window.addEventListener("jc:convoy-changed", refresh);
+    return () => window.removeEventListener("jc:convoy-changed", refresh);
+  }, [refresh]);
+  return { pending, refresh };
+}
+
+// Combustível → Aprovação: abas internas Aprovar | Histórico | Relatório.
+export function ConvoyApprovalPanel({ flash, pending, start }: { flash: (message: string) => void; pending: number; start?: ConvoyApprovalStart }) {
+  const [tab, setTab] = useState<ConvoyApprovalTab>(start?.tab ?? "approve");
+  const changed = () => window.dispatchEvent(new Event("jc:convoy-changed"));
+  return <div className="convoy-approval-panel">
+    <div className="main-tabs secondary-module-nav convoy-inner-tabs" aria-label="Aprovação do comboio">
+      <button type="button" className={tab === "approve" ? "active" : ""} onClick={() => setTab("approve")}>Aprovar{pending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{pending}</b>}</button>
+      <button type="button" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>Histórico</button>
+      <button type="button" className={tab === "report" ? "active" : ""} onClick={() => setTab("report")}>Relatório</button>
     </div>
-    {tab === "approval" && canApprove ? <ConvoyApprovalView flash={flash} onChanged={changed} />
-      : tab === "report" && canApprove ? <ConvoyReport />
-      : canDrivers ? <ConvoyDriversPanel flash={flash} />
-      : null}
+    {tab === "approve" ? <ConvoyApprovalView flash={flash} onChanged={changed} />
+      : tab === "history" ? <ConvoyHistoryView flash={flash} initialDriver={start?.tab === "history" ? start.driver ?? null : null} onChanged={changed} />
+      : <ConvoyReport />}
   </div>;
 }
 
 type Front = { id: number; name: string };
-type Driver = { id: number; name: string; jobTitle: string | null; active: boolean; serviceFrontIds: number[]; lastAccessAt: string | null; registration: string | null; convoyEquipmentId: number | null; convoyPrefix: string | null; dailyAccess: boolean };
+type Driver = {
+  id: number; name: string; jobTitle: string | null; active: boolean; serviceFrontIds: number[]; lastAccessAt: string | null; registration: string | null;
+  convoyEquipmentId: number | null; convoyPrefix: string | null; dailyAccess: boolean; lastRecordAt: string | null; pending: number;
+};
 type DriversResponse = {
   fronts: Front[]; drivers: Driver[];
   accesses: Array<{ id: number; name: string; jobTitle: string | null; registration: string | null }>;
@@ -51,7 +61,8 @@ type DriversResponse = {
   convoyOptions: Array<{ id: number; label: string; convoy: boolean }>;
 };
 
-function ConvoyDriversPanel({ flash }: { flash: (message: string) => void }) {
+// Combustível → Motorista comboio. openHistory: atalho para Aprovação → Histórico filtrado pelo motorista.
+export function ConvoyDriversPanel({ flash, openHistory }: { flash: (message: string) => void; openHistory?: (driver: { id: number; name: string }) => void }) {
   const [data, setData] = useState<DriversResponse | null>(null);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
@@ -84,11 +95,14 @@ function ConvoyDriversPanel({ flash }: { flash: (message: string) => void }) {
           <div><dt>Função</dt><dd>{driver.jobTitle ?? "—"}{driver.registration ? ` · mat. ${driver.registration}` : ""}</dd></div>
           <div><dt>Controle Diário</dt><dd>{driver.dailyAccess ? "Também faz" : "Não (só Abastecimentos)"}</dd></div>
           <div><dt>Frentes</dt><dd>{driver.serviceFrontIds.map(frontName).join(", ") || "—"}</dd></div>
+          <div><dt>Último lançamento</dt><dd>{formatDateTime(driver.lastRecordAt, "nenhum")}</dd></div>
+          <div><dt>Pendentes</dt><dd>{driver.pending > 0 ? <b className="convoy-driver-pending">{driver.pending} aguardando</b> : "nenhum"}</dd></div>
           <div className="wide"><dt>Último acesso</dt><dd>{formatDateTime(driver.lastAccessAt)}</dd></div>
         </dl>
         <footer className="daily-record-actions">
+          {openHistory && <button type="button" className="secondary" onClick={() => openHistory({ id: driver.id, name: driver.name })}>Ver histórico</button>}
           <button type="button" className="secondary" onClick={() => void remove(driver)}>Remover do comboio</button>
-          <button type="button" className="secondary" onClick={() => setEditing(driver)}>Editar / trocar PIN</button>
+          <button type="button" className="secondary" onClick={() => setEditing(driver)}>Editar / inativar / PIN</button>
         </footer>
       </article>)}
       {data && !drivers.length && <div className="empty-state">Nenhum motorista do comboio cadastrado. Use &quot;＋ Adicionar motorista&quot;.</div>}
@@ -146,7 +160,7 @@ function AddDriverModal({ data, close, done }: { data: DriversResponse; close: (
   }
   const ready = mode === "manual" ? name.trim().includes(" ") && jobTitle.trim() && frontIds.length > 0 : picked !== null;
   return <div className="fleet-modal-backdrop" role="presentation"><form className="fleet-modal daily-review" onSubmit={submit}>
-    <header><div><p>ABASTECIMENTOS</p><h2>Adicionar motorista do comboio</h2><span>Login sem senha: nome + PIN. O PIN aparece uma única vez, para entregar pessoalmente.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+    <header><div><p>COMBUSTÍVEL · MOTORISTA COMBOIO</p><h2>Adicionar motorista do comboio</h2><span>Login sem senha: nome + PIN. O PIN aparece uma única vez, para entregar pessoalmente.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
     <div className="fleet-modal-body">
       <div className="main-tabs secondary-module-nav">
         <button type="button" className={mode === "employee" ? "active" : ""} onClick={() => switchMode("employee")}>Da lista de funcionários</button>
@@ -194,7 +208,7 @@ function EditDriverModal({ driver, options, close, saved }: { driver: Driver; op
     finally { setBusy(false); }
   }
   return <div className="fleet-modal-backdrop" role="presentation"><form className="fleet-modal daily-review" onSubmit={submit}>
-    <header><div><p>ABASTECIMENTOS</p><h2>{driver.name}</h2><span>Motorista do comboio. Trocar o PIN ou inativar desconecta quem estiver logado.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+    <header><div><p>COMBUSTÍVEL · MOTORISTA COMBOIO</p><h2>{driver.name}</h2><span>Motorista do comboio. Trocar o PIN ou inativar desconecta quem estiver logado.</span></div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
     <div className="fleet-modal-body">
       <div className="fleet-form-grid">
         <ConvoySelect value={convoy} options={options} onChange={setConvoy} />

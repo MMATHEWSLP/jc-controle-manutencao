@@ -1,7 +1,8 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { consumirFiltros, type NavegacaoAssistente } from "../lib/assistente-nav";
+import { consumirAba, consumirFiltros, type NavegacaoAssistente } from "../lib/assistente-nav";
+import { ConvoyApprovalPanel, ConvoyDriversPanel, useConvoyPending, type ConvoyApprovalStart } from "./FuelingSectorView";
 import ThirdPartiesView, { METER_LABEL, ThirdPartyConsumptionReport, ThirdPartyFormModal, ThirdPartyPicker, ThirdPartyVehiclePicker, ThirdPartyWorkerPicker, useThirdPartyOptions, VehicleFormModal, WorkerFormModal, type ThirdPartyOption, type VehicleOption, type WorkerOption } from "./ThirdPartiesView";
 import { ApiError, api as apiWithData } from "./stock-client";
 import FuelTankView from "./FuelTankView";
@@ -76,7 +77,59 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T;
 }
 
+type FuelTab = "new" | "history" | "third-parties" | "consumption" | "tank" | "approval" | "drivers";
+
+// Aba pedida por outra tela (ex.: o nome antigo "Abastecimentos" abre Combustível → Aprovação).
+function requestedTab(): FuelTab | null {
+  if (typeof window === "undefined") return null;
+  const pedido = consumirAba("Combustível");
+  return pedido?.aba === "aprovacao" ? "approval" : pedido?.aba === "motoristas" ? "drivers" : null;
+}
+
+// Comboio dentro do Combustível: Aprovação (contador de pendentes) e Motorista comboio.
+function useConvoyTabs(authUser: User) {
+  const canApprove = authUser.permissions.includes("fuel.convoy_approve");
+  const canDrivers = authUser.permissions.includes("daily.field_operators");
+  const { pending } = useConvoyPending(canApprove);
+  const [start, setStart] = useState<ConvoyApprovalStart & { key: number }>({ tab: "approve", key: 0 });
+  return { canApprove, canDrivers, pending, start, setStart };
+}
+type ConvoyTabs = ReturnType<typeof useConvoyTabs>;
+
+function ConvoyTabButtons({ convoy, tab, setTab }: { convoy: ConvoyTabs; tab: FuelTab; setTab: (tab: FuelTab) => void }) {
+  return <>
+    {convoy.canApprove && <button className={tab === "approval" ? "active" : ""} onClick={() => setTab("approval")}>Aprovação{convoy.pending > 0 && <b className="nav-badge" title="Abastecimentos do comboio pendentes de aprovação">{convoy.pending}</b>}</button>}
+    {convoy.canDrivers && <button className={tab === "drivers" ? "active" : ""} onClick={() => setTab("drivers")}>Motorista comboio</button>}
+  </>;
+}
+
+function ConvoyTabContent({ convoy, tab, setTab, flash }: { convoy: ConvoyTabs; tab: FuelTab; setTab: (tab: FuelTab) => void; flash: (message: string) => void }) {
+  if (tab === "approval" && convoy.canApprove) return <ConvoyApprovalPanel key={convoy.start.key} flash={flash} pending={convoy.pending} start={convoy.start} />;
+  if (tab === "drivers" && convoy.canDrivers) {
+    const openHistory = convoy.canApprove ? (driver: { id: number; name: string }) => { convoy.setStart((current) => ({ tab: "history", driver, key: current.key + 1 })); setTab("approval"); } : undefined;
+    return <ConvoyDriversPanel flash={flash} openHistory={openHistory} />;
+  }
+  return null;
+}
+
+// Quem só aprova o comboio ou cadastra os motoristas (sem acesso ao resto do Combustível).
+function ConvoyOnlyFuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
+  const convoy = useConvoyTabs(authUser);
+  const [tab, setTab] = useState<FuelTab>(() => (requestedTab() === "drivers" || !convoy.canApprove ? "drivers" : "approval"));
+  return <>
+    <div className="page-heading module-heading">
+      <div><p className="eyebrow">COMBUSTÍVEL · COMBOIO</p><h1>Abastecimentos do comboio</h1><span>Aprovação dos abastecimentos lançados pelo motorista do comboio e cadastro dos motoristas.</span></div>
+    </div>
+    <div className="main-tabs secondary-module-nav" aria-label="Sub-navegação do módulo Combustível"><ConvoyTabButtons convoy={convoy} tab={tab} setTab={setTab} /></div>
+    <ConvoyTabContent convoy={convoy} tab={tab} setTab={setTab} flash={flash} />
+  </>;
+}
+
 export default function FuelView({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
+  return authUser.permissions.includes("fuel.view") ? <FuelModule authUser={authUser} flash={flash} /> : <ConvoyOnlyFuelView authUser={authUser} flash={flash} />;
+}
+
+function FuelModule({ authUser, flash }: { authUser: User; flash: (message: string) => void }) {
   const canRegister = authUser.permissions.includes("fuel.register");
   const canManage = authUser.permissions.includes("fuel.manage");
   // Importação por planilha: só ADMIN e GESTOR (o servidor confere de novo).
@@ -84,7 +137,12 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
   const [importOpen, setImportOpen] = useState(false);
   // Aberto pelo "Ver no sistema" do Assistente JC: já no Histórico com o período/tipo/busca da consulta.
   const [assistantFilters] = useState(() => (typeof window === "undefined" ? null : consumirFiltros("Combustível")));
-  const [tab, setTab] = useState<"new" | "history" | "third-parties" | "consumption" | "tank">(assistantFilters || !canRegister ? "history" : "new");
+  const convoy = useConvoyTabs(authUser);
+  const [tab, setTab] = useState<FuelTab>(() => {
+    const requested = requestedTab();
+    if (requested === "approval" && convoy.canApprove || requested === "drivers" && convoy.canDrivers) return requested;
+    return assistantFilters || !canRegister ? "history" : "new";
+  });
   const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Movement | null>(null);
@@ -101,10 +159,12 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
   }, []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
   // Importação aberta pelo Assistente JC (leitor de fichas): recarrega saldos e Histórico.
+  // Aprovar/rejeitar um abastecimento do comboio também muda o saldo e o Histórico.
   useEffect(() => {
     const reload = () => { void loadSummary(); setHistoryVersion((value) => value + 1); };
     window.addEventListener("jc:fuel-changed", reload);
-    return () => window.removeEventListener("jc:fuel-changed", reload);
+    window.addEventListener("jc:convoy-changed", reload);
+    return () => { window.removeEventListener("jc:fuel-changed", reload); window.removeEventListener("jc:convoy-changed", reload); };
   }, [loadSummary]);
 
   if (error && !summary) return <div className="operation-error"><span>!</span><div><strong>Falha ao carregar o módulo de combustível</strong><p>{error}</p></div><button onClick={loadSummary}>Tentar novamente</button></div>;
@@ -165,9 +225,11 @@ export default function FuelView({ authUser, flash }: { authUser: User; flash: (
         <button className={tab === "third-parties" ? "active" : ""} onClick={() => setTab("third-parties")}>Terceiros</button>
         <button className={tab === "consumption" ? "active" : ""} onClick={() => setTab("consumption")}>Consumo de Terceiros</button>
         <button className={tab === "tank" ? "active" : ""} onClick={() => setTab("tank")}>Tanque (régua)</button>
+        <ConvoyTabButtons convoy={convoy} tab={tab} setTab={setTab} />
       </div>
       {canRegister && <QueuedRequests userId={authUser.id} kind="FUEL" title="Lançamentos guardados no celular" />}
-      {tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
+      {tab === "approval" || tab === "drivers" ? <ConvoyTabContent convoy={convoy} tab={tab} setTab={setTab} flash={flash} />
+        : tab === "tank" ? <FuelTankView fronts={summary.fronts} fuelTypes={summary.fuelTypes} defaultFrontId={summary.defaultFrontId} today={summary.today} canRegister={canRegister} canManage={canManage} flash={flash} />
         : tab === "third-parties" ? <ThirdPartiesView authUser={authUser} flash={flash} embedded />
         : tab === "consumption" ? <ThirdPartyConsumptionReport />
         : tab === "new" && (canRegister || editing)

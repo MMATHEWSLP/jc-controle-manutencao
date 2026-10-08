@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { auditLogs, serviceFronts, users } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import { revokeUserSessions, type SessionUser } from "./auth";
+import { convoyDriverActivity } from "./convoy";
 import { ACCESS_CODE_PATTERN, hashAccessCode } from "./field-auth";
 import {
   assertCodeNotObvious, convoyEquipmentOptions, createFromEmployees, createManual, fieldAccessCandidates, FieldOperatorError,
@@ -37,11 +38,15 @@ export async function listConvoyDrivers(actor: SessionUser) {
     listFieldOperators(actor), fieldAccessCandidates(actor), convoyEquipmentOptions(),
     db.select({ id: serviceFronts.id, name: serviceFronts.name }).from(serviceFronts).where(eq(serviceFronts.active, true)).orderBy(asc(serviceFronts.name)),
   ]);
+  const driverRows = operators.filter((row) => row.convoyFuelRegister);
+  const activity = await convoyDriverActivity(db, driverRows.map((row) => row.id));
   return {
     fronts: fronts.filter((front) => visible === "ALL" || visible.includes(front.id)),
-    drivers: operators.filter((row) => row.convoyFuelRegister).map((row) => ({
+    drivers: driverRows.map((row) => ({
       id: row.id, name: row.name, jobTitle: row.jobTitle, active: row.active, serviceFrontIds: row.serviceFrontIds, lastAccessAt: row.lastAccessAt,
       registration: row.registration, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix, dailyAccess: row.fieldDailyAccess,
+      // Último abastecimento lançado e quantos ainda esperam aprovação (ou correção).
+      lastRecordAt: activity.get(row.id)?.lastRecordAt ?? null, pending: activity.get(row.id)?.pending ?? 0,
     })),
     // Já têm acesso de campo (Controle Diário): basta marcar como motorista, o PIN continua o mesmo.
     accesses: operators.filter((row) => !row.convoyFuelRegister && row.active).map((row) => ({ id: row.id, name: row.name, jobTitle: row.jobTitle, registration: row.registration })),

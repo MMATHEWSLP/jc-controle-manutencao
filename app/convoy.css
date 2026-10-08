@@ -109,6 +109,16 @@
 .fuel-balance-forecast{display:block;margin-top:4px;color:#8a5a00;font-size:12px;font-weight:700}
 .fuel-convoy-cam{border:0;background:none;cursor:pointer;font-size:15px;padding:0 4px}
 .fuel-daily-convoy-pending{padding:8px 12px;border:1px solid #f0c98f;border-radius:9px;background:#fffaf0;color:#7a4a00;font-size:13px;font-weight:700}
+/* Combustível → Aprovação (abas internas) e Histórico */
+.convoy-approval-panel{display:grid;gap:12px}
+.convoy-inner-tabs{margin:0}
+.convoy-inner-tabs button{min-height:36px}
+.convoy-approval-toolbar .convoy-export{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none}
+.convoy-thumbs{white-space:nowrap}
+.convoy-thumbs .convoy-thumb+.convoy-thumb{margin-left:4px}
+.convoy-history-corrections summary{cursor:pointer;font-size:12px;font-weight:700;color:#7a4a00}
+.convoy-history-table td{min-width:0}
+.convoy-driver-pending{color:#7a4a00}
 @media (max-width:900px){.convoy-review{grid-template-columns:1fr}}
 @media (max-width:560px){.fuel-daily-body.convoy-review{padding:12px 10px 16px}}
 html[data-theme="dark"] .convoy-chosen,html[data-theme="dark"] .convoy-suggestion{background:#16342a}
