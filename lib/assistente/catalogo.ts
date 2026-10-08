@@ -16,7 +16,7 @@ export type TipoColuna = "texto" | "numero" | "data" | "sim_nao";
 export type ColunaCatalogo = { nome: string; tipo: TipoColuna; descricao: string; valores?: readonly string[] };
 export type SecaoTela = "Equipamentos" | "Equipamentos da troca" | "Horímetros / KM" | "Central de alertas" | "Histórico" | "Status da Frota" | "Controle Diário"
   | "Solicitação de Materiais" | "Produtos" | "Combustível" | "Funcionários" | "Tarefas" | "Usuários" | "Movimentação" | "Ordem de Serviço"
-  | "Solicitação de Pedidos" | "Terceiros" | "Pendências" | "Custos e Consumo" | "Pneus e Baterias";
+  | "Solicitação de Pedidos" | "Terceiros" | "Pendências" | "Custos e Consumo" | "Pneus e Baterias" | "Outros gastos";
 export type ViewCatalogo = {
   view: string;
   titulo: string;
@@ -222,11 +222,18 @@ export const CATALOGO: readonly ViewCatalogo[] = [
       n("consumo_medio", "Consumo médio"), t("unidade_consumo", "Unidade", ["km/L", "L/h"]), d("ultimo_abastecimento", "Último abastecimento")],
   },
   {
-    view: "v_custos_consumo", titulo: "Custos e consumo por equipamento/mês", modulo: "Custos e Consumo", escopo: "frente", colunaData: "mes", eventos: true, perfis: GESTAO, tela: "Custos e Consumo",
-    descricao: "Por equipamento da frota, mês e frente: litros de combustível, consumo médio, valor das peças (saídas de estoque, sem Correção de Estoque) e das trocas/manutenções. Valor do combustível em R$ não está aqui (use consumo_veiculo).",
+    view: "v_custos_consumo", titulo: "Custos e consumo por equipamento/mês", modulo: "Relatórios → Custos", escopo: "frente", colunaData: "mes", eventos: true, permissoes: ["reports.custos"], tela: "Custos e Consumo",
+    descricao: "Por equipamento da frota, mês e frente: litros de combustível, consumo médio, valor das peças (saídas de estoque, sem Correção de Estoque) e das trocas/manutenções (o custo de uma troca conta uma vez, mesmo com vários itens). Valor do combustível em R$ não está aqui: o custo completo (diesel e gasolina pelo custo médio do estoque, peças, manutenção/serviços, pneus e outros) com a produção fica em RELATÓRIOS → Custos → Custo x produção.",
     padrao: ["mes", "equipamento", "frente", "litros_combustivel", "consumo_medio", "unidade_consumo", "valor_pecas", "valor_manutencoes", "valor_pecas_e_manutencoes"],
     colunas: [d("mes", "Mês (primeiro dia)"), n("ano", "Ano"), ...equipamento, ...frente, n("litros_combustivel", "Litros de combustível"), n("consumo_medio", "Consumo médio"), t("unidade_consumo", "Unidade", ["km/L", "L/h"]),
       n("valor_pecas", "Valor das peças (R$)"), n("valor_manutencoes", "Valor das trocas/manutenções (R$)"), n("trocas", "Trocas realizadas"), n("valor_pecas_e_manutencoes", "Peças + manutenções (R$)")],
+  },
+  {
+    view: "v_outros_gastos", titulo: "Outros gastos (serviços e mão de obra)", modulo: "Relatórios → Custos", escopo: "frente", colunaData: "data", eventos: true, permissoes: ["reports.custos", "costs.other_expenses"], tela: "Outros gastos",
+    descricao: "Gastos lançados em RELATÓRIOS → Custos → Outros gastos: serviço/mão de obra de fora e outros, por frente e (se informado) equipamento. Entram nos relatórios casados (custo x produção): serviço em Manutenção/serviços, o resto em Outros.",
+    padrao: ["data", "frente", "equipamento", "categoria", "valor", "descricao"],
+    colunas: [n("gasto_id", "Id do lançamento"), d("data", "Data do gasto"), ...frente, n("equipamento_id", "Id interno do equipamento"), t("equipamento", "Código do equipamento (vazio = gasto da frente)"),
+      t("tipo_equipamento", "Tipo do equipamento"), t("categoria", "Categoria", ["Serviço / mão de obra", "Outros"]), n("valor", "Valor (R$)"), t("descricao", "Descrição"), t("lancado_por", "Quem lançou")],
   },
   {
     view: "v_produtos", titulo: "Produtos e saldo em estoque", modulo: "Produtos", escopo: "frente", permissoes: ["products.view"], tela: "Produtos",

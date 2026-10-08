@@ -37,8 +37,10 @@ const money = (value: number) => value.toLocaleString("pt-BR", { style: "currenc
 const list = (items: string[], max = 5) => items.length > max ? `${items.slice(0, max).join(", ")} e mais ${items.length - max}` : items.join(", ");
 
 // Texto com formatação do WhatsApp (*negrito*), uma seção por assunto, só com o que tem conteúdo.
-export function weeklyReportText(report: WeeklyReport, link?: string) {
-  const lines: string[] = [`*Resumo semanal — ${br(report.period.from)} a ${br(report.period.to)}*`, report.scope, ""];
+// title: "Resumo semanal" (padrão) ou "Resumo mensal" (RELATÓRIOS → Resumos).
+export function weeklyReportText(report: WeeklyReport, link?: string, title = "Resumo semanal") {
+  const inPeriod = title === "Resumo mensal" ? "no mês" : "na semana";
+  const lines: string[] = [`*${title} — ${br(report.period.from)} a ${br(report.period.to)}*`, report.scope, ""];
   lines.push("*Combustível*");
   lines.push(`• Saídas para a frota: ${liters(report.fuel.exitLiters)}${report.fuel.fuelCost > 0 ? ` (${money(report.fuel.fuelCost)})` : ""}`);
   if (report.fuel.entryLiters > 0) lines.push(`• Entradas: ${liters(report.fuel.entryLiters)}`);
@@ -46,9 +48,9 @@ export function weeklyReportText(report: WeeklyReport, link?: string) {
   if (report.tanks.outside > 0) lines.push(`• Tanque: ${report.tanks.outside} medição(ões) fora da tolerância${report.tanks.lossLiters > 0 ? ` (perda de ${liters(report.tanks.lossLiters)})` : ""}`);
   if (report.costs && report.costs.total > 0) lines.push(`• Custo total da frota: ${money(report.costs.total)} (peças ${money(report.costs.parts)}, trocas ${money(report.costs.maintenance)})`);
   lines.push("", "*Manutenção*");
-  lines.push(`• Trocas registradas na semana: ${report.maintenance.done}`);
+  lines.push(`• Trocas registradas ${inPeriod}: ${report.maintenance.done}`);
   lines.push(`• Trocas vencidas hoje: ${report.maintenance.overdue}${report.maintenance.overdueList.length ? ` (${list(report.maintenance.overdueList)})` : ""}${report.maintenance.near ? ` · urgentes: ${report.maintenance.near}` : ""}`);
-  lines.push(`• O.S.: ${report.workOrders.opened} aberta(s) e ${report.workOrders.closed} fechada(s) na semana · ${report.workOrders.openNow} em aberto`);
+  lines.push(`• O.S.: ${report.workOrders.opened} aberta(s) e ${report.workOrders.closed} fechada(s) ${inPeriod} · ${report.workOrders.openNow} em aberto`);
   if (report.workOrders.oldest.length) lines.push(`• O.S. mais antigas: ${report.workOrders.oldest.map((item) => `${item.number} ${item.prefix} (${item.days} dias)`).join(", ")}`);
   if (report.fleet.maintenance + report.fleet.stopped > 0) lines.push(`• Frota agora: ${report.fleet.maintenance} em manutenção, ${report.fleet.stopped} parado(s)`);
   if (report.components.alerts > 0) lines.push(`• Pneus/baterias com alerta: ${report.components.alerts}${report.components.list.length ? ` (${list(report.components.list)})` : ""}`);

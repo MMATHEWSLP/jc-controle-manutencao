@@ -24,17 +24,22 @@ test("catálogo: colunas padrão, de período e de frente existem; sem colunas s
 });
 
 test("catálogo × migration: toda view do catálogo é criada na migration e vice-versa", () => {
-  const sqlText = ["drizzle/0038_assistente_views.sql", "drizzle/0039_assistente_ajustes.sql", "drizzle/0041_assistente_pendentes_views.sql", "drizzle/0044_assistente_terceiros_views.sql", "drizzle/0047_assistente_controle_diario_views.sql"].map((file) => readFileSync(file, "utf8")).join("\n");
+  const sqlText = ["drizzle/0038_assistente_views.sql", "drizzle/0039_assistente_ajustes.sql", "drizzle/0041_assistente_pendentes_views.sql", "drizzle/0044_assistente_terceiros_views.sql", "drizzle/0047_assistente_controle_diario_views.sql", "drizzle/0056_assistente_relatorios.sql"].map((file) => readFileSync(file, "utf8")).join("\n");
   const views = [...new Set([...sqlText.matchAll(/CREATE OR REPLACE VIEW assistente\.(v_[a-z_]+)/g)].map((match) => match[1]))].sort();
   assert.deepEqual(CATALOGO.map((item) => item.view).sort(), views);
 });
 
-test("permissões: usuários só para ADMIN; módulo exige a permissão; perfis de gestão", () => {
+test("permissões: usuários só para ADMIN; módulo exige a permissão; custos pela permissão de relatórios de custos", () => {
   assert.equal(podeConsultar(viewDoCatalogo("v_usuarios"), gestor), false);
   assert.equal(podeConsultar(viewDoCatalogo("v_usuarios"), admin), true);
   assert.equal(podeConsultar(viewDoCatalogo("v_funcionarios"), gestor), false);
-  assert.equal(podeConsultar(viewDoCatalogo("v_custos_consumo"), gestor), true);
-  assert.equal(podeConsultar(viewDoCatalogo("v_custos_consumo"), { ...gestor, profile: "OFICINA" }), false);
+  // Custos: reports.custos (padrão do GESTOR; o administrador pode tirar ou dar por usuário), como no menu RELATÓRIOS.
+  const custos = { ...gestor, permissions: [...gestor.permissions, "reports.custos"] };
+  assert.equal(podeConsultar(viewDoCatalogo("v_custos_consumo"), custos), true);
+  assert.equal(podeConsultar(viewDoCatalogo("v_custos_consumo"), gestor), false);
+  assert.equal(podeConsultar(viewDoCatalogo("v_custos_consumo"), { ...custos, profile: "OFICINA" }), true);
+  assert.equal(podeConsultar(viewDoCatalogo("v_outros_gastos"), { ...gestor, permissions: ["costs.other_expenses"] }), true);
+  assert.equal(podeConsultar(viewDoCatalogo("v_outros_gastos"), gestor), false);
   assert.ok(catalogoDoUsuario(gestor).every((item) => item.view !== "v_usuarios"));
 });
 

@@ -33,7 +33,7 @@ test("perfis de funcionário nascem sem relatórios (regra do projeto)", () => {
 
 test("usuário com uma categoria liberada vê só os relatórios dela", () => {
   const visible = visibleReports(user("OPERADOR", ["reports.pecas"]));
-  assert.deepEqual(ids(visible), ["estoque-saidas", "produtos-estoque"]);
+  assert.deepEqual(ids(visible), ["ajustes-estoque", "estoque-saidas", "produtos-estoque"]);
   assert.ok(!canSeeReport(user("OPERADOR", ["reports.pecas"]), "custos-consumo"));
 });
 
@@ -42,6 +42,12 @@ test("quem já abria o relatório no lugar antigo continua abrindo", () => {
   assert.deepEqual(ids(visibleReports(diario)), ["diario-combustivel", "producao"]);
   const combustivel = user("OPERADOR", ["fuel.view"]);
   for (const id of ["combustivel-movimentacao", "combustivel-dia", "consumo-terceiros", "terceiros-empresa", "comboio"]) assert.ok(canSeeReport(combustivel, id), id);
+  // Relatórios novos (sem lugar antigo) só com a permissão da categoria.
+  for (const [permissao, id] of [["fuel.view", "consumo-equipamento"], ["fuel.view", "combustivel-destino"], ["products.view", "ajustes-estoque"], ["work_orders.view", "ordens-servico"], ["equipment.view", "pneus-baterias"]]) {
+    assert.ok(!canSeeReport(user("OPERADOR", [permissao]), id), `${id} não vem com ${permissao}`);
+  }
+  assert.ok(canSeeReport(user("OPERADOR", ["reports.manutencao"]), "ordens-servico"));
+  assert.ok(!canSeeReport(user("OPERADOR", ["equipment.view"]), "casado-equipamento"), "casados só com reports.custos");
   assert.ok(!canSeeReport(combustivel, "custos-consumo"), "custos continua só com reports.custos");
   assert.ok(canSeeReport(user("OFICINA", PROFILE_DEFAULTS.OFICINA), "trocas-oleo"));
   assert.ok(canSeeReport(user("OFICINA", PROFILE_DEFAULTS.OFICINA), "frota-diario"));

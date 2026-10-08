@@ -193,7 +193,7 @@ function Charts({ report, shown, grouping, sort, keyLabel }: { report: Report; s
   </div>;
 }
 
-function ExportLink({ href, label }: { href: string; label: string }) {
+export function ExportLink({ href, label }: { href: string; label: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function download(event: MouseEvent<HTMLAnchorElement>) {
