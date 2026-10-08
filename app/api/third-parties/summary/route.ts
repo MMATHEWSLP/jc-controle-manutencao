@@ -3,17 +3,19 @@ import { getDb } from "../../../../db";
 import { frentesEmExibicao } from "../../../../lib/active-front";
 import { authorize } from "../../../../lib/auth";
 import { fuelLocalDay, fuelScopeFronts, fuelVisibleFronts, monthStart } from "../../../../lib/fuel";
-import { canViewThirdParties, thirdPartySummary } from "../../../../lib/third-parties";
+import { canSeeReport } from "../../../../lib/reports-catalog";
+import { thirdPartySummary } from "../../../../lib/third-parties";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // "Resumo por empresa": combustível em veículos / para funcionários, peças em veículos / para
 // funcionários e valor total, no período (padrão: mês atual). ?formato=xlsx exporta em Excel.
+// Fica no menu RELATÓRIOS → Combustível (saiu do fim da tela Terceiros).
 export async function GET(request: Request) {
   const auth = await authorize(request);
   if (auth.response) return auth.response;
   const user = auth.user!;
-  if (!canViewThirdParties(user)) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
+  if (!canSeeReport(user, "terceiros-empresa")) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
     const params = new URL(request.url).searchParams;
     const today = fuelLocalDay();

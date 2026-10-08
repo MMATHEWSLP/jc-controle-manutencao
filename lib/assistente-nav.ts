@@ -25,8 +25,12 @@ export function consumirFiltros(secao: string): NavegacaoAssistente | null {
 
 // Telas que viraram subabas: o nome antigo (Assistente JC, atalhos) abre o lugar novo.
 // "Abastecimentos" (menu ABASTECIMENTOS, removido) → Combustível → Aprovação.
+// "Custos e Consumo" e "Resumo semanal" (saíram de EQUIPAMENTOS) → RELATÓRIOS, no relatório
+// (a aba é o id do relatório em lib/reports-catalog.ts).
 export const TELAS_ANTIGAS: Record<string, { secao: string; aba: string }> = {
   Abastecimentos: { secao: "Combustível", aba: "aprovacao" },
+  "Custos e Consumo": { secao: "Relatórios", aba: "custos-consumo" },
+  "Resumo semanal": { secao: "Relatórios", aba: "resumo-semanal" },
 };
 let abaPedida: { secao: string; aba: string; detalhe?: Record<string, unknown>; em: number } | null = null;
 

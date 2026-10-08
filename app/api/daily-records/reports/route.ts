@@ -1,11 +1,12 @@
 import ExcelJS from "exceljs";
 import { authorize } from "../../../../lib/auth";
-import { canViewAll } from "../../../../lib/daily-records";
 import { AGRUPAMENTOS, dieselConferencia, parseReportFilters, producao, type Agrupamento, type ReportFilters } from "../../../../lib/daily-reports";
 import { fuelLocalDay } from "../../../../lib/fuel";
 import { createEmployeeHistoryPdf, formatPdfDate } from "../../../../lib/pdf";
+import { canSeeReport } from "../../../../lib/reports-catalog";
 
 // ?tipo=producao&por=frente|local|operador|equipamento | ?tipo=diesel ; ?formato=xlsx|pdf exporta.
+// Menu RELATÓRIOS: "Produção do Controle Diário" e "Conferência Diário x Combustível" (lib/reports-catalog.ts).
 const n = (valor: number, casas = 2) => valor.toLocaleString("pt-BR", { maximumFractionDigits: casas });
 const dia = (valor: string) => valor.split("-").reverse().join("/");
 const filtrosTexto = (f: ReportFilters) => [`${dia(f.from)} a ${dia(f.to)}`, f.operator && `operador "${f.operator}"`, f.location && `local "${f.location}"`, f.origin === "IMPORTADO" ? "só importados" : f.origin === "APP" ? "só do app" : ""].filter(Boolean).join(" · ");
@@ -13,9 +14,9 @@ const filtrosTexto = (f: ReportFilters) => [`${dia(f.from)} a ${dia(f.to)}`, f.o
 export async function GET(request: Request) {
   const auth = await authorize(request); if (auth.response) return auth.response;
   const user = auth.user!;
-  if (!canViewAll(user)) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
+  const params = new URL(request.url).searchParams;
+  if (!canSeeReport(user, params.get("tipo") === "diesel" ? "diario-combustivel" : "producao")) return Response.json({ error: "Você não possui permissão para esta ação." }, { status: 403 });
   try {
-    const params = new URL(request.url).searchParams;
     const filtros = parseReportFilters(params, fuelLocalDay());
     const formato = params.get("formato");
     if (params.get("tipo") === "diesel") {

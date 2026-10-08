@@ -11,7 +11,8 @@ const positive = (value: string | null) => { const parsed = Number(value); retur
 // Exporta em Excel o Histórico da Movimentação com os mesmos filtros da tela (inclusive terceiro e
 // veículo do terceiro): produto, quantidade, valor, empresa, veículo, quem recebeu, data e frente.
 export async function GET(request: Request) {
-  const auth = await authorize(request, "stock.exits_view");
+  // Também RELATÓRIOS → Peças e produtos (reports.pecas), só leitura.
+  const auth = await authorize(request, ["stock.exits_view", "reports.pecas"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

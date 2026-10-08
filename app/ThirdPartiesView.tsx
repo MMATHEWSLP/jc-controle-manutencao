@@ -369,7 +369,7 @@ export default function ThirdPartiesView({ authUser, flash, embedded = false }: 
         saved={async (_id, message) => { setEditingVehicle(null); flash(message); await load(); }} />}
       {editingWorker && <WorkerFormModal thirdParty={editingWorker.party} item={editingWorker.item} close={() => setEditingWorker(null)}
         saved={async (_id, message) => { setEditingWorker(null); flash(message); await load(); }} />}
-      <ThirdPartySummaryPanel />
+      <p className="table-sub">O resumo por empresa (combustível e peças que cada terceiro recebeu, com o valor) fica em RELATÓRIOS → Combustível.</p>
     </>
   );
 }
@@ -447,7 +447,7 @@ export function ThirdPartyConsumptionReport() {
 }
 
 // ---------------------------------------------------------------------------
-// "Resumo por empresa": combustível e peças em veículos x para funcionários, com o valor total.
+// "Resumo por empresa" (RELATÓRIOS → Combustível): combustível e peças em veículos x para funcionários, com o valor total.
 // ---------------------------------------------------------------------------
 type SummaryRow = { thirdPartyId: number; company: string; fuelVehicleLiters: number; fuelVehicleValue: number; fuelEmployeeLiters: number; fuelEmployeeValue: number; fuelOtherLiters: number; fuelOtherValue: number;
   partsVehicleValue: number; partsEmployeeValue: number; partsOtherValue: number; partsQuantity: number; totalValue: number };

@@ -68,8 +68,9 @@ export async function fleetCostReport(d1: D1DatabaseLike, user: SessionUser, fil
       [filters.from, filters.from, end, end, filters.from, filters.from, end, end, filters.from, end, fronts, fronts]),
     all(`SELECT sm.equipment_id, sum(-sm.delta * coalesce(sm.unit_price, p.price, 0)) AS cost FROM product_stock_movements sm JOIN products p ON p.id=sm.product_id
       JOIN equipment e ON e.id=sm.equipment_id WHERE sm.delta < 0 AND sm.reversed_at IS NULL AND sm.history_kind IS DISTINCT FROM 'AJUSTE' AND left(sm.movement_date,10) BETWEEN ? AND ? AND ${scope} GROUP BY sm.equipment_id`, [filters.from, filters.to, fronts, fronts]),
-    all(`SELECT m.equipment_id, sum(coalesce(m.cost,0)) AS cost FROM maintenances m JOIN equipment e ON e.id=m.equipment_id
-      WHERE left(m.performed_at,10) BETWEEN ? AND ? AND ${scope} GROUP BY m.equipment_id`, [filters.from, filters.to, fronts, fronts]),
+    // O "Custo total" de uma troca é gravado em cada item dela: conta uma vez por troca (como nos relatórios casados).
+    all(`SELECT t.equipment_id, sum(t.cost) AS cost FROM (SELECT DISTINCT ON (m.equipment_id, m.performed_at, m.work_order, m.created_at, m.cost) m.equipment_id, coalesce(m.cost,0) AS cost
+      FROM maintenances m JOIN equipment e ON e.id=m.equipment_id WHERE left(m.performed_at,10) BETWEEN ? AND ? AND ${scope}) t GROUP BY t.equipment_id`, [filters.from, filters.to, fronts, fronts]),
     all(`SELECT id,name FROM service_fronts WHERE active AND (?::int[] IS NULL OR id = ANY(?::int[])) ORDER BY name`, [visible === "ALL" ? null : visible, visible === "ALL" ? null : visible]),
   ]);
 

@@ -13,7 +13,6 @@ import { optimizePhoto } from "../lib/photo-client";
 import { FieldOperatorsPanel, FrontRequestsPanel } from "./DailyAdminPanels";
 import DailyHistoryPanel, { clearHistoryUrl, isHistoryUrl } from "./DailyHistoryPanel";
 import DailyImportPanel from "./DailyImportPanel";
-import DailyReportsPanel from "./DailyReportsPanel";
 
 type EquipmentOption = { id:number; prefix:string; code:string; plate:string|null; type:string; brand:string; model:string; serviceFrontId:number|null; front:string; readingUnit:ReadingUnit };
 export type CurrentUser = { name:string; jobTitle:string|null; profileLabel:string; frontName:string|null };
@@ -30,7 +29,7 @@ type RecordItem = {
   fuelings:Array<{number:number;liters:number;reading:number|null;location:string|null}>; trips:Array<{number:number;logs:number;meters:number|null}>;
 };
 type Photo = { blob:Blob; url:string };
-type Tab = "new" | "mine" | "checklist" | "history" | "fronts" | "operators" | "import" | "reports";
+type Tab = "new" | "mine" | "checklist" | "history" | "fronts" | "operators" | "import";
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const numberFormat=new Intl.NumberFormat("pt-BR",{maximumFractionDigits:2});
@@ -74,7 +73,6 @@ export default function DailyControlView({ flash, currentUser, activeFrontId=nul
       {context.canViewAll && <button className={tab==="history"?"active":""} onClick={()=>go("history")}>Histórico de registros</button>}
       {context.canFrontRequests && <button className={tab==="fronts"?"active":""} onClick={()=>go("fronts")}>Solicitações de frente{pendingFronts>0 && <b className="nav-badge">{pendingFronts}</b>}</button>}
       {context.canFieldOperators && <button className={tab==="operators"?"active":""} onClick={()=>go("operators")}>Funcionários de campo</button>}
-      {context.canViewAll && <button className={tab==="reports"?"active":""} onClick={()=>go("reports")}>Relatórios</button>}
       {context.canImport && <button className={tab==="import"?"active":""} onClick={()=>go("import")}>Importar planilha</button>}
     </div>
     {context.canRegister && <PendingQueue userId={context.userId}/>}
@@ -84,7 +82,6 @@ export default function DailyControlView({ flash, currentUser, activeFrontId=nul
       : tab==="fronts" && context.canFrontRequests ? <FrontRequestsPanel flash={flash} onChanged={loadPendingFronts}/>
       : tab==="operators" && context.canFieldOperators ? <FieldOperatorsPanel fronts={context.fronts} flash={flash}/>
       : tab==="import" && context.canImport ? <DailyImportPanel flash={flash}/>
-      : tab==="reports" && context.canViewAll ? <DailyReportsPanel fronts={context.fronts} equipment={context.equipment}/>
       : tab==="history" && context.canViewAll ? <DailyHistoryPanel fronts={context.fronts} onEdit={editFromHistory} defaultFrontId={activeFrontId}/>
       : <RecordsPanel equipment={context.equipment} canManage={context.canManage} flash={flash} onEdit={setEditing}/>}
   </>;

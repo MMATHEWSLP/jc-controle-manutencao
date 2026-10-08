@@ -14,6 +14,7 @@ import {
 } from "./convoy-rules";
 import { ConvoyPhotoError, storeConvoyPhoto } from "./convoy-storage";
 import { readingUnitFor } from "./daily-record-rules";
+import { canSeeReport } from "./reports-catalog";
 import { createFuelMovement, FuelCreateError } from "./fuel-create";
 import { ReadingOperationError, saveReading } from "./readings";
 import { ThirdPartyError, thirdPartyOptions, vehicleFuelings, type VehicleFueling } from "./third-parties";
@@ -893,7 +894,8 @@ export async function convoyPhotoKey(user: SessionUser, id: number, kind: "meter
 export type ConvoyReportFilters = { from: string; to: string; convoyEquipmentId: number | null; registeredBy: number | null; equipmentId: number | null };
 
 export async function convoyReport(user: SessionUser, filters: ConvoyReportFilters) {
-  if (!canApproveConvoy(user) && !user.permissions.includes("fuel.view")) throw new ConvoyError("Sem permissão.", 403);
+  // RELATÓRIOS → Combustível → Abastecimentos do comboio (quem aprova, quem vê o Combustível ou reports.combustivel).
+  if (!canApproveConvoy(user) && !canSeeReport(user, "comboio")) throw new ConvoyError("Sem permissão.", 403);
   const db = await getDb();
   const scope = visibleScope(user);
   const rows = await db.select({

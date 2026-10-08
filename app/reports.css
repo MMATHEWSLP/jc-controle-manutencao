@@ -1,0 +1,70 @@
+/* Menu RELATÓRIOS: catálogo em cartões por categoria (app/ReportsView.tsx). Cores pelas variáveis do tema. */
+.reports-catalog{display:grid;gap:22px;padding:18px}
+.report-panel{display:grid;gap:12px;padding:16px}
+.reports-search{max-width:640px}
+.reports-category>header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.reports-category>header h2{margin:0;font-size:16px;font-weight:700;color:var(--ink)}
+.reports-category>header p{margin:0;font-size:12.5px;color:var(--muted)}
+.reports-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.report-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;min-height:118px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.report-card:hover,.report-card:focus-visible{border-color:var(--green);box-shadow:0 4px 14px rgba(23,43,58,.08);transform:translateY(-1px)}
+.report-card strong{font-size:14.5px;line-height:1.25}
+.report-card span{font-size:12.5px;line-height:1.4;color:var(--muted);flex:1}
+.report-card small{font-size:11.5px;color:var(--muted)}
+.report-card small b{color:var(--green);font-weight:700}
+.reports-breadcrumb{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 10px}
+.reports-breadcrumb button{padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-weight:600;font-size:13px;cursor:pointer}
+.reports-breadcrumb button:hover{border-color:var(--green)}
+.reports-breadcrumb span{font-size:13px;color:var(--muted)}
+.reports-breadcrumb strong{color:var(--ink)}
+.report-export .report-export-actions{margin:4px 0 8px}
+@media (max-width:640px){.reports-catalog{padding:12px}.report-panel{padding:12px}.reports-grid{grid-template-columns:1fr}.report-card{min-height:0}}
+
+/* Relatórios casados (app/CostProductionReport.tsx). Cores das categorias: paleta categórica validada
+   (ordem fixa: diesel, gasolina, peças, manutenção/serviços, pneus, outros), com tons próprios no escuro. */
+.viz-root,.cost-report{--series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--series-4:#eda100;--series-5:#e87ba4;--series-6:#008300;--viz-bar:#2a78d6;--viz-track:#eef0f2}
+html[data-theme="dark"] :is(.viz-root,.cost-report){--series-1:#3987e5;--series-2:#d95926;--series-3:#199e70;--series-4:#c98500;--series-5:#d55181;--series-6:#008300;--viz-bar:#3987e5;--viz-track:#2b2925}
+.cost-report-filters{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.cost-report-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.cost-shortcuts,.cost-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cost-shortcuts button,.cost-chips button{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-size:12.5px;cursor:pointer}
+.cost-chips button{display:inline-flex;align-items:center;gap:6px;opacity:.55}
+.cost-chips button.on{opacity:1;border-color:var(--ink)}
+.viz-swatch{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none;margin-right:5px;vertical-align:-1px}
+.viz-swatch.s1,.viz-fill.s1{background:var(--series-1)}.viz-swatch.s2,.viz-fill.s2{background:var(--series-2)}.viz-swatch.s3,.viz-fill.s3{background:var(--series-3)}
+.viz-swatch.s4,.viz-fill.s4{background:var(--series-4)}.viz-swatch.s5,.viz-fill.s5{background:var(--series-5)}.viz-swatch.s6,.viz-fill.s6{background:var(--series-6)}
+.cost-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.cost-card{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.cost-card span{display:flex;align-items:baseline;gap:5px;font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.cost-card span .viz-swatch{margin-right:0}
+.cost-card strong{font-size:18px;color:var(--ink)}
+.cost-card small{font-size:12px;color:var(--muted)}
+.cost-card.total{border-color:var(--ink)}
+.cost-card b.up,.cost-table td.up{color:var(--danger-text)}.cost-card b.down,.cost-table td.down{color:var(--success-text)}
+.cost-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.cost-chart{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);min-width:0}
+.cost-chart h3{margin:0 0 10px;font-size:13.5px;color:var(--ink)}
+.hbars{display:grid;gap:6px}
+.hbar{display:grid;grid-template-columns:minmax(80px,30%) 1fr auto;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);border-radius:6px;outline-offset:2px}
+.hbar:hover .hbar-fill,.hbar:focus .hbar-fill{filter:brightness(1.1)}
+.hbar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.hbar-track{height:12px;background:var(--viz-track);border-radius:4px;overflow:hidden}
+.hbar-fill{display:block;height:100%;min-width:2px;background:var(--viz-bar);border-radius:0 4px 4px 0}
+.hbar-value{font-variant-numeric:tabular-nums;white-space:nowrap}
+.vbars{display:flex;align-items:flex-end;gap:8px;height:170px;padding-top:6px;border-bottom:1px solid var(--line)}
+.vbar{flex:1;min-width:18px;max-width:64px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;position:relative}
+.vbar-stack{display:flex;flex-direction:column-reverse;gap:2px;min-height:2px}
+.vbar-stack .viz-fill{display:block;min-height:2px;flex-basis:0}
+.vbar-stack .viz-fill:last-child{border-radius:4px 4px 0 0}
+.vbar-stack .viz-fill:focus,.vbar-stack .viz-fill:hover{outline:2px solid var(--ink);outline-offset:-1px}
+.vbar-label{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:11px;color:var(--muted)}
+.viz-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:24px;font-size:12px;color:var(--ink)}
+.viz-tooltip{position:fixed;z-index:1000;max-width:220px;padding:7px 9px;border-radius:8px;background:var(--ink);color:var(--surface);font-size:12px;line-height:1.35;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.cost-table td,.cost-table th{white-space:nowrap}
+.cost-table tfoot td{font-weight:700;border-top:2px solid var(--line)}
+.other-expense-category{display:flex;gap:16px;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.other-expense-category label{display:flex;align-items:center;gap:6px;flex-direction:row}
+@media (max-width:640px){.cost-cards{grid-template-columns:1fr 1fr}.cost-card strong{font-size:15px}.cost-charts{grid-template-columns:1fr}}
+.report-check{display:inline-flex;align-items:center;gap:7px;min-height:40px;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;cursor:pointer}
+.report-check input[type=checkbox]{width:17px;height:17px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--green)}
+.report-action{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);white-space:nowrap;font-size:12px;font-weight:700;cursor:pointer}

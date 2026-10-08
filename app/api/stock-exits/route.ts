@@ -12,7 +12,8 @@ const positive = (value: string | null) => { const parsed = Number(value); retur
 // Histórico da Movimentação: saídas de estoque (Movimentação e peças de O.S. fechadas) com filtros
 // por veículo, funcionário, departamento, produto e período.
 export async function GET(request: Request) {
-  const auth = await authorize(request, "stock.exits_view");
+  // Também RELATÓRIOS → Peças e produtos (reports.pecas), só leitura.
+  const auth = await authorize(request, ["stock.exits_view", "reports.pecas"]);
   if (auth.response) return auth.response;
   try {
     const user = auth.user!;

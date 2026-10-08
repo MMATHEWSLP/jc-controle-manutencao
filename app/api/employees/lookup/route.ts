@@ -5,7 +5,7 @@ import { lookupEmployees } from "../../../../lib/employees";
 // Autocomplete de nomes (Responsável no Combustível, operador no Controle Diário...). Liberado para
 // quem pode lançar nesses módulos, mesmo sem acesso ao módulo Funcionários: devolve só nome,
 // função, empresa e frente.
-const ALLOWED = ["employees.view", "fuel.register", "fuel.manage", "daily.register", "daily.manage", "stock.exits_create", "work_orders.manage"];
+const ALLOWED = ["employees.view", "fuel.register", "fuel.manage", "daily.register", "daily.manage", "stock.exits_create", "work_orders.manage", "reports.pecas"];
 
 export async function GET(request: Request) {
   const auth = await authorize(request);

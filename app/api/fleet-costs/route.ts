@@ -1,15 +1,17 @@
 import { getD1 } from "../../../db";
 import { authorize } from "../../../lib/auth";
-import { canSeeFleetCosts, fleetCostReport } from "../../../lib/fleet-costs";
+import { fleetCostReport } from "../../../lib/fleet-costs";
+import { canSeeReport } from "../../../lib/reports-catalog";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza" }).format(new Date());
 
-// Custo e consumo por equipamento no período (?de=AAAA-MM-DD&ate=AAAA-MM-DD&frente=ID). ADMIN/GESTOR.
+// Custo e consumo por equipamento no período (?de=AAAA-MM-DD&ate=AAAA-MM-DD&frente=ID).
+// RELATÓRIOS → Custos: ADMIN, GESTOR (padrão) e quem tiver reports.custos, só nas frentes da pessoa.
 export async function GET(request: Request) {
   const auth = await authorize(request);
   if (auth.response) return auth.response;
-  if (!canSeeFleetCosts(auth.user!)) return Response.json({ error: "Somente administrador ou gestor vê custos por equipamento." }, { status: 403 });
+  if (!canSeeReport(auth.user!, "custos-consumo")) return Response.json({ error: "Você não tem acesso aos relatórios de custos." }, { status: 403 });
   const url = new URL(request.url);
   const to = DAY.test(url.searchParams.get("ate") ?? "") ? url.searchParams.get("ate")! : today();
   const defaultFrom = new Date(`${to}T12:00:00Z`); defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 89);

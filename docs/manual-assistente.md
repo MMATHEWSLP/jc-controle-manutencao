@@ -1,6 +1,6 @@
 # Manual do Sistema JC (usado pelo Assistente JC)
 
-Manual curto de cada tela: caminho no menu, o que faz e como fazer as tarefas mais comuns. O menu superior tem os grupos EQUIPAMENTOS e PRODUTOS (com sub-botões) e os botões COMBUSTÍVEL, FUNCIONÁRIOS, TAREFAS, USUÁRIOS e PENDÊNCIAS. O seletor "Frente" no topo filtra todas as telas pelas frentes escolhidas. Cada pessoa só vê os módulos liberados no seu usuário e as frentes vinculadas a ele.
+Manual curto de cada tela: caminho no menu, o que faz e como fazer as tarefas mais comuns. O menu superior tem os grupos EQUIPAMENTOS e PRODUTOS (com sub-botões) e os botões COMBUSTÍVEL, RELATÓRIOS, FUNCIONÁRIOS, TAREFAS, USUÁRIOS e PENDÊNCIAS. O seletor "Frente" no topo filtra todas as telas pelas frentes escolhidas. Cada pessoa só vê os módulos liberados no seu usuário e as frentes vinculadas a ele.
 
 ## Seletor de frente
 Caminho: topo da tela, ao lado do tema claro/escuro.
@@ -38,13 +38,19 @@ Caminho: EQUIPAMENTOS → Pneus e Baterias.
 O que faz: cadastro de cada pneu (número de fogo) e bateria, com montagem, rodízio, recapagem, conserto, inspeção e descarte.
 Como cadastrar: "+ Cadastrar" → tipo, número, marca, medida, compra. Para montar/rodar/recapar: abrir o item e lançar o evento.
 
-## Custos e Consumo
-Caminho: EQUIPAMENTOS → Custos e Consumo (ADMIN e GESTOR).
-O que faz: por equipamento e período, litros e valor de combustível, consumo médio (km/L ou L/h), peças e manutenções, com desvio de consumo.
-
-## Resumo semanal
-Caminho: EQUIPAMENTOS → Resumo semanal (ADMIN e GESTOR).
-O que faz: resumo da semana (operação, manutenção, combustível e custos) e o texto para o WhatsApp.
+## Relatórios
+Caminho: RELATÓRIOS (menu principal).
+O que faz: todos os relatórios num lugar só, em cartões por categoria (Produção, Combustível, Peças e produtos, Manutenção, Custos, Resumos), com busca no topo ("diesel", "terceiros", "trocas"...). Clique no cartão para abrir; "‹ Todos os relatórios" volta ao catálogo. Cada relatório tem filtros e Excel/PDF (ou CSV) e mostra só as frentes da pessoa (e a frente escolhida no topo).
+Quem vê: ADMIN e GESTOR veem todos. Os demais só as categorias liberadas no usuário (USUÁRIOS → Permissões → Relatórios); quem já via um relatório no lugar antigo (ex.: Histórico do Combustível, Controle Diário) continua vendo.
+Produção: Produção do Controle Diário (horas/KM trabalhados, viagens, volume no porto, toras, baldeio e diesel informado, por frente, local, operador ou equipamento).
+Combustível: Entradas, saídas e saldos (mesmos filtros e exportação do Histórico do Combustível); Resumo do dia do combustível; Conferência Diário x Combustível (diesel informado no diário x saídas lançadas, por equipamento e dia); Consumo de terceiros (também na aba do Combustível); Terceiros: resumo por empresa (combustível nos veículos x para funcionários, peças e o total, R$ pelo custo médio); Abastecimentos do comboio (aprovados, pendentes, rejeitados, sem foto, tempo até aprovar, por comboio, motorista e equipamento).
+Peças e produtos: Saídas de produtos (por produto, equipamento, colaborador, departamento ou terceiro, com valor; Excel); Produtos e saldo em estoque (PDF/CSV).
+Manutenção: Trocas de óleo realizadas (Excel/PDF por período, frente, equipamento, categoria, responsável); Trocas vencidas e alertas (PDF); Status da frota do dia (PDF).
+Custos — relatórios casados (custo x produção): "Custo x produção por equipamento", "por frente" e "geral (mês a mês)"; dentro dele dá para agrupar também por operador, local ou mês. Cada gasto separado (diesel, gasolina, peças, manutenção/serviços, pneus e baterias, outros) e o custo total, com a produção do Controle Diário (horas, km, viagens, m³) e os indicadores R$/h, R$/km, R$/viagem, R$/m³, diesel L/h, km/L e L/m³. Filtros: período (atalhos mês atual, mês anterior, 3 meses, ano), frente, equipamento, tipo, empresa (registro do veículo), operador, local e quais gastos entram; "Comparar com o período anterior" (mês fechado compara com o mês anterior). Ordenar por custo total, R$/h, R$/km, R$/viagem ou R$/m³ (ranking dos mais caros/menos produtivos). Gráficos: custo por categoria, mês a mês e ranking. Excel e PDF com os filtros, quem gerou e quando.
+Como o custo é contado: diesel e gasolina pelo custo médio do estoque (o mesmo do Combustível); peças pelo valor da saída (sem valor, o preço do cadastro); troca de óleo uma vez por troca; pneus e baterias pela compra na primeira montagem num equipamento e pelos eventos (recapagem, conserto); Outros gastos pelo valor lançado. Cada custo fica na própria frente e no próprio equipamento ("Sem equipamento" = combustível para terceiros/doações, peças para funcionário/departamento e outros gastos sem equipamento). Por operador/local, o custo de cada equipamento é dividido pelas horas (ou km) que cada um trabalhou com ele no período ("Sem Controle Diário" quando o equipamento não tem ficha no período).
+Outros gastos: RELATÓRIOS → Custos → "Outros gastos (serviços e mão de obra)" (ou "＋ Outro gasto" no relatório casado). "＋ Lançar gasto" → frente, data, categoria (Serviço / mão de obra ou Outros), equipamento (opcional), valor e descrição → Lançar. Editar e Excluir na lista; Excel. Lançar precisa da permissão "Lançar, editar e excluir Outros gastos" (o administrador libera por usuário).
+Custos: Custos e consumo por equipamento (combustível em litros e R$, consumo comparado à média do tipo, peças, trocas, custo total e por hora/km; CSV).
+Resumos: Resumo semanal (a semana de segunda a domingo e o texto para o WhatsApp).
 
 ## Controle Diário
 Caminho: EQUIPAMENTOS → Controle Diário (e o login de campo dos operadores).
@@ -54,7 +60,7 @@ Mudança de frente pedida pelo operador: aparece para aprovação de ADMIN/GESTO
 Funcionários de campo (aba do Controle Diário): quem entra só com nome + código. "＋ Adicionar" → aba "Da lista de funcionários" (busca no cadastro de Funcionários, filtros de frente e função, "Só motoristas e operadores", vários de uma vez, frentes adicionais e código automático ou digitado) ou "Cadastro manual" (temporário/prestador; avisa nome parecido; "Criar também no cadastro de Funcionários" marcado por padrão). No fim aparecem os códigos uma única vez, com "Imprimir cartões" e "Copiar". Card com "Cadastro de funcionários" segue nome, função e demissão do menu FUNCIONÁRIOS; "Sem cadastro de funcionário" tem o botão "Vincular". ADMIN tem "Importar funcionários" (planilha com Nome, Função sugerida, Frente principal, Outras frentes, PIN e Conferir): prévia sem gravar, decide nomes parecidos e linhas "Conferir", depois "Confirmar importação" (quem já está na tela mantém o código e só completa frentes).
 Histórico (aba do Controle Diário): filtros por período, frente, colaborador, equipamento, Local (texto), Origem (Feitos no app / Importados) e "Só Conferir"; etiquetas "Importado" e "Conferir" (leitura duvidosa: não entra no histórico de leituras do equipamento nem nas horas/km trabalhados). Registro importado tem ✎ "Corrigir": vincular o operador a um funcionário de campo (com opção de aplicar a todos os registros sem cadastro com o mesmo nome), manter só o nome ou "Sem operador", corrigir leituras e tirar/pôr o "Conferir". Exporta PDF/Excel do que está filtrado.
 Importar planilha (aba do Controle Diário, só ADMIN): "Baixar modelo" → aba "Importar" com Data, Equipamento, Frente, Operador, Sem operador, Local, leituras, viagens/volume/toras do porto, viagens de baldeio, Diesel (L), Problema relatado e Observações. "Ver prévia" não grava: mostra totais, equipamentos a decidir (código não encontrado ou com duas escalas de leitura, ex.: dois veículos com o mesmo código), linhas "Conferir", operadores sem cadastro (ficam com o nome), diesel acima de 600 L (não lançado: usa a saída de combustível do mesmo dia), leituras que vão subir e problemas (marcar quais viram pendência). "Confirmar importação" grava em blocos de 500; a leitura atual do equipamento só sobe se a importada for a mais recente e maior, e a troca de óleo é recalculada. Diesel do diário nunca cria saída de combustível. "Desfazer importação" apaga o lote e volta as leituras.
-Relatórios (aba do Controle Diário): produção por frente, local, operador ou equipamento (KM/horas só dos registros sem "Conferir", viagens, volume no porto, toras, diesel informado) e "Diário x Combustível" (diesel informado no diário x saídas lançadas no Combustível, por equipamento e dia). Excel e PDF.
+Relatórios do Controle Diário: ficam no menu RELATÓRIOS → Produção (produção por frente, local, operador ou equipamento; KM/horas só dos registros sem "Conferir") e RELATÓRIOS → Combustível → Conferência Diário x Combustível. Excel e PDF.
 
 ## Produtos
 Caminho: PRODUTOS → Produtos.
@@ -83,10 +89,10 @@ Departamentos: a lista é única (Movimentação e Compras) e é mantida por que
 Caminho: PRODUTOS → Terceiros (também na aba Terceiros do Combustível).
 O que faz: cadastro de prestadores, terceirizadas e pessoas físicas, dos veículos deles (placa, medidor, capacidade, consumo esperado) e dos funcionários deles (nome, função, CPF e telefone opcionais). Usado nas saídas de combustível e de produtos.
 Como cadastrar: "＋ Novo terceiro" → nome, tipo, CNPJ, contato → "Abrir" → abas "Veículos" e "Funcionários" para adicionar.
-Resumo por empresa: no fim da tela Terceiros, por período: combustível nos veículos x para funcionários (litros e R$ pelo custo médio), peças nos veículos x para funcionários e o total; "Exportar Excel".
+Resumo por empresa: em RELATÓRIOS → Combustível → Terceiros: resumo por empresa (por período: combustível nos veículos x para funcionários, litros e R$ pelo custo médio, peças e o total; "Exportar Excel").
 
 ## Combustível
-Caminho: COMBUSTÍVEL. Abas: Novo Registro, Histórico, Terceiros, Consumo de Terceiros, Tanque (régua).
+Caminho: COMBUSTÍVEL. Abas: Novo Registro, Histórico, Terceiros, Consumo de Terceiros, Tanque (régua), Aprovação (abastecimentos do comboio: Aprovar e Histórico) e Motorista comboio. Os relatórios do combustível também estão em RELATÓRIOS → Combustível.
 O que faz: entradas, saídas e transferências de diesel/gasolina por frente, com dois estoques por frente (Frente e Porto). O saldo é sempre a soma dos lançamentos.
 Como lançar uma entrada: Novo Registro → tipo Entrada → frente, data, combustível, origem (Frente ou Porto), litros e valor por litro → Salvar.
 Como lançar uma saída: Novo Registro → tipo Saída → frente, data, combustível, estoque de origem → para a frota JC escolha o equipamento e a leitura; para terceiro/prestador escolha a empresa e o destino: "Veículo" (placa, leitura e tanque cheio) ou "Funcionário" (funcionário da empresa + finalidade: motosserra, gerador, galão/reserva, máquina não cadastrada ou outros; sem leitura e fora da média de consumo) → litros, responsável (funcionário da empresa ou digitado) → Salvar. O Histórico tem as colunas Destino e Finalidade e os filtros por funcionário do terceiro e destino.

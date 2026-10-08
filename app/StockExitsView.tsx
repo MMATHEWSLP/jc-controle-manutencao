@@ -53,6 +53,15 @@ export default function StockExitsView({ authUser, flash }: { authUser: User; fl
   );
 }
 
+// RELATÓRIOS → Peças e produtos → Saídas de produtos: o mesmo Histórico da Movimentação (filtros e Excel).
+export function StockExitsReport({ flash }: { flash: (message: string) => void }) {
+  const [options, setOptions] = useState<StockOptions>({ fronts: [], defaultFrontId: null, equipment: [] });
+  const departments = useDepartments();
+  const [optionsError, setOptionsError] = useState("");
+  useEffect(() => { api<StockOptions>("/api/stock/options").then(setOptions).catch(() => setOptionsError("Não foi possível carregar os equipamentos para o filtro.")); }, []);
+  return <><LoadWarning message={optionsError} /><HistoryPanel options={options} departments={departments.departments} flash={flash} /></>;
+}
+
 type Line = { key: string; product: ProductOption | null; quantity: string };
 const newLine = (): Line => ({ key: crypto.randomUUID(), product: null, quantity: "" });
 

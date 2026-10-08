@@ -1,6 +1,6 @@
 import { getD1 } from "../../../db";
 import { authorize } from "../../../lib/auth";
-import { canSeePendencias } from "../../../lib/pendencias";
+import { canSeeReport } from "../../../lib/reports-catalog";
 import { siteUrl } from "../../../lib/site";
 import { buildWeeklyReport } from "../../../lib/weekly-report";
 import { previousWeek, weekOf, weeklyReportText } from "../../../lib/weekly-report-rules";
@@ -12,7 +12,7 @@ const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortal
 export async function GET(request: Request) {
   const auth = await authorize(request);
   if (auth.response) return auth.response;
-  if (!canSeePendencias(auth.user!)) return Response.json({ error: "Somente administrador ou gestor vê o resumo semanal." }, { status: 403 });
+  if (!canSeeReport(auth.user!, "resumo-semanal")) return Response.json({ error: "Você não tem acesso ao resumo semanal." }, { status: 403 });
   const params = new URL(request.url).searchParams;
   const day = params.get("semana") ?? "";
   const period = /^\d{4}-\d{2}-\d{2}$/.test(day) ? weekOf(day) : previousWeek(today());
