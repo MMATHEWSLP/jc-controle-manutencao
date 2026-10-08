@@ -386,6 +386,13 @@
       "when": 1791396309640,
       "tag": "0054_terceiro_doacoes_manual",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791466280453,
+      "tag": "0055_outros_gastos",
+      "breakpoints": true
     }
   ]
 }

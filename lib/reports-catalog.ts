@@ -17,7 +17,7 @@ export const REPORT_CATEGORIES = [
   { key: "combustivel", label: "Combustível", permission: "reports.combustivel", description: "Entradas, saídas e saldos, terceiros/doações, prestadores, comboio e a conferência com o Controle Diário." },
   { key: "pecas", label: "Peças e produtos", permission: "reports.pecas", description: "Saídas por produto, equipamento, colaborador, departamento e terceiro; produtos com saldo." },
   { key: "manutencao", label: "Manutenção", permission: "reports.manutencao", description: "Trocas de óleo, trocas vencidas e o status da frota." },
-  { key: "custos", label: "Custos", permission: "reports.custos", description: "Combustível, peças e trocas por equipamento e o custo total." },
+  { key: "custos", label: "Custos", permission: "reports.custos", description: "Relatórios casados (custo x produção), cada gasto separado e o custo total." },
   { key: "resumos", label: "Resumos", permission: "reports.resumos", description: "Resumo da operação da semana." },
 ] as const;
 
@@ -26,7 +26,8 @@ export type ReportPermission = typeof REPORT_CATEGORIES[number]["permission"];
 
 export type ReportId =
   | "producao" | "combustivel-movimentacao" | "combustivel-dia" | "diario-combustivel" | "consumo-terceiros" | "terceiros-empresa" | "comboio"
-  | "estoque-saidas" | "produtos-estoque" | "trocas-oleo" | "trocas-vencidas" | "frota-diario" | "custos-consumo" | "resumo-semanal";
+  | "estoque-saidas" | "produtos-estoque" | "trocas-oleo" | "trocas-vencidas" | "frota-diario"
+  | "casado-equipamento" | "casado-frente" | "casado-geral" | "custos-consumo" | "outros-gastos" | "resumo-semanal";
 
 export type ReportDef = {
   id: ReportId;
@@ -115,9 +116,29 @@ export const REPORTS: readonly ReportDef[] = [
     alsoIn: "Status da Frota",
   },
   {
+    id: "casado-equipamento", category: "custos", title: "Custo x produção por equipamento",
+    description: "Diesel, gasolina, peças, manutenção/serviços, pneus e outros de cada equipamento, com horas, km, viagens e m³: R$/h, R$/km, R$/viagem, R$/m³ e ranking dos mais caros.",
+    keywords: "casado casados custo producao equipamento ranking caros produtivos r$/h r$/km por viagem m3 diesel l/h", formats: "Excel · PDF",
+  },
+  {
+    id: "casado-frente", category: "custos", title: "Custo x produção por frente",
+    description: "As frentes lado a lado: cada gasto separado, o custo total, a produção e os indicadores; também por operador ou local.",
+    keywords: "casado casados custo producao frente comparativo operador local r$/h r$/viagem m3", formats: "Excel · PDF",
+  },
+  {
+    id: "casado-geral", category: "custos", title: "Custo x produção geral (mês a mês)",
+    description: "O custo total e cada gasto separado mês a mês, com a produção e a comparação com o período anterior.",
+    keywords: "casado casados custo total geral mensal mes a mes evolucao comparativo periodo anterior categoria gastos separados", formats: "Excel · PDF",
+  },
+  {
     id: "custos-consumo", category: "custos", title: "Custos e consumo por equipamento",
     description: "Combustível (litros e R$), consumo comparado à média do tipo, peças e trocas por equipamento, com o custo total e o custo por hora/km.",
     keywords: "custos consumo equipamento combustivel pecas trocas total custo por hora km media", formats: "CSV",
+  },
+  {
+    id: "outros-gastos", category: "custos", title: "Outros gastos (serviços e mão de obra)",
+    description: "Lançamentos de serviço/mão de obra de fora e outros gastos, por frente e equipamento. Entram nos relatórios casados.",
+    keywords: "outros gastos servico servicos mao de obra terceirizado lancar lancamento despesa", formats: "Excel",
   },
   {
     id: "resumo-semanal", category: "resumos", title: "Resumo semanal",

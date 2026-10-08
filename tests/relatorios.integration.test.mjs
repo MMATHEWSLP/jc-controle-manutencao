@@ -1,13 +1,21 @@
 // Integração (Postgres de teste já migrado) do menu RELATÓRIOS: os relatórios do Controle Diário
-// (produção e Diário x Combustível) rodam no Postgres de verdade e somam as viagens das fichas.
+// (produção e Diário x Combustível) rodam no Postgres de verdade e somam as viagens das fichas; os
+// relatórios casados (custo x produção) batem com os módulos de origem, por equipamento, por frente e
+// geral; e o lançamento de Outros gastos valida, respeita a frente e sai do relatório ao excluir.
 // Só roda com TEST_DATABASE_URL (nunca DATABASE_URL, que costuma ser a produção) e recusa o Supabase.
 //   TEST_DATABASE_URL=postgres://localhost/jc_teste npm run test:relatorios-banco
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getDb } from "../db/index.ts";
-import { dailyRecords, dailyRecordTrips, equipment, fuelMovements, fuelTypes, serviceFronts, users } from "../db/schema.ts";
+import { eq } from "drizzle-orm";
+import { getD1, getDb } from "../db/index.ts";
+import { componentEvents, components, dailyRecords, dailyRecordTrips, equipment, fuelMovements, fuelTypes, maintenances, maintenanceTypes, productStockMovements, products, serviceFronts, users } from "../db/schema.ts";
 import { ALL_PERMISSIONS } from "../lib/auth.ts";
+import { costProductionReport, parseCostProductionFilters } from "../lib/cost-production.ts";
 import { dieselConferencia, producao } from "../lib/daily-reports.ts";
+import { fleetCostReport } from "../lib/fleet-costs.ts";
+import { fuelCosts } from "../lib/fuel.ts";
+import { createOtherExpense, deleteOtherExpense, OtherExpenseError, updateOtherExpense } from "../lib/other-expenses.ts";
+import { listStockMovements } from "../lib/stock-history.ts";
 
 const testUrl = process.env.TEST_DATABASE_URL ?? "";
 if (/supabase\.(co|com)|pooler\./i.test(testUrl)) throw new Error("TEST_DATABASE_URL aponta para o Supabase: este teste grava dados e só pode rodar num banco de teste.");
@@ -55,4 +63,132 @@ test("produção do Controle Diário soma horas, km e as viagens das fichas", { 
   const conferencia = await dieselConferencia(sessao, filtros);
   const tr = conferencia.find((item) => item.equipmentId === trator.id);
   assert.deepEqual([tr.diario, tr.combustivel, tr.diferenca], [150, 140, 10]);
+  // Quem vê só algumas frentes (lista de ids na consulta): o mesmo resultado, sem erro.
+  const restrito = { ...sessao, profile: "GESTOR", allServiceFronts: false, serviceFrontIds: [frente.id] };
+  assert.equal((await producao(restrito, filtros, "frente"))[0].viagens, 5);
+  assert.equal((await dieselConferencia(restrito, filtros)).find((item) => item.equipmentId === trator.id).combustivel, 140);
+  assert.deepEqual(await producao({ ...restrito, serviceFrontIds: [frente.id + 100000, frente.id + 100001] }, filtros, "frente"), []);
+});
+
+const MES = { from: "2026-08-01", to: "2026-08-31" };
+const sessaoDe = (user, frente, extra = {}) => ({ id: user.id, name: user.name, username: "", email: user.email, profile: "ADMIN", taskRoleId: null, status: "ACTIVE", theme: "LIGHT", isPrimaryAdmin: false, lastAccessAt: null, createdAt: "", permissions: ALL_PERMISSIONS, serviceFrontId: frente.id, serviceFrontName: frente.name, allServiceFronts: true, serviceFrontIds: [], canExport: true, jobTitle: null, ...extra });
+
+test("relatórios casados batem com os módulos de origem (por equipamento, por frente e geral)", { skip: !enabled }, async () => {
+  const db = await getDb();
+  const [frente] = await db.insert(serviceFronts).values({ name: `CS${s} FRENTE` }).returning();
+  const [outra] = await db.insert(serviceFronts).values({ name: `CS${s} OUTRA` }).returning();
+  const [admin] = await db.insert(users).values({ email: `cs-admin-${s}@teste.local`, name: "Admin casados", role: "ADMIN", serviceFrontId: frente.id }).returning();
+  const sessao = sessaoDe(admin, frente);
+  const [trator, caminhao] = await db.insert(equipment).values([
+    { code: `CT-${s}`, prefix: `CT-${s}`, type: "TRATOR", brand: "M", model: "X", controlType: "HOURS", serviceFrontId: frente.id },
+    { code: `CC-${s}`, prefix: `CC-${s}`, type: "CAMINHÃO", brand: "M", model: "Y", controlType: "KM", serviceFrontId: frente.id },
+  ]).returning();
+  const tipos = await db.select().from(fuelTypes);
+  const diesel = tipos.find((tipo) => !tipo.code.startsWith("GASOLINA"));
+  const gasolina = tipos.find((tipo) => tipo.code.startsWith("GASOLINA"));
+  // Combustível: entradas com preço e saídas (frota e uma sem equipamento); ajuste de saldo e excluída ficam fora.
+  await db.insert(fuelMovements).values([
+    { serviceFrontId: frente.id, fuelTypeId: diesel.id, movementType: "ENTRADA", movementDate: "2026-08-01", quantity: 1000, unitPrice: 6 },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "ENTRADA", movementDate: "2026-08-01", quantity: 100, unitPrice: 6.5 },
+    { serviceFrontId: frente.id, fuelTypeId: diesel.id, movementType: "SAIDA", movementDate: "2026-08-05", quantity: 100, equipmentId: trator.id },
+    { serviceFrontId: frente.id, fuelTypeId: diesel.id, movementType: "SAIDA", movementDate: "2026-08-06", quantity: 200, equipmentId: caminhao.id },
+    { serviceFrontId: frente.id, fuelTypeId: gasolina.id, movementType: "SAIDA", movementDate: "2026-08-07", quantity: 20 },
+    { serviceFrontId: frente.id, fuelTypeId: diesel.id, movementType: "SAIDA", movementDate: "2026-08-08", quantity: 50, equipmentId: trator.id, balanceAdjustment: true },
+    { serviceFrontId: frente.id, fuelTypeId: diesel.id, movementType: "SAIDA", movementDate: "2026-08-08", quantity: 70, equipmentId: trator.id, deletedAt: "2026-08-09T00:00:00Z" },
+    { serviceFrontId: outra.id, fuelTypeId: diesel.id, movementType: "SAIDA", movementDate: "2026-08-08", quantity: 999, equipmentId: trator.id },
+  ]);
+  // Peças: uma saída para o trator (valor da saída) e uma para ninguém; estorno, correção e transferência ficam fora.
+  const [produto] = await db.insert(products).values({ tag: `CS${s}`, name: "Filtro teste", price: 99 }).returning();
+  await db.insert(productStockMovements).values([
+    { productId: produto.id, serviceFrontId: frente.id, delta: -2, reason: "Saída", source: "STOCK_EXIT", movementDate: "2026-08-10", unitPrice: 150, equipmentId: trator.id },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -1, reason: "Saída", source: "STOCK_EXIT", movementDate: "2026-08-11" },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -5, reason: "Estornada", source: "STOCK_EXIT", movementDate: "2026-08-10", unitPrice: 150, equipmentId: trator.id, reversedAt: "2026-08-12T00:00:00Z" },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -3, reason: "Correção", source: "HISTORY_IMPORT", movementDate: "2026-08-10", unitPrice: 150, equipmentId: trator.id, historyKind: "AJUSTE", affectsBalance: false },
+    { productId: produto.id, serviceFrontId: frente.id, delta: -4, reason: "Envio", source: "MATERIAL_REQUEST", movementDate: "2026-08-10", unitPrice: 150 },
+  ]);
+  // Troca de óleo com dois itens: o "Custo total" (200) está nas duas linhas e conta uma vez.
+  const [tipo] = await db.insert(maintenanceTypes).values({ name: `Óleo ${s}`, category: "MOTOR" }).returning();
+  const [tipo2] = await db.insert(maintenanceTypes).values({ name: `Filtro ${s}`, category: "MOTOR" }).returning();
+  const criada = "2026-08-12T10:00:00.000Z";
+  await db.insert(maintenances).values([tipo, tipo2].map((item) => ({ equipmentId: trator.id, serviceFrontId: frente.id, maintenanceTypeId: item.id, performedAt: "2026-08-12T09:00", workOrder: `OS-${s}`, cost: 200, createdAt: criada, updatedAt: criada })));
+  // Pneu: compra (900) na primeira montagem e uma recapagem (300).
+  const [pneu] = await db.insert(components).values({ kind: "TIRE", code: `P${s}`, brand: "B", purchaseCost: 900, status: "MOUNTED", equipmentId: caminhao.id }).returning();
+  await db.insert(componentEvents).values([
+    { componentId: pneu.id, eventType: "MOUNT", eventDate: "2026-08-03", equipmentId: caminhao.id },
+    { componentId: pneu.id, eventType: "RECAP", eventDate: "2026-08-20", equipmentId: caminhao.id, cost: 300 },
+  ]);
+  // Outros gastos: serviço no caminhão e outros sem equipamento (pela função de lançamento).
+  await createOtherExpense(db, sessao, { serviceFrontId: frente.id, equipmentId: caminhao.id, expenseDate: "2026-08-15", category: "SERVICO", amount: "500,00", description: "Mão de obra do torneiro" });
+  const outrosId = await createOtherExpense(db, sessao, { serviceFrontId: frente.id, equipmentId: null, expenseDate: "2026-08-16", category: "OUTROS", amount: 80, description: "Frete" });
+  // Produção: trator 10 h (dois operadores), caminhão 300 km com 3 viagens e 45 m³.
+  await db.insert(dailyRecords).values([
+    { equipmentId: trator.id, userId: admin.id, recordDate: "2026-08-05", workedToday: true, serviceFrontId: frente.id, readingUnit: "HOURS", startReading: 0, endReading: 4, operatorName: "Ana", location: "Talhão 1" },
+    { equipmentId: trator.id, userId: admin.id, recordDate: "2026-08-06", workedToday: true, serviceFrontId: frente.id, readingUnit: "HOURS", startReading: 4, endReading: 10, operatorName: "Bruno", location: "Talhão 2" },
+    { equipmentId: caminhao.id, userId: admin.id, recordDate: "2026-08-06", workedToday: true, serviceFrontId: frente.id, readingUnit: "KM", startReading: 100, endReading: 400, operatorName: "Carla", location: "Porto", totalTrips: 3, portTrips: 3, portVolumeM3: 45 },
+  ]);
+
+  const filtros = (por) => parseCostProductionFilters(new URLSearchParams({ de: MES.from, ate: MES.to, frente: String(frente.id), por }), "2026-10-08");
+  const geral = await costProductionReport(filtros("geral"), "ALL", "2026-10-08");
+  // Módulos de origem: custo médio do Combustível, Saídas de produtos e Custos e Consumo.
+  const custos = await fuelCosts(db);
+  const saidas = await db.select().from(fuelMovements).where(eq(fuelMovements.serviceFrontId, frente.id));
+  const valor = (fuel, equipamento) => saidas.filter((row) => row.movementType === "SAIDA" && !row.balanceAdjustment && !row.deletedAt && row.fuelTypeId === fuel.id && (equipamento === undefined || row.equipmentId === equipamento)).reduce((sum, row) => sum + custos.get(row.id).cost, 0);
+  const pecasMovimentacao = (await listStockMovements(db, { fronts: [frente.id], from: MES.from, to: MES.to, sources: ["STOCK_EXIT", "WORK_ORDER", "HISTORY_IMPORT"], exitsOnly: true, closedWorkOrdersOnly: true, excludeCorrections: true, limit: 2000 }))
+    .reduce((sum, row) => sum + (row.total ?? 0), 0);
+  assert.deepEqual(geral.total.costs, { diesel: valor(diesel), gasolina: valor(gasolina), pecas: 300 + 99, manutencao: 700, pneus: 1200, outros: 80 });
+  assert.equal(valor(diesel), 1800);
+  assert.equal(pecasMovimentacao, 300, "Saídas de produtos soma o valor da saída (a sem valor fica de fora lá)");
+  assert.equal(geral.total.total, 1800 + 130 + 399 + 700 + 1200 + 80);
+  assert.equal(geral.total.dieselLiters, 300);
+  assert.equal(geral.total.hours, 10);
+  assert.equal(geral.total.km, 300);
+  assert.equal(geral.total.trips, 3);
+  assert.equal(geral.total.volume, 45);
+
+  const porEquipamento = await costProductionReport(filtros("equipamento"), "ALL", "2026-10-08");
+  const linha = (prefix) => porEquipamento.rows.find((row) => row.key === prefix);
+  assert.equal(linha(trator.prefix).total, 600 + 300 + 200);
+  assert.equal(linha(trator.prefix).perHour, 110);
+  assert.equal(linha(caminhao.prefix).total, 1200 + 900 + 300 + 500);
+  assert.equal(linha(caminhao.prefix).perKm, 2900 / 300);
+  assert.equal(linha(caminhao.prefix).perM3, 2900 / 45);
+  assert.equal(linha("Sem equipamento").total, 130 + 99 + 80);
+  assert.equal(porEquipamento.total.total, geral.total.total);
+  // Custos e Consumo (por equipamento) dá o mesmo combustível, peças e troca (contada uma vez).
+  const fleet = await fleetCostReport(await getD1(), sessao, { from: MES.from, to: MES.to, frontId: frente.id });
+  const tratorFleet = fleet.rows.find((row) => row.equipmentId === trator.id);
+  assert.deepEqual([tratorFleet.fuelCost, tratorFleet.partsCost, tratorFleet.maintenanceCost, tratorFleet.totalCost], [600, 300, 200, 1100]);
+
+  const porFrente = await costProductionReport(filtros("frente"), "ALL", "2026-10-08");
+  assert.deepEqual(porFrente.rows.map((row) => [row.key, row.total]), [[frente.name, geral.total.total]]);
+  const porOperador = await costProductionReport(filtros("operador"), "ALL", "2026-10-08");
+  const ana = porOperador.rows.find((row) => row.key === "Ana");
+  assert.equal(ana.total, Math.round(1100 * 0.4 * 100) / 100, "Ana trabalhou 4 das 10 horas do trator");
+  assert.equal(Math.round(porOperador.rows.reduce((sum, row) => sum + row.total, 0) * 100) / 100, geral.total.total);
+
+  // Frente que a pessoa não vê fica fora; excluir o gasto tira do relatório.
+  const soOutra = await costProductionReport(filtros("geral"), [outra.id], "2026-10-08");
+  assert.equal(soOutra.total.total, 0);
+  await deleteOtherExpense(db, sessao, outrosId);
+  const depois = await costProductionReport(filtros("geral"), "ALL", "2026-10-08");
+  assert.equal(depois.total.costs.outros, 0);
+});
+
+test("Outros gastos: validação, frente da pessoa e edição", { skip: !enabled }, async () => {
+  const db = await getDb();
+  const [frente] = await db.insert(serviceFronts).values({ name: `OG${s} FRENTE` }).returning();
+  const [outra] = await db.insert(serviceFronts).values({ name: `OG${s} OUTRA` }).returning();
+  const [user] = await db.insert(users).values({ email: `og-${s}@teste.local`, name: "Usuário gastos", role: "OPERADOR", serviceFrontId: frente.id }).returning();
+  const sessao = sessaoDe(user, frente, { profile: "OPERADOR", allServiceFronts: false, serviceFrontIds: [frente.id], permissions: ["costs.other_expenses"] });
+  const base = { serviceFrontId: frente.id, equipmentId: null, expenseDate: "2026-08-20", category: "SERVICO", amount: "1.234,56", description: "Guincho" };
+  await assert.rejects(createOtherExpense(db, sessao, { ...base, amount: "0" }), (error) => error instanceof OtherExpenseError && error.field === "amount");
+  await assert.rejects(createOtherExpense(db, sessao, { ...base, description: "x" }), (error) => error instanceof OtherExpenseError && error.field === "description");
+  await assert.rejects(createOtherExpense(db, sessao, { ...base, category: "PECAS" }), (error) => error instanceof OtherExpenseError && error.field === "category");
+  await assert.rejects(createOtherExpense(db, sessao, { ...base, serviceFrontId: outra.id }), (error) => error instanceof OtherExpenseError && error.status === 403);
+  const id = await createOtherExpense(db, sessao, base);
+  const lido = async () => (await costProductionReport(parseCostProductionFilters(new URLSearchParams({ de: "2026-08-01", ate: "2026-08-31", frente: String(frente.id), por: "geral" }), "2026-10-08"), [frente.id], "2026-10-08")).total.costs;
+  assert.equal((await lido()).manutencao, 1234.56);
+  await updateOtherExpense(db, sessao, id, { ...base, category: "OUTROS", amount: 100 });
+  assert.deepEqual([(await lido()).manutencao, (await lido()).outros], [0, 100]);
+  await assert.rejects(updateOtherExpense(db, sessao, id, { ...base, serviceFrontId: outra.id }), (error) => error instanceof OtherExpenseError && error.status === 403);
 });

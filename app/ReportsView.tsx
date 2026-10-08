@@ -18,10 +18,12 @@ const ThirdPartyConsumptionReport = dynamic(() => import("./ThirdPartiesView").t
 const ThirdPartySummaryPanel = dynamic(() => import("./ThirdPartiesView").then((module) => module.ThirdPartySummaryPanel), { loading: Loading });
 const StockExitsReport = dynamic(() => import("./StockExitsView").then((module) => module.StockExitsReport), { loading: Loading });
 const FuelDailySummaryModal = dynamic(() => import("./FuelDailySummary"), { loading: Loading });
+const CostProductionReport = dynamic(() => import("./CostProductionReport"), { loading: Loading });
+const OtherExpensesView = dynamic(() => import("./CostProductionReport").then((module) => module.OtherExpensesView), { loading: Loading });
 
 type User = { id: number; profile: string; permissions: string[]; canExport: boolean; allServiceFronts: boolean; serviceFrontIds: number[] };
 type Front = { id: number; name: string };
-type Equipment = { id: number; prefix: string; type: string };
+type Equipment = { id: number; prefix: string; type: string; serviceFrontId?: number | null };
 type Props = { authUser: User; flash: (message: string) => void; fronts: Front[]; equipment: Equipment[] };
 
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Fortaleza", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -119,6 +121,10 @@ function ReportBody({ report, authUser, flash, fronts, equipment, back }: { repo
     case "trocas-oleo": return <OilChangesExport authUser={authUser} fronts={fronts} equipment={equipmentOptions} />;
     case "trocas-vencidas": return <AlertsExport fronts={fronts} equipment={equipmentOptions} />;
     case "frota-diario": return <FleetDayExport fronts={fronts} equipment={equipmentOptions} />;
+    case "casado-equipamento": return <CostProductionReport initialGrouping="equipamento" fronts={fronts} equipment={equipmentOptions} flash={flash} />;
+    case "casado-frente": return <CostProductionReport initialGrouping="frente" fronts={fronts} equipment={equipmentOptions} flash={flash} />;
+    case "casado-geral": return <CostProductionReport initialGrouping="mes" fronts={fronts} equipment={equipmentOptions} flash={flash} />;
+    case "outros-gastos": return <OtherExpensesView fronts={fronts} equipment={equipmentOptions} flash={flash} />;
     case "custos-consumo": return <FleetCostsView />;
     case "resumo-semanal": return <WeeklyReportView fronts={fronts} flash={flash} />;
   }
@@ -234,7 +240,7 @@ function ProductsExport() {
   return <ExportPanel note="Produtos ativos com o saldo nas frentes em exibição (seletor de frente no topo). A busca vale para nome, TAG e referência."
     actions={[{ label: "PDF", href: `/api/products-pdf${params ? `?${params}` : ""}` }, { label: "CSV (Excel)", href: `/api/products-csv${params ? `?${params}` : ""}` }]}>
     <label className="stock-filter-wide">Buscar<input value={text} onChange={(event) => setText(event.target.value)} placeholder="Nome, TAG ou referência (vazio = todos)" /></label>
-    <label className="fleet-costs-check"><input type="checkbox" checked={review} onChange={(event) => setReview(event.target.checked)} />Só pendentes de revisão</label>
+    <label className="report-check"><input type="checkbox" checked={review} onChange={(event) => setReview(event.target.checked)} />Só pendentes de revisão</label>
   </ExportPanel>;
 }
 

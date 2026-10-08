@@ -24,13 +24,18 @@ export function parseReportFilters(params: URLSearchParams, today: string): Repo
 }
 
 // Operador exibido: sem operador / cadastro de campo / nome digitado / a própria conta (login de campo).
-const OPERADOR = sql`CASE WHEN d.no_operator THEN 'Sem operador' ELSE coalesce(fo.name, d.operator_name, u.name) END`;
-const FRENTE_ID = sql`coalesce(d.service_front_id, d.official_service_front_id)`;
+// OPERADOR, FRENTE_ID e BASE também servem aos relatórios casados (lib/cost-production.ts), para a
+// produção somar igual nos dois.
+// "coluna IN (…)" com um parâmetro por id: um array JS no sql`` vira valores soltos, e "ANY((1, 2)::int[])"
+// (ou "ANY((1)::int[])") o Postgres recusa — quebrava os relatórios de quem vê só algumas frentes.
+export const inIds = (coluna: SQL, ids: readonly number[]) => (ids.length ? sql`${coluna} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})` : sql`false`);
+export const OPERADOR = sql`CASE WHEN d.no_operator THEN 'Sem operador' ELSE coalesce(fo.name, d.operator_name, u.name) END`;
+export const FRENTE_ID = sql`coalesce(d.service_front_id, d.official_service_front_id)`;
 
 function onde(user: SessionUser, f: ReportFilters): SQL {
   const partes: SQL[] = [sql`d.record_date BETWEEN ${f.from} AND ${f.to}`];
   const visiveis = frentesVisiveis(user);
-  if (visiveis !== "ALL") partes.push(visiveis.length ? sql`${FRENTE_ID} = ANY(${visiveis}::int[])` : sql`false`);
+  if (visiveis !== "ALL") partes.push(inIds(FRENTE_ID, visiveis));
   if (f.frontId) partes.push(sql`${FRENTE_ID} = ${f.frontId}`);
   if (f.equipmentId) partes.push(sql`d.equipment_id = ${f.equipmentId}`);
   if (f.operator) partes.push(sql`${OPERADOR} ILIKE ${`%${f.operator}%`}`);
@@ -42,7 +47,7 @@ function onde(user: SessionUser, f: ReportFilters): SQL {
 
 // As contagens das viagens usam count(t.id): com count(*) e o FILTER só sobre "d", o Postgres trata o
 // agregado como da consulta de fora e recusa ("aggregate functions are not allowed in FROM clause").
-const BASE = sql`FROM daily_records d
+export const BASE = sql`FROM daily_records d
   JOIN equipment e ON e.id = d.equipment_id
   JOIN users u ON u.id = d.user_id
   LEFT JOIN users fo ON fo.id = d.field_operator_id
@@ -80,7 +85,7 @@ export async function producao(user: SessionUser, f: ReportFilters, por: Agrupam
 export async function dieselConferencia(user: SessionUser, f: ReportFilters) {
   const db = await getDb();
   const visiveis = frentesVisiveis(user);
-  const frenteComb = visiveis === "ALL" ? sql`true` : visiveis.length ? sql`fm.service_front_id = ANY(${visiveis}::int[])` : sql`false`;
+  const frenteComb = visiveis === "ALL" ? sql`true` : inIds(sql`fm.service_front_id`, visiveis);
   const result = await db.execute(sql`WITH diario AS (
       SELECT d.equipment_id, d.record_date AS dia, sum(coalesce(d.reported_diesel_liters, 0) + fu.litros)::float8 AS litros, count(*)::int AS registros,
         string_agg(DISTINCT ${OPERADOR}, ', ') AS operadores, bool_or(d.diesel_note IS NOT NULL) AS nota

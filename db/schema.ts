@@ -2155,3 +2155,24 @@ export const stockImportBatches = pgTable("stock_import_batches", {
   revertedBy: integer("reverted_by").references(() => users.id),
   ...timestamps,
 }, (table) => [index("stock_import_batches_created_idx").on(table.createdAt)]);
+
+// ---------------------------------------------------------------------------
+// Outros gastos (RELATÓRIOS → Custos): o que não passa pelo estoque nem pelo combustível —
+// serviço/mão de obra de fora e outros. Entram nos relatórios casados (custo x produção) com a
+// frente e, se informado, o equipamento. Exclusão é lógica (deleted_at), para o relatório do passado
+// poder ser conferido.
+// ---------------------------------------------------------------------------
+export const otherExpenses = pgTable("other_expenses", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  equipmentId: integer("equipment_id").references(() => equipment.id),
+  expenseDate: text("expense_date").notNull(),
+  category: text("category", { enum:["SERVICO","OUTROS"] }).notNull(),
+  amount: doublePrecision("amount").notNull(),
+  description: text("description").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  deletedAt: text("deleted_at"),
+  deletedBy: integer("deleted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("other_expenses_front_date_idx").on(table.serviceFrontId, table.expenseDate), index("other_expenses_equipment_idx").on(table.equipmentId)]);

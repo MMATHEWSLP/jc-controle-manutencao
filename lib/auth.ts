@@ -147,6 +147,7 @@ export const PERMISSION_GROUPS = [
     ["reports.manutencao","Relatórios de Manutenção (trocas de óleo, vencidas, status da frota)"],
     ["reports.custos","Relatórios de Custos (valores em R$ por equipamento e frente)"],
     ["reports.resumos","Resumos da operação (semanal)"],
+    ["costs.other_expenses","Lançar, editar e excluir Outros gastos (serviços/mão de obra e outros) das frentes que enxerga"],
   ]},
 ] as const;
 
