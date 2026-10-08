@@ -1,6 +1,8 @@
 import { assertSameOrigin, authorize } from "../../../../lib/auth";
 import { approveConvoyBatch, CONVOY_LIST_LIMIT, ConvoyError, convoySettings, listConvoyRecords, parseConvoyListFilters } from "../../../../lib/convoy";
 import { getDb } from "../../../../db";
+import { notifyConvoyAction } from "../../../../lib/convoy-notify";
+import { runAfterResponse } from "../../../../lib/notifications";
 
 // Aba "Aprovação do comboio": lista com as etiquetas (SEM FOTO, leitura menor, salto alto,
 // litragem alta, foto diverge), leitura digitada × última leitura e consumo estimado.
@@ -27,7 +29,10 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { action?: string; ids?: unknown };
     if (body.action !== "approve_batch" || !Array.isArray(body.ids)) return Response.json({ error: "Pedido inválido." }, { status: 400 });
     const ids = [...new Set(body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 100);
-    return Response.json(await approveConvoyBatch(auth.user!, ids));
+    const result = await approveConvoyBatch(auth.user!, ids);
+    // Cada motorista recebe um aviso só ("3 abastecimentos aprovados"); o lote não leva mensagem.
+    if (result.approved.length) runAfterResponse("convoy.batch", async () => { for (const id of result.approved) await notifyConvoyAction(id, "approved", { actorId: auth.user!.id, notify: true, message: null }); });
+    return Response.json(result);
   } catch (error) {
     if (error instanceof ConvoyError) return Response.json({ error: error.message }, { status: error.status });
     console.error("[convoy.batch]", error);

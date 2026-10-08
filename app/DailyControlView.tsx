@@ -7,6 +7,7 @@ import {
   type DailyRecordDraft, type ProductionType, type ReadingCheck, type ReadingHistory, type ReadingUnit,
 } from "../lib/daily-record-rules";
 import { reportNetworkFailure } from "../lib/connectivity";
+import { consumirAba } from "../lib/assistente-nav";
 import ChecklistView from "./ChecklistView";
 import { enqueue, listQueued, QUEUE_EVENT, removeQueued, syncQueue, type QueuedDailyRecord } from "../lib/offline-queue";
 import { optimizePhoto } from "../lib/photo-client";
@@ -45,11 +46,15 @@ function blankDraft(recordDate:string, equipmentId:number|null, serviceFrontId:n
     hasProblemPhoto:false, hasProductionPhoto:false, operatorName:"" };
 }
 
+const TABS:readonly Tab[]=["new","mine","checklist","history","fronts","operators","import"];
+function requestedTab():Tab|null { if(typeof window==="undefined")return null; const aba=consumirAba("Controle Diário")?.aba; return TABS.includes(aba as Tab)?aba as Tab:null; }
+
 export default function DailyControlView({ flash, currentUser, activeFrontId=null }:{ flash:(message:string)=>void; currentUser:CurrentUser; activeFrontId?:number|null }) {
   const [context,setContext]=useState<Context|null>(null);
   const [error,setError]=useState("");
   // Link/recarga com os filtros do Histórico na URL abre direto nele.
-  const [tab,setTab]=useState<Tab>(()=>isHistoryUrl()?"history":"new");
+  // Aba pedida por outra tela (notificação: "Solicitações de frente", "Checklist pré-uso", "Histórico").
+  const [tab,setTab]=useState<Tab>(()=>requestedTab()??(isHistoryUrl()?"history":"new"));
   // Registro aberto para edição (somente com a permissão "daily.manage").
   const [editing,setEditing]=useState<RecordItem|null>(null);
   const load=useCallback(async()=>{ setError(""); try{ const result=await api<Context>("/api/daily-records/context"); setContext(result); if(!result.canViewAll)clearHistoryUrl(); if(result.canViewAll&&isHistoryUrl())setTab("history"); else if(!result.canRegister)setTab(result.canViewAll?"history":result.canFrontRequests?"fronts":result.canFieldOperators?"operators":"mine"); else setTab((current)=>current==="history"?"new":current); }catch(problem){ setError(problem instanceof Error?problem.message:"Falha ao carregar."); } },[]);

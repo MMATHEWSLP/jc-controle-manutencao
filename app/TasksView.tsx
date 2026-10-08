@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { consumirAba } from "../lib/assistente-nav";
 import { formatBrDate } from "../lib/date-format";
 
 type Urgency = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
@@ -121,7 +122,8 @@ export default function TasksView({ authUser, flash }:{ authUser:AuthUser; flash
   const [requestingNotDone,setRequestingNotDone]=useState<TaskNode|null>(null);
   const [deciding,setDeciding]=useState<{ node:TaskNode; kind:"COMPLETION"|"NOT_DONE" }|null>(null);
   const [cancelling,setCancelling]=useState<TaskNode|null>(null);
-  const [viewingId,setViewingId]=useState<number|null>(null);
+  // Notificação de tarefa (sino/celular) abre a tarefa: aba "tarefa:<id>".
+  const [viewingId,setViewingId]=useState<number|null>(()=>{ if(typeof window==="undefined")return null; const aba=consumirAba("Tarefas")?.aba; const id=aba?.startsWith("tarefa:")?Number(aba.slice(7)):NaN; return Number.isInteger(id)&&id>0?id:null; });
 
   const load=useCallback(async()=>{ setLoading(true); setError(""); try{ const result=await api<{ tasks:TaskNode[]; assignableUsers:AssignableUser[]; canCreate:boolean; viewerHasTaskRole:boolean }>("/api/tasks"); setTree(result.tasks); setAssignableUsers(result.assignableUsers); setCanCreate(result.canCreate); setViewerHasTaskRole(result.viewerHasTaskRole); }catch(problem){ setError(problem instanceof Error?problem.message:"Não foi possível carregar as tarefas."); }finally{ setLoading(false); } },[]);
   useEffect(()=>{ load(); },[load]);

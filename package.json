@@ -75,6 +75,8 @@
     "test:sessao-banco": "tsx --test tests/session.integration.test.mjs",
     "test:troca-oleo-banco": "tsx --test tests/troca-oleo-leitura-menor.integration.test.mjs",
     "test:relatorios-banco": "tsx --test tests/relatorios.integration.test.mjs",
+    "test:notification-events": "tsx --test tests/notification-events.test.mjs",
+    "test:notificacoes-banco": "tsx --test tests/notificacoes.integration.test.mjs",
     "test:cost-production-rules": "esbuild tests/cost-production-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-cost-production-rules.mjs && node --test /tmp/manutencao-preventiva-cost-production-rules.mjs",
     "test:reports-catalog": "esbuild tests/reports-catalog.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=tests/.tmp-reports-catalog.mjs && node --test tests/.tmp-reports-catalog.mjs",
     "test:field-operators-rules": "esbuild tests/field-operators-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-field-operators-rules.mjs && node --test /tmp/manutencao-preventiva-field-operators-rules.mjs",
@@ -89,7 +91,8 @@
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -98,6 +101,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/web-push": "^3.6.4",
     "dotenv": "^16.4.7",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",

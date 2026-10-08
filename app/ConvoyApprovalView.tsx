@@ -257,6 +257,9 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Aviso ao motorista (sino/celular) junto com Aprovar, Rejeitar e Pedir correção.
+  const [notifyDriver, setNotifyDriver] = useState(true);
+  const [driverMessage, setDriverMessage] = useState("");
   // Terceiros: vincular/cadastrar (CADASTRO PENDENTE), frente, tanque cheio, responsável e confirmações.
   const [parties, setParties] = useState<ThirdPartyOption[]>([]);
   const [canManage, setCanManage] = useState(false);
@@ -288,7 +291,7 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
 
   async function act(body: Record<string, unknown>) {
     setBusy(true); setError("");
-    try { const result = await post<{ message: string }>(`/api/fuel/convoy/${item.id}`, body); await changed(result.message); }
+    try { const result = await post<{ message: string }>(`/api/fuel/convoy/${item.id}`, { ...body, notify: notifyDriver, notifyMessage: driverMessage }); await changed(result.message); }
     catch (problem) {
       const data = (problem as { data?: { confirm?: "TANK" | "OUTLIER"; exception?: boolean } }).data ?? {};
       const message = problem instanceof Error ? problem.message : "Não foi possível concluir.";
@@ -414,6 +417,10 @@ function ReviewModal({ item, fuelTypes, fronts, close, changed, flash, reload }:
             <small className="table-sub">Corrigir litros, leitura, equipamento ou motorista fica registrado (valor original, novo, quem e quando). A saída é gravada como Combustível → Saída → Frota e só então baixa o saldo e atualiza a leitura.</small>
           </>}
           {item.corrections.length > 0 && <div><b>Correções</b><ul className="convoy-corrections">{item.corrections.map((change, index) => <li key={index}>{change.campo}: {String(change.de ?? "—")} → {String(change.para ?? "—")} · {change.por} · {change.em ? when(change.em) : ""}{change.origem === "MOTORISTA" ? " (motorista)" : ""}</li>)}</ul></div>}
+          {open && <div className="notify-option">
+            <label className="report-check"><input type="checkbox" checked={notifyDriver} onChange={(event) => setNotifyDriver(event.target.checked)} />Notificar o motorista</label>
+            {notifyDriver && <input value={driverMessage} maxLength={300} placeholder="Mensagem para o motorista (opcional)" aria-label="Mensagem para o motorista" onChange={(event) => setDriverMessage(event.target.value)} />}
+          </div>}
           {error && <div className="fleet-form-error">! {error}</div>}
           <div className="convoy-actions">
             {item.hasMeterPhoto && item.reading !== null && <button className="secondary" disabled={busy} onClick={() => void aiCheck()}>Conferir foto (Assistente)</button>}

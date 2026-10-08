@@ -8,6 +8,9 @@
  *   abastecimento e leituras têm fila própria (lib/offline-queue.ts) para enviar depois.
  * - Ao sair do sistema ou entrar com outro usuário, a página pede para apagar os dados salvos
  *   (mensagem CLEAR_USER_DATA), para um funcionário nunca ver dados de outro no mesmo celular.
+ * - Notificações (Web Push, lib/push.ts): mostra o aviso com o ícone do próprio app e, ao tocar,
+ *   abre (ou traz para frente) o sistema na tela da notificação. Nada muda no ícone, no nome nem na
+ *   aparência do app na Tela de Início.
  */
 const VERSION = "v2";
 const STATIC_CACHE = `jc-static-${VERSION}`;
@@ -17,7 +20,7 @@ const PRECACHE = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"
 // Exportações (PDF/Excel/CSV) e login/logout/sessão nunca são guardados. A sessão não usa cópia
 // salva: sem sinal, o próprio app usa o último usuário confirmado (lib/session-client.ts), e uma
 // cópia velha poderia dizer "deslogado" (ou o usuário errado) depois de trocar de login.
-const API_SKIP = [/^\/api\/ping/, /^\/api\/auth\/(login|logout|theme|session)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
+const API_SKIP = [/^\/api\/ping/, /^\/api\/notifications/, /^\/api\/auth\/(login|logout|theme|session)/, /-pdf(\/|$)/, /-xlsx(\/|$)/, /-csv(\/|$)/, /^\/api\/whatsapp/];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE)).catch(() => undefined).then(() => self.skipWaiting()));
@@ -90,4 +93,29 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") && !API_SKIP.some((pattern) => pattern.test(url.pathname))) {
     event.respondWith(networkFirst(request, API_CACHE));
   }
+});
+
+// Aviso que chegou do servidor ({title, body, url, tag}). O iPhone exige mostrar um aviso a cada push.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : "" }; }
+  const options = { body: data.body || "", icon: "/icon-192.png", data: { url: data.url || "/" } };
+  // Mesma etiqueta = substitui o aviso anterior (ex.: "5 abastecimentos aguardando" no lugar de "4").
+  if (data.tag) { options.tag = data.tag; options.renotify = true; }
+  event.waitUntil(self.registration.showNotification(data.title || "JC Sistema", options));
+});
+
+// Toque no aviso: usa a janela do sistema já aberta (a página navega sozinha) ou abre uma nova.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (open) {
+      open.postMessage({ type: "OPEN_NOTIFICATION", url });
+      return open.focus();
+    }
+    return self.clients.openWindow(url);
+  })());
 });

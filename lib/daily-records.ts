@@ -165,6 +165,8 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
     if (value.hadProduction && !productionPhotoKey) throw new DailyRecordError(value.productionType === "BALDEIO" ? "Anexe a foto da ficha do baldeio." : "Anexe a foto da produção.");
 
     const now = new Date().toISOString();
+    // Pedido de mudança de frente criado (ou acrescentado a um já aberto): vira notificação na rota.
+    let frontChange: { requestId: number; created: boolean } | null = null;
     const id = await db.transaction(async (tx) => {
       const [record] = await tx.insert(dailyRecords).values({
         equipmentId: value.equipmentId, userId: user.id, recordDate: value.recordDate, workedToday: value.workedToday, noWorkReason: value.noWorkReason,
@@ -194,6 +196,7 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
           }).returning({ id: serviceFrontChangeRequests.id });
           requestId = created.id;
         }
+        frontChange = { requestId, created: !pending };
         await tx.update(dailyRecords).set({ frontChangeRequestId: requestId }).where(eq(dailyRecords.id, record.id));
       }
       if (value.fuelings.length) await tx.insert(dailyRecordFuelings).values(value.fuelings.map((fueling, index) => ({
@@ -206,7 +209,7 @@ export async function createDailyRecord(user: SessionUser, value: DailyRecordVal
         newValue: JSON.stringify({ equipment: item.prefix, recordDate: value.recordDate, workedToday: value.workedToday, manualEntry: value.operatorName !== null, operatorName: value.operatorName }), occurredAt: now });
       return record.id;
     });
-    return { id, prefix: item.prefix };
+    return { id, prefix: item.prefix, frontChange: frontChange as { requestId: number; created: boolean } | null };
   } catch (error) {
     for (const key of stored) await removePhoto(key);
     if (error instanceof Error && DUPLICATE_INDEX.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {

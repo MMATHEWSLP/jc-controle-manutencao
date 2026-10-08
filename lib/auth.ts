@@ -17,7 +17,8 @@ export const SESSION_COOKIE = "maintenance_session";
 // a estas rotas, trocar o PIN ou inativar derruba a sessão na hora e todo registro guarda quem lançou.
 // "/api/fuel/convoy/field": tela "Abastecimentos" do motorista do comboio (também exige a permissão
 // fuel.convoy_register, que só existe para quem tem a opção marcada no cadastro de campo).
-const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field"];
+// /api/notifications: o sino e os avisos no celular do próprio funcionário (as rotas de ADMIN exigem permissão).
+const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field", "/api/notifications"];
 // Cloudflare Workers Web Crypto accepts PBKDF2 iteration counts up to 100,000.
 // Keep the maximum supported cost so hashing works identically in production.
 const PASSWORD_ITERATIONS = 100_000;
@@ -148,6 +149,11 @@ export const PERMISSION_GROUPS = [
     ["reports.custos","Relatórios de Custos (valores em R$ por equipamento e frente)"],
     ["reports.resumos","Resumos da operação (semanal)"],
     ["costs.other_expenses","Lançar, editar e excluir Outros gastos (serviços/mão de obra e outros) das frentes que enxerga"],
+  ]},
+  // Central de notificações (lib/notifications.ts). Ver e silenciar as próprias notificações não exige permissão.
+  { label:"Notificações", items:[
+    ["notifications.configure","Configurar notificações (eventos, destinatários) e ver o registro de envios"],
+    ["notifications.send","Enviar notificação avulsa para pessoas, perfis ou frentes"],
   ]},
 ] as const;
 
@@ -338,16 +344,25 @@ export async function destroySession(request:Request) {
 }
 
 export async function effectivePermissions(userId:number,profile:Profile) {
-  if(profile==="ADMIN")return [...ALL_PERMISSIONS];
+  if(profile==="ADMIN")return resolvePermissions(profile,[]);
+  const db=await getDb();
   if(profile==="CAMPO"){
-    const db=await getDb();
     // Antes das migrações 0051/0052 as colunas não existem: o acesso de campo segue só com o Controle Diário.
     const row=(await db.select({convoy:users.convoyFuelRegister,daily:users.fieldDailyAccess}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
-    if(!row?.convoy)return [...PROFILE_DEFAULTS.CAMPO];
-    return [...(row.daily?PROFILE_DEFAULTS.CAMPO:[]),"fuel.convoy_register" as Permission];
+    return resolvePermissions(profile,[],{convoy:Boolean(row?.convoy),daily:Boolean(row?.daily)});
   }
-  const db=await getDb();
   const overrides=await db.select({permission:userPermissions.permission,enabled:userPermissions.enabled}).from(userPermissions).where(eq(userPermissions.userId,userId));
+  return resolvePermissions(profile,overrides);
+}
+
+// Mesma regra de effectivePermissions sem consultar o banco: usada para descobrir de uma vez quem tem
+// uma permissão (destinatários de notificação, lib/notifications.ts).
+export function resolvePermissions(profile:Profile,overrides:readonly {permission:string;enabled:boolean}[],campo?:{convoy:boolean;daily:boolean}):Permission[] {
+  if(profile==="ADMIN")return [...ALL_PERMISSIONS];
+  if(profile==="CAMPO"){
+    if(!campo?.convoy)return [...PROFILE_DEFAULTS.CAMPO];
+    return [...(campo.daily?PROFILE_DEFAULTS.CAMPO:[]),"fuel.convoy_register" as Permission];
+  }
   const values=new Set<Permission>(PROFILE_DEFAULTS[profile]??[]);
   for(const row of overrides){
     if(!ALL_PERMISSIONS.includes(row.permission as Permission))continue;

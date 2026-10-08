@@ -31,6 +31,9 @@ export function FrontRequestsPanel({ flash, onChanged }:{ flash:(message:string)
   const [error,setError]=useState("");
   const [rejecting,setRejecting]=useState<FrontRequest|null>(null);
   const [busyId,setBusyId]=useState<number|null>(null);
+  // Aviso a quem pediu (sino/celular) ao aprovar ou recusar; desmarcado = sem aviso.
+  const [tell,setTell]=useState<Record<number,{notify:boolean;message:string}>>({});
+  const tellOf=(id:number)=>tell[id]??{ notify:true, message:"" };
   const load=useCallback(async()=>{
     setLoading(true); setError("");
     try { setRequests((await api<{requests:FrontRequest[]}>(`/api/daily-records/front-requests?status=${status}`)).requests); }
@@ -41,7 +44,8 @@ export function FrontRequestsPanel({ flash, onChanged }:{ flash:(message:string)
 
   async function review(item:FrontRequest, action:"APPROVE"|"REJECT", note:string) {
     setBusyId(item.id); setError("");
-    try { const result=await api<{message:string}>(`/api/daily-records/front-requests/${item.id}`,jsonInit("POST",{ action, note })); flash(result.message); setRejecting(null); await load(); onChanged(); }
+    const choice=tellOf(item.id);
+    try { const result=await api<{message:string}>(`/api/daily-records/front-requests/${item.id}`,jsonInit("POST",{ action, note, notify:choice.notify, notifyMessage:choice.message })); flash(result.message); setRejecting(null); await load(); onChanged(); }
     catch(problem) { setError(problem instanceof Error?problem.message:"Não foi possível concluir."); }
     finally { setBusyId(null); }
   }
@@ -61,6 +65,10 @@ export function FrontRequestsPanel({ flash, onChanged }:{ flash:(message:string)
           {item.reason && <div className="wide"><dt>Observações</dt><dd className="daily-pre">{item.reason}</dd></div>}
           {item.status!=="PENDING" && <div className="wide"><dt>Analisado por</dt><dd>{item.reviewedBy} · {formatDateTime(item.reviewedAt)}{item.reviewNote?` — ${item.reviewNote}`:""}</dd></div>}
         </dl>
+        {item.status==="PENDING" && <div className="notify-option">
+          <label className="report-check"><input type="checkbox" checked={tellOf(item.id).notify} onChange={(event)=>setTell((current)=>({ ...current, [item.id]:{ ...tellOf(item.id), notify:event.target.checked } }))}/>Notificar quem pediu</label>
+          {tellOf(item.id).notify && <input value={tellOf(item.id).message} maxLength={300} placeholder="Mensagem (opcional)" aria-label="Mensagem para quem pediu" onChange={(event)=>setTell((current)=>({ ...current, [item.id]:{ ...tellOf(item.id), message:event.target.value } }))}/>}
+        </div>}
         {item.status==="PENDING" && <footer className="daily-record-actions">
           <button type="button" className="danger-action" disabled={busyId===item.id} onClick={()=>setRejecting(item)}>Recusar</button>
           <button type="button" className="primary" disabled={busyId===item.id} onClick={()=>review(item,"APPROVE","")}>{busyId===item.id?"Aplicando...":"Aprovar e transferir"}</button>

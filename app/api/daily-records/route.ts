@@ -1,6 +1,8 @@
 import { assertSameOrigin, authorize } from "../../../lib/auth";
 import { checkReading, requiresManualOperator, validateDailyRecord, type DailyRecordDraft } from "../../../lib/daily-record-rules";
+import { notifyDailyProblem, notifyFrontRequest } from "../../../lib/daily-notify";
 import { canRegister, canViewAll, createDailyRecord, DailyRecordError, lastReadingDateBefore, loadReadingHistory, listDailyRecords, requireEquipment } from "../../../lib/daily-records";
+import { runAfterResponse } from "../../../lib/notifications";
 
 const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
 
@@ -51,6 +53,11 @@ export async function POST(request: Request) {
     const frontChangeReason = typeof (draft as { frontChangeReason?: unknown }).frontChangeReason === "string" ? String((draft as { frontChangeReason?: unknown }).frontChangeReason).slice(0, 500) : null;
     const frontChangeRequested = (draft as { frontChangeRequested?: unknown }).frontChangeRequested === true;
     const result = await createDailyRecord(auth.user!, value, photos, { frontChangeRequested, frontChangeReason });
+    // Avisos: pedido de mudança de frente (quem aprova) e problema informado (responsáveis da frente).
+    const userId = auth.user!.id;
+    const frontChange = result.frontChange;
+    if (frontChange) runAfterResponse("front_change.requested", () => notifyFrontRequest(frontChange.requestId, frontChange.created, userId));
+    if (value.inactiveOrProblem) runAfterResponse("pendencia.new", () => notifyDailyProblem(result.id, userId));
     return Response.json({ ok: true, id: result.id, message: `Controle Diário do ${result.prefix} enviado.` }, { status: 201 });
   } catch (error) {
     if (error instanceof DailyRecordError) return Response.json({ error: error.message }, { status: error.status });
