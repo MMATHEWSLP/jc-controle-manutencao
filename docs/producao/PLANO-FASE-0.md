@@ -59,8 +59,8 @@ Firebase (#71)", migrations `0000` a `0057`.
    relatórios usam essa conta. Um "preço da gasolina por frente" criaria um segundo valor para o mesmo
    litro. → decisão D2.
 3. **A saída de combustível não aceita "funcionário próprio" como destino.** Hoje toda saída exige um
-   equipamento da frota ou um terceiro. A saída automática da derruba precisa de um destino novo:
-   "Produção — Derruba".
+   equipamento da frota ou um terceiro. (Com a decisão D2 a derruba não cria saída de combustível,
+   então isso não precisa mudar.)
 4. **A saída de combustível não valida saldo** (pode ficar negativo). A saída de produto **bloqueia**
    sem saldo, e só ADMIN/GESTOR liberam saldo negativo. Vou manter as duas regras como estão: a
    gasolina mostra aviso e o material segue a regra do estoque.
@@ -84,7 +84,24 @@ Firebase (#71)", migrations `0000` a `0057`.
 10. **`html-to-image` não está instalado.** O "Copiar/Baixar imagem" da Postar Produção precisa desse
     pacote novo (MIT, sem dependências), ou de um desenho feito à mão em canvas.
 
-## 4. Decisões que dependem de você (com a minha recomendação)
+## 4. Decisões (respondidas em 10/10/2026)
+
+| # | Decisão | Resposta | Como fica |
+|---|---|---|---|
+| D1 | Publicação | "USAR DEPLOY AUTOMATICO" | Cada fase vai para a branch; migration pelo workflow "Migrar banco de dados" (escolhendo a branch) e merge na `main`, que publica sozinho. Sem zip |
+| D2 | Valor da gasolina da derruba | "PEGA OS VALORES DO ESTOQUE DE GASOLINA MAS NÃO MEXA NO ESTOQUE APENAS GERE VALORES PARA OS FUNCIONARIOS" | **Mudou:** os litros da grade da derruba **não** criam saída em `fuel_movements` nem baixam saldo. O valor em R$ = litros × custo médio da gasolina no estoque da frente do projeto na data (a mesma conta do Combustível). Sem produtos Gasolina/Diesel e sem coluna nova em `fuel_movements` |
+| D3 | Despesas sem estoque | "SIM" | Em `other_expenses` (Outros gastos), com colunas de produção |
+| D4 | Transporte × Diário | "SIM É A MESMA COISA" | A metragem do Diário (PORTO) é o volume Francon. A viagem do Transporte é o registro oficial; o Diário aparece para conferência (viagens, toras e Francon) |
+| D5 | Permissões | "o ADM recebe todas. Os demais usuários só ganham acesso quando você liberar pessoa por pessoa." | **Mudou:** só o ADMIN tem `producao.*` por padrão. GESTOR e os demais perfis começam sem acesso; liberação por pessoa em Usuários → Permissões |
+| D6 | Apontador lança gasolina | "SIM" | Lança os litros, sem ver R$ |
+| D7 | WhatsApp para grupo | de acordo | Sem envio para grupo; botão Compartilhar do celular |
+| D8 | Várias viagens no dia | "ISSO" | KM e diesel do dia do caminhão divididos igualmente entre as viagens |
+
+Consequência de D2 para os critérios de aceite: "8 L a R$ 6,29 = R$ 50,32" passa a valer como **valor
+calculado** na derruba (custo médio do estoque da frente = R$ 6,29), sem saída de combustível.
+Editar para 10 L dá R$ 62,90; excluir a linha some com o valor. O estoque de gasolina não muda.
+
+### Texto original das perguntas (Fase 0)
 
 | # | Decisão | Recomendo |
 |---|---|---|
@@ -106,6 +123,9 @@ Firebase (#71)", migrations `0000` a `0057`.
 | `producao.lancar` | Lançar e corrigir derruba, arraste, medição, viagens e despesas em etapas **não finalizadas**, nas frentes que vê |
 | `producao.gerenciar` | Projetos, equipes, preços por frente, metas, observações; finalizar e **reabrir** etapas; excluir lançamentos |
 | Só ADMIN (pelo perfil) | Importar Excel, desfazer lote, editar a lista de motivos |
+
+**Padrão (D5):** o ADMIN tem as quatro. GESTOR, Oficina, Operador e Almoxarifado começam **sem
+nenhuma**; o ADMIN libera por pessoa em Usuários → Permissões.
 
 - **Apontador de campo** (login simplificado): marcação "Apontador da Produção" na tela Funcionários de
   campo. Ela dá `producao.lancar` e libera só as rotas `/api/producao/campo/*` em
@@ -142,7 +162,6 @@ Todas com `created_at`, `updated_at` e `created_by` (e `updated_by` onde houver 
 |---|---|---|
 | `products` | `production_use` (boolean, padrão FALSE) | "Usar na Produção" (para a lista não trazer os ~3.000 itens) |
 | `stock_exits` | `production_project_id`, `production_sector` (`DERRUBA`/`ARRASTE`/`SECUNDARIA`), `production_kind` (`MATERIAL`/`MANUTENCAO`/`PERDA_TOTAL`), `production_tool` (identificação da motosserra) | Material e peça lançados pela Produção. A skidder do arraste usa o `equipment_id` que já existe |
-| `fuel_movements` | `production_felling_id` (único, FK `production_felling`) | Vínculo 1 para 1 da gasolina com a linha da derruba |
 | `other_expenses` (se D3 = sim) | `production_project_id`, `production_sector`, `production_kind` (`MANUTENCAO`/`PERDA_TOTAL`/`CUSTO_OPERACIONAL`), `employee_id`, `production_tool`, `quantity`, `unit_value`, `origin` (`MANUAL`/`IMPORTACAO`), `import_batch_id` | Despesas da produção sem estoque |
 | `users` | `production_register` (boolean) | Apontador da Produção no login de campo |
 
@@ -161,11 +180,11 @@ Todas com `created_at`, `updated_at` e `created_by` (e `updated_by` onde houver 
 
 ## 7. Como os lançamentos tocam os outros módulos
 
-- **Gasolina da derruba:** salvar a grade cria/atualiza/exclui, na mesma transação, a saída em
-  `fuel_movements` (gasolina, frente do projeto, estoque Frente, responsável = operador, destino
-  "Produção — Derruba <projeto>"). No Combustível ela aparece com o selo **Produção** e a edição ou
-  exclusão é recusada no servidor ("altere pela Produção"). O resumo do dia e o relatório por destino
-  ganham o tipo "Produção". Saldo que ficaria negativo gera aviso, não bloqueio.
+- **Gasolina da derruba (D2):** os litros ficam só na linha da derruba. **Nenhuma saída de
+  combustível é criada e o saldo não muda.** O valor em R$ é calculado na hora: litros × custo médio da
+  gasolina no estoque da frente do projeto, naquela data (`lib/fuel-rules.ts:computeFuelCosts`, a mesma
+  conta do Combustível). Ele entra nas despesas e análises da derruba como "Gasolina (valor do
+  estoque)". O Combustível não muda.
 - **Material / peça:** cria uma saída de estoque normal (SAI-…) com projeto e setor, gravando o preço
   efetivo da frente no item. Na Movimentação aparece com o selo **Produção** e o estorno é feito pela
   Produção.
@@ -192,8 +211,8 @@ Todas com `created_at`, `updated_at` e `created_by` (e `updated_by` onde houver 
   `/api/producao/campo/*` para o apontador.
 - **Telas:** `app/ProductionView.tsx` (abas + filtro de frentes) e uma tela por aba em `app/production/`,
   CSS próprio com os tokens do tema (modo escuro incluso). A grade da derruba vira cards no celular.
-- **Telas existentes que mudam:** menu (botão PRODUÇÃO), tela de campo (aba Produção), Combustível
-  (selo e bloqueio), Movimentação (selo e bloqueio), Outros gastos (selo), Produtos ("Usar na
+- **Telas existentes que mudam:** menu (botão PRODUÇÃO), tela de campo (aba Produção), Movimentação
+  (selo e bloqueio), Outros gastos (selo), Produtos ("Usar na
   Produção"), Funcionários de campo ("Apontador da Produção"), Permissões (grupo novo), catálogo do
   Assistente.
 - **Diagnóstico somente leitura** `scripts/diagnosticar-producao.mjs`, rodado no workflow "Migrar banco
@@ -214,3 +233,18 @@ Todas com `created_at`, `updated_at` e `created_by` (e `updated_by` onde houver 
 Ao final de cada fase: `npm run lint`, `npx tsc --noEmit`, `npm test` e `npm run build` limpos (os
 mesmos passos que o deploy roda); a migration gerada com `npm run db:generate` (ou `--custom` para
 views/funções); o passo a passo de publicação (D1); e um roteiro curto de teste manual.
+
+## 10. Andamento
+
+**Fase 1 (entregue na branch `claude/fervent-dijkstra-tiq1yq`):** migration `0058_producao_base`
+(tabelas `production_projects`, `production_stage_events`, `production_teams`,
+`production_team_members`, `product_front_prices`, `production_targets`, `production_reasons` com
+C.01/C.02/C.09; colunas `products.production_use` e `users.production_register`), permissões
+`producao.ver/custos/lancar/gerenciar` (só ADMIN por padrão), botão PRODUÇÃO, filtro de frentes na URL,
+aba Projetos (Projetos, Equipes com integrantes, Preços por frente, Motivos), API `/api/producao/*`,
+diagnóstico `scripts/diagnosticar-producao.mjs` no workflow "Migrar banco de dados" e testes
+(`test:production-rules` no `npm test`; `test:producao-banco` com `TEST_DATABASE_URL`).
+
+Passou para a Fase 2, junto com a tela que usa cada um: o card de **meta diária** (a tabela
+`production_targets` já existe) e a marcação **"Apontador da Produção"** em Funcionários de campo, com a
+aba Produção na tela do celular (a permissão do apontador já é resolvida no servidor).
