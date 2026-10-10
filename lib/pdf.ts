@@ -556,3 +556,63 @@ export function createOperatorAccessPdf(input:{title:string;generatedAt:string;g
   });
   return buildPdf(pages,{width:842,height:595});
 }
+
+// Relatórios da PRODUÇÃO (análises da derruba, multi-frente...): paisagem, cabeçalho com logo, filtros,
+// cartões de indicadores (1ª página) e várias tabelas. Tabela que não cabe continua na página seguinte com
+// o cabeçalho repetido. Larguras relativas; colunas numéricas alinhadas à direita.
+export type ProductionPdfColumn={label:string;width:number;align?:"right"};
+export type ProductionPdfSection={title:string;columns:ProductionPdfColumn[];rows:string[][];total?:string[];empty?:string};
+export type ProductionPdfInput={title:string;subtitle?:string;filters:string[];generatedAt:string;generatedBy:string;cards?:Array<{label:string;value:string;detail?:string}>;sections:ProductionPdfSection[];footer?:string};
+export function createProductionReportPdf(input:ProductionPdfInput){
+  const left=28,width=786,rowHeight=15,bottom=48;
+  const pages:string[][]=[];let page:string[]=[];let y=0;
+  const cell=(value:string,x:number,colWidth:number,top:number,align:"right"|undefined,bold=false,color="0.12 0.20 0.27",size=6.8)=>{
+    const max=Math.max(3,Math.floor(colWidth/(size*0.52)));const label=truncate(value,max);
+    const tx=align==="right"?x+colWidth-6-label.length*size*0.5:x+4;
+    return text(Math.max(x+2,tx),top,size,label,bold,color);
+  };
+  const positions=(columns:ProductionPdfColumn[])=>{const sum=columns.reduce((total,column)=>total+column.width,0);let x=left;return columns.map((column)=>{const w=width*column.width/sum;const result={x,w};x+=w;return result;});};
+  const startPage=(first:boolean)=>{page=[];pages.push(page);y=first&&input.cards?.length?408:466;};
+  const tableHeader=(section:ProductionPdfSection,continued:boolean)=>{
+    page.push(text(left,y,9,`${section.title}${continued?" (continuação)":""}`,true,"0.08 0.25 0.36"));y-=8;
+    page.push(`0.06 0.25 0.36 rg ${left} ${y-14} ${width} 16 re f\n`);
+    positions(section.columns).forEach((pos,index)=>page.push(cell(section.columns[index].label.toUpperCase(),pos.x,pos.w,y-9,section.columns[index].align,true,"1 1 1",6.1)));
+    y-=16;
+  };
+  startPage(true);
+  for(const section of input.sections){
+    if(y-60<bottom)startPage(false);
+    tableHeader(section,false);
+    const body=[...section.rows,...(section.total?[section.total]:[])];
+    if(section.rows.length===0){page.push(text(left+6,y-11,7.5,section.empty??"Nenhum registro no período.",false,"0.33 0.47 0.55"));y-=rowHeight;}
+    body.forEach((row,index)=>{
+      if(y-rowHeight<bottom){startPage(false);tableHeader(section,true);}
+      const isTotal=Boolean(section.total)&&index===body.length-1;
+      if(isTotal)page.push(`0.91 0.97 0.95 rg ${left} ${y-rowHeight+3} ${width} ${rowHeight} re f\n`);else if(index%2===0)page.push(`0.968 0.978 0.984 rg ${left} ${y-rowHeight+3} ${width} ${rowHeight} re f\n`);
+      positions(section.columns).forEach((pos,column)=>page.push(cell(row[column]??"—",pos.x,pos.w,y-8,section.columns[column].align,isTotal)));
+      y-=rowHeight;
+    });
+    y-=16;
+  }
+  const filterLines=wrap(input.filters.join("  ·  "),150).slice(0,2);
+  const contents=pages.map((items,index)=>{
+    let content="1 1 1 rg 0 514 842 81 re f\n0.16 0.48 0.66 rg 0 514 842 5 re f\n"+logo(28,531,88);
+    content+=text(130,570,8,"JC SERVIÇOS FLORESTAIS · PRODUÇÃO",true,"0.08 0.49 0.35");content+=text(130,548,16,truncate(input.title,60),true,"0.08 0.25 0.36");
+    content+=text(130,531,7.5,truncate(input.subtitle??"Derruba → Arraste → Medição → Transporte",110),false,"0.31 0.46 0.55");
+    content+=text(640,570,7,"GERADO EM",true,"0.31 0.46 0.55");content+=text(640,556,8,truncate(input.generatedAt,24),false,"0.08 0.25 0.36");
+    content+=text(640,542,7,"POR",true,"0.31 0.46 0.55");content+=text(662,542,8,truncate(input.generatedBy,30),false,"0.08 0.25 0.36");
+    content+=text(640,528,7,`PÁGINA ${index+1}/${pages.length}`,true,"0.16 0.48 0.66");
+    content+="0.96 0.975 0.98 rg 28 474 786 34 re f\n";content+=text(36,497,6.8,"FILTROS",true,"0.31 0.46 0.55");
+    filterLines.forEach((line,lineIndex)=>{content+=text(76,497-lineIndex*11,7,line,false,"0.12 0.20 0.27");});
+    if(index===0&&input.cards?.length){
+      const cardWidth=Math.min(180,Math.floor(width/input.cards.length)-8);
+      input.cards.forEach((card,cardIndex)=>{const x=left+cardIndex*(cardWidth+8);content+=`0.96 0.975 0.98 rg ${x} 420 ${cardWidth} 46 re f\n0.09 0.51 0.37 rg ${x} 420 3 46 re f\n`;
+        content+=text(x+10,454,6.6,truncate(card.label.toUpperCase(),Math.floor(cardWidth/3.6)),true,"0.34 0.47 0.56");content+=text(x+10,437,12,truncate(card.value,Math.floor(cardWidth/7)),true,"0.09 0.51 0.37");
+        if(card.detail)content+=text(x+10,425,6.3,truncate(card.detail,Math.floor(cardWidth/3.4)),false,"0.31 0.46 0.55");});
+    }
+    content+=items.join("");
+    content+="0.86 0.90 0.92 RG 0.6 w 28 35 m 814 35 l S\n";content+=text(34,20,7.5,input.footer??"Valores calculados com os mesmos filtros da tela. Nenhum registro foi alterado.",false,"0.42 0.51 0.58");
+    return content;
+  });
+  return buildPdf(contents,{width:842,height:595});
+}

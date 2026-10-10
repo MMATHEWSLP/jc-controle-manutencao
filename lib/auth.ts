@@ -162,7 +162,7 @@ export const PERMISSION_GROUPS = [
   { label:"Produção", items:[
     ["producao.ver","Consultar a Produção (projetos, derruba, arraste, medição, transporte e resumo), sem valores em R$"],
     ["producao.custos","Ver custos e despesas da Produção (R$, custo por árvore, preço por m³, análises e PDFs com valores)"],
-    ["producao.lancar","Lançar e corrigir derruba, arraste, medição, viagens e despesas em etapas não finalizadas"],
+    ["producao.lancar","Lançar e corrigir (editar) derruba, arraste, medição, viagens e despesas em etapas não finalizadas"],
     ["producao.gerenciar","Gerenciar projetos, equipes, preços por frente e metas; finalizar e reabrir etapas; excluir lançamentos"],
   ]},
 ] as const;

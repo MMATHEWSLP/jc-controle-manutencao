@@ -248,3 +248,29 @@ diagnóstico `scripts/diagnosticar-producao.mjs` no workflow "Migrar banco de da
 Passou para a Fase 2, junto com a tela que usa cada um: o card de **meta diária** (a tabela
 `production_targets` já existe) e a marcação **"Apontador da Produção"** em Funcionários de campo, com a
 aba Produção na tela do celular (a permissão do apontador já é resolvida no servidor).
+
+**Fase 2 — Derruba:** migration `0059_producao_derruba` (tabelas `production_felling` — uma linha por
+operador por dia por projeto — e `production_import_batches`; colunas de Produção em `stock_exits` e
+`other_expenses`: projeto, setor, tipo, funcionário/motosserra e lote de importação). Aba **Derruba**:
+
+- **Produção Diária:** meta diária por frente (gerenciar edita); cards dos projetos (dias trabalhados,
+  média/dia, operadores, árvores, ipês, observação, finalizar/reabrir); **Lançamento** em lote (projeto
+  + data, uma linha por operador, sugestão dos operadores do último dia, erros por linha, a grade é o dia
+  inteiro); Acumulado por Operador; Histórico com meta, resultado e justificativa (Editar; Excluir só
+  com gerenciar, como na seção 5).
+- **Despesas e Perdas** (custos): material de consumo e peça de motosserra = saída de estoque para o
+  operador pelo preço da frente (estorno só por aqui; a Movimentação mostra o selo "Produção" e não
+  estorna); reparo/perda total sem peça = Outros gastos com os campos da Produção (RELATÓRIOS → Custos
+  mostra o selo e não edita); importação por Excel só do ADMIN (prévia OK/ERRO/IGUAL, confirmação,
+  lote com Desfazer).
+- **Gasolina (D2):** litros × custo médio da gasolina no estoque da frente na data
+  (`fuelAverageCostsOn` em `lib/fuel-rules.ts`), sem saída de combustível. Sem custo médio na data, a
+  linha aparece "sem valor".
+- **Análises** (custos) e **Multi-Frente** (só produção), com PDF.
+- **Apontador de campo:** botão "Apontador da Produção" em Controle Diário → Funcionários de campo
+  (exige gerenciar a Produção); no celular, a aba Produção com a grade do dia, sem R$ (rotas
+  `/api/producao/campo/*`).
+
+Testes: `test:production-rules` e `test:producao-derruba-banco` (com `TEST_DATABASE_URL`) cobrem os
+critérios de aceite da derruba (133,50/dia; R$ 50,32 → R$ 62,90 → some ao excluir; nenhuma saída de
+combustível; lima baixa 1 do estoque e volta no estorno; apontador sem custos).

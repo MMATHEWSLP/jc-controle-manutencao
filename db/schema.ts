@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, index, integer, pgTable, primaryKey, serial, text, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, check, doublePrecision, index, integer, pgTable, primaryKey, serial, text, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 // Gera texto no mesmo formato de `new Date().toISOString()` (usado pelo app em JS),
 // para que colunas de data continuem sendo strings ISO-8601 mesmo vindas de um DEFAULT do banco.
@@ -1916,9 +1916,18 @@ export const stockExits = pgTable("stock_exits", {
   cancelledAt: text("cancelled_at"),
   cancelledBy: integer("cancelled_by").references(() => users.id),
   cancelReason: text("cancel_reason"),
+  // Saída lançada pela PRODUÇÃO (material de consumo, peça de motosserra, despesa de colaborador
+  // secundário): projeto, setor e tipo. Só se edita/estorna pela Produção (lib/production-expenses.ts).
+  productionProjectId: integer("production_project_id").references((): AnyPgColumn => productionProjects.id),
+  productionSector: text("production_sector", { enum:["DERRUBA","ARRASTE","SECUNDARIA"] }),
+  productionKind: text("production_kind", { enum:["MATERIAL","MANUTENCAO","PERDA_TOTAL"] }),
+  // Identificação da motosserra (manutenção/perda total).
+  productionTool: text("production_tool"),
+  productionImportBatchId: integer("production_import_batch_id").references((): AnyPgColumn => productionImportBatches.id),
   ...timestamps,
 }, (table) => [
   index("stock_exits_date_idx").on(table.exitDate),
+  index("stock_exits_production_idx").on(table.productionProjectId, table.productionSector),
   index("stock_exits_equipment_idx").on(table.equipmentId),
   index("stock_exits_employee_idx").on(table.employeeId),
   index("stock_exits_third_party_idx").on(table.thirdPartyId, table.thirdPartyVehicleId),
@@ -2180,8 +2189,19 @@ export const otherExpenses = pgTable("other_expenses", {
   updatedBy: integer("updated_by").references(() => users.id),
   deletedAt: text("deleted_at"),
   deletedBy: integer("deleted_by").references(() => users.id),
+  // Despesa da PRODUÇÃO sem estoque (reparo de motosserra sem peça, perda total, custo operacional):
+  // projeto, setor, tipo, funcionário e motosserra. Só se edita/exclui pela Produção.
+  productionProjectId: integer("production_project_id").references((): AnyPgColumn => productionProjects.id),
+  productionSector: text("production_sector", { enum:["DERRUBA","ARRASTE","SECUNDARIA"] }),
+  productionKind: text("production_kind", { enum:["MANUTENCAO","PERDA_TOTAL","CUSTO_OPERACIONAL"] }),
+  employeeId: integer("employee_id").references((): AnyPgColumn => employees.id),
+  productionTool: text("production_tool"),
+  quantity: doublePrecision("quantity"),
+  unitValue: doublePrecision("unit_value"),
+  productionImportBatchId: integer("production_import_batch_id").references((): AnyPgColumn => productionImportBatches.id),
   ...timestamps,
-}, (table) => [index("other_expenses_front_date_idx").on(table.serviceFrontId, table.expenseDate), index("other_expenses_equipment_idx").on(table.equipmentId)]);
+}, (table) => [index("other_expenses_front_date_idx").on(table.serviceFrontId, table.expenseDate), index("other_expenses_equipment_idx").on(table.equipmentId),
+  index("other_expenses_production_idx").on(table.productionProjectId, table.productionSector)]);
 
 // ---------------------------------------------------------------------------
 // Central de notificações (sino do sistema + aviso no celular). Cada evento (lib/notification-events.ts)
@@ -2391,3 +2411,45 @@ export const productionReasons = pgTable("production_reasons", {
   active: boolean("active").notNull().default(true),
   ...timestamps,
 }, (table) => [uniqueIndex("production_reasons_code_unique").on(table.code)]);
+
+// DERRUBA: produção diária por operador no projeto (lançamento em lote por projeto + data). Os ipês já
+// fazem parte do total de árvores. Gasolina (decisão D2): só os litros; o valor em R$ é calculado na
+// consulta (litros × custo médio da gasolina no estoque da frente, lib/production-felling.ts) e NÃO
+// gera saída de combustível nem mexe no saldo.
+export const productionFelling = pgTable("production_felling", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => productionProjects.id),
+  fellingDate: text("felling_date").notNull(),
+  operatorEmployeeId: integer("operator_employee_id").notNull().references(() => employees.id),
+  helperEmployeeId: integer("helper_employee_id").references(() => employees.id),
+  trees: integer("trees").notNull(),
+  ipes: integer("ipes").notNull().default(0),
+  gasolineLiters: doublePrecision("gasoline_liters").notNull().default(0),
+  // Motivo obrigatório quando árvores = 0; justificativa livre (também para dia abaixo da meta).
+  reasonId: integer("reason_id").references(() => productionReasons.id),
+  justification: text("justification"),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("production_felling_day_operator_unique").on(table.projectId, table.fellingDate, table.operatorEmployeeId),
+  index("production_felling_date_idx").on(table.fellingDate),
+  index("production_felling_operator_idx").on(table.operatorEmployeeId, table.fellingDate),
+  check("production_felling_counts_check", sql`${table.trees} >= 0 AND ${table.ipes} >= 0 AND ${table.ipes} <= ${table.trees} AND ${table.gasolineLiters} >= 0`),
+]);
+
+// Lotes da importação por Excel da Produção (despesas da derruba): o "Desfazer" estorna as saídas de
+// estoque e exclui os outros gastos do lote.
+export const productionImportBatches = pgTable("production_import_batches", {
+  id: serial("id").primaryKey(),
+  kind: text("kind", { enum: ["DESPESAS_DERRUBA"] }).notNull(),
+  fileName: text("file_name").notNull(),
+  status: text("status", { enum: ["ACTIVE", "REVERTED"] }).notNull().default("ACTIVE"),
+  rowCount: integer("row_count").notNull().default(0),
+  // JSON: linhas gravadas, ignoradas (iguais a registros existentes) e total em R$.
+  summary: text("summary"),
+  createdBy: integer("created_by").references(() => users.id),
+  revertedAt: text("reverted_at"),
+  revertedBy: integer("reverted_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [index("production_import_batches_created_idx").on(table.createdAt)]);

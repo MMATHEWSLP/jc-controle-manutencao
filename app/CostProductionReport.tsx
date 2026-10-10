@@ -212,7 +212,7 @@ export function ExportLink({ href, label }: { href: string; label: string }) {
 // ---------------------------------------------------------------------------
 // Outros gastos: lançamento (modal) e lista.
 // ---------------------------------------------------------------------------
-type Expense = { id: number; serviceFrontId: number; frontName: string; equipmentId: number | null; equipmentPrefix: string | null; expenseDate: string; category: "SERVICO" | "OUTROS"; categoryLabel: string; amount: number; description: string; createdByName: string | null };
+type Expense = { id: number; serviceFrontId: number; frontName: string; equipmentId: number | null; equipmentPrefix: string | null; expenseDate: string; category: "SERVICO" | "OUTROS"; categoryLabel: string; amount: number; description: string; createdByName: string | null; fromProduction?: boolean };
 
 export function OtherExpenseModal({ fronts, equipment, item, close, saved }: { fronts: Front[]; equipment: Equipment[]; item: Expense | null; close: () => void; saved: (message: string) => void }) {
   const [frontId, setFrontId] = useState(String(item?.serviceFrontId ?? (fronts.length === 1 ? fronts[0].id : "")));
@@ -285,8 +285,8 @@ export function OtherExpensesView({ fronts, equipment, flash }: { fronts: Front[
       <p className="stock-summary">{data.expenses.length} lançamento(s) · total {money(data.total)}{!data.canLaunch && " · para lançar, peça ao administrador a permissão \"Lançar Outros gastos\"."}</p>
       <div className="table-scroll"><table className="products-table">
         <thead><tr><th>Data</th><th>Frente</th><th>Equipamento</th><th>Categoria</th><th>Descrição</th><th className="num">Valor</th><th>Lançado por</th>{data.canLaunch && <th />}</tr></thead>
-        <tbody>{data.expenses.map((row) => <tr key={row.id}><td>{br(row.expenseDate)}</td><td>{row.frontName}</td><td>{row.equipmentPrefix ?? "—"}</td><td>{row.categoryLabel}</td><td>{row.description}</td><td className="num">{money(row.amount)}</td><td>{row.createdByName ?? "—"}</td>
-          {data.canLaunch && <td><div className="equipment-row-actions"><button type="button" onClick={() => setEditing(row)}>Editar</button><button type="button" onClick={() => remove(row)}>Excluir</button></div></td>}</tr>)}</tbody>
+        <tbody>{data.expenses.map((row) => <tr key={row.id}><td>{br(row.expenseDate)}</td><td>{row.frontName}</td><td>{row.equipmentPrefix ?? "—"}</td><td>{row.categoryLabel}</td><td>{row.description}{row.fromProduction && <span className="production-badge running" title="Lançado pela Produção: altere ou exclua pela aba Produção"> Produção</span>}</td><td className="num">{money(row.amount)}</td><td>{row.createdByName ?? "—"}</td>
+          {data.canLaunch && <td>{!row.fromProduction && <div className="equipment-row-actions"><button type="button" onClick={() => setEditing(row)}>Editar</button><button type="button" onClick={() => remove(row)}>Excluir</button></div>}</td>}</tr>)}</tbody>
       </table>{data.expenses.length === 0 && <div className="empty-state">Nenhum gasto lançado no período e filtros.</div>}</div>
     </>}
     {editing && <OtherExpenseModal fronts={fronts} equipment={equipment} item={editing === "new" ? null : editing} close={() => setEditing(null)} saved={(message) => { setEditing(null); flash(message); load(); }} />}

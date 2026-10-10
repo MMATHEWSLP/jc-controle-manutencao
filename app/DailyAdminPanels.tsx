@@ -11,9 +11,9 @@ type FrontRequest = {
   id:number; equipmentId:number; prefix:string; equipmentType:string; model:string; currentFront:string; requestedFront:string|null;
   reason:string|null; requestedBy:string; requestedAt:string; status:"PENDING"|"APPROVED"|"REJECTED"; reviewedBy:string|null; reviewedAt:string|null; reviewNote:string|null;
 };
-type FieldOperator = { id:number; name:string; jobTitle:string|null; active:boolean; serviceFrontIds:number[]; lastAccessAt:string|null; employeeId:number|null; registration:string|null; employeeStatus:string|null; convoyFuelRegister:boolean; convoyEquipmentId:number|null; convoyPrefix:string|null };
+type FieldOperator = { id:number; name:string; jobTitle:string|null; active:boolean; serviceFrontIds:number[]; lastAccessAt:string|null; employeeId:number|null; registration:string|null; employeeStatus:string|null; convoyFuelRegister:boolean; convoyEquipmentId:number|null; convoyPrefix:string|null; productionRegister?:boolean };
 
-type OperatorsResponse = { operators:FieldOperator[]; canImport:boolean; canCreateEmployee:boolean; companies:string[]; today:string };
+type OperatorsResponse = { operators:FieldOperator[]; canImport:boolean; canCreateEmployee:boolean; companies:string[]; today:string; canProductionRegister?:boolean };
 
 async function api<T>(url:string, options?:RequestInit):Promise<T> { const response=await fetch(url,{cache:"no-store",...options}); const data=await response.json().catch(()=>({})) as Record<string,unknown>; if(!response.ok)throw new Error(String(data.error??"A operação não pôde ser concluída.")); return data as T; }
 const jsonInit=(method:string,body:unknown):RequestInit=>({ method, headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body) });
@@ -118,6 +118,17 @@ export function FieldOperatorsPanel({ fronts, flash }:{ fronts:Front[]; flash:(m
   const visible=operators.filter((item)=>(!key||norm(item.name).includes(key)||norm(item.jobTitle).includes(key)||(item.registration??"").includes(key))
     &&(!frontFilter||item.serviceFrontIds.includes(Number(frontFilter)))&&(!statusFilter||(statusFilter==="ACTIVE")===item.active));
   const filtered=Boolean(key||frontFilter||statusFilter);
+  // Apontador da Produção: o funcionário passa a lançar a derruba pelo celular (sem ver R$).
+  async function toggleProduction(item:FieldOperator){
+    const next=!item.productionRegister;
+    if(!window.confirm(next?`${item.name} vai poder lançar a produção da derruba pelo celular, nas frentes dele, sem ver valores. Confirmar?`:`${item.name} deixa de lançar a Produção. Confirmar?`))return;
+    try{
+      const response=await fetch("/api/producao/apontadores",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:item.id,value:next})});
+      const result=await response.json().catch(()=>({})) as { message?:string; error?:string };
+      if(!response.ok)throw new Error(result.error??"Não foi possível alterar.");
+      flash(result.message??"Alterado."); await load();
+    }catch(problem){ window.alert(problem instanceof Error?problem.message:"Não foi possível alterar."); }
+  }
 
   return <article className="panel module-panel">
     <div className="daily-operators-head">
@@ -144,11 +155,13 @@ export function FieldOperatorsPanel({ fronts, flash }:{ fronts:Front[]; flash:(m
           <div><dt>Função</dt><dd>{item.jobTitle??"—"}</dd></div>
           <div><dt>Frentes</dt><dd>{item.serviceFrontIds.map(frontName).join(", ")||"—"}</dd></div>
           {item.convoyFuelRegister && <div className="wide"><dt>Abastecimentos</dt><dd>⛽ Também é motorista do comboio{item.convoyPrefix?` (${item.convoyPrefix})`:""} — gerenciado no setor Abastecimentos</dd></div>}
+          {item.productionRegister && <div className="wide"><dt>Produção</dt><dd>🌲 Apontador da Produção — lança a derruba pelo celular, sem ver valores</dd></div>}
           <div className="wide"><dt>Último acesso</dt><dd>{formatDateTime(item.lastAccessAt)}</dd></div>
         </dl>
         <footer className="daily-record-actions">
           {!item.employeeId && <button type="button" className="secondary" onClick={()=>setLinking(item)}>Vincular</button>}
           <button type="button" className="secondary" onClick={()=>setEditing(item)}>Editar / trocar código</button>
+          {data?.canProductionRegister && <button type="button" className="secondary" onClick={()=>toggleProduction(item)}>{item.productionRegister?"Tirar de apontador da Produção":"Apontador da Produção"}</button>}
         </footer>
       </article>)}
       {visible.length===0 && <div className="empty-state">{operators.length?"Ninguém encontrado para os filtros.":"Nenhum funcionário de campo cadastrado."}</div>}

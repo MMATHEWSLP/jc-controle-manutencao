@@ -83,6 +83,7 @@
     "test:field-operators-rules": "esbuild tests/field-operators-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-field-operators-rules.mjs && node --test /tmp/manutencao-preventiva-field-operators-rules.mjs",
     "test:production-rules": "esbuild tests/production-rules.test.mjs --bundle --platform=node --format=esm --outfile=/tmp/manutencao-preventiva-production-rules.mjs && node --test /tmp/manutencao-preventiva-production-rules.mjs",
     "test:producao-banco": "tsx --test tests/producao.integration.test.mjs",
+    "test:producao-derruba-banco": "tsx --test tests/producao-derruba.integration.test.mjs",
     "assistente:testar": "tsx scripts/testar-assistente.ts"
   },
   "dependencies": {

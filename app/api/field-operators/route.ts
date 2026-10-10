@@ -12,6 +12,8 @@ export async function GET(request: Request) {
       // Motorista só do comboio (não faz o Controle Diário) é cadastrado no setor Abastecimentos.
       operators: (await listFieldOperators(user)).filter((row) => row.fieldDailyAccess || !row.convoyFuelRegister), canImport: user.profile === "ADMIN", canCreateEmployee,
       companies: canCreateEmployee ? (await listCompanies(await getDb())).map((row) => row.name) : [], today: employeeToday(),
+      // Marcar "Apontador da Produção" (lib/production.ts:setFieldProductionRegister): quem também gerencia a Produção.
+      canProductionRegister: user.permissions.includes("producao.gerenciar"),
     });
   }
   catch (error) { console.error("[field-operators.get]", error); return Response.json({ error: "Não foi possível carregar os funcionários." }, { status: 500 }); }

@@ -9,7 +9,7 @@
 .production-subtabs { margin:6px 0 10px; }
 .production-panel { padding:14px; }
 .production-list-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:6px 0 10px; }
-.production-list-head h2 { margin:0; font-size:15px; color:var(--ink); }
+.production-list-head h2 { margin:0; font-size:15px; font-weight:700; color:var(--ink); }
 .production-help { margin:0 0 12px; font-size:12px; color:var(--muted); line-height:1.5; }
 .production-sub { color:var(--muted); font-size:11px; font-weight:400; }
 .production-row-muted td { opacity:.62; }
@@ -20,7 +20,7 @@
 .production-badge.none { color:var(--muted); background:transparent; border-color:var(--line); }
 
 .production-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:end; padding:12px; margin-bottom:14px; border:1px dashed var(--line); border-radius:10px; }
-.production-form h3 { grid-column:1 / -1; margin:0; font-size:13px; color:var(--ink); }
+.production-form h3 { grid-column:1 / -1; margin:0; font-size:13px; font-weight:700; color:var(--ink); }
 .production-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
 .production-form .production-form-wide, .production-form .full { grid-column:1 / -1; }
 .production-form > .primary { justify-self:start; }
@@ -43,6 +43,116 @@
 .production-placeholder h2 { margin:0 0 6px; font-size:15px; color:var(--ink); }
 .production-placeholder p { margin:0; color:var(--muted); font-size:13px; }
 
+/* Derruba (Fase 2) ------------------------------------------------------------------------------ */
+.production-inner-tabs { margin-top:0; }
+.production-inner-tabs button { font-size:12px; }
+.production-period { display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; margin-bottom:12px; }
+.production-period label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); min-width:150px; }
+.production-period label:has(select), .production-period label:has(.production-employee-picker), .production-period label:has(.production-person-chip) { min-width:220px; flex:1 1 220px; max-width:360px; }
+.production-pdf { display:inline-flex; align-items:center; min-height:42px; padding:0 14px; border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:13px; font-weight:700; text-decoration:none; margin-left:auto; }
+.production-section-title { margin:18px 0 8px; font-size:14px; font-weight:700; color:var(--ink); }
+.production-help a { color:var(--blue); font-weight:700; text-decoration:underline; }
+.production-warning { margin:0 0 12px; padding:9px 12px; border:1px solid var(--warning-border); border-radius:8px; background:var(--warning-bg); color:var(--warning-text); font-size:12.5px; }
+.production-more { margin-top:10px; }
+
+/* Meta diária por frente */
+.production-targets { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; padding:10px 14px; margin:0 0 10px; }
+.production-targets > div strong { display:block; font-size:13px; color:var(--ink); }
+.production-targets > div span { font-size:11px; color:var(--muted); }
+.production-targets ul { display:flex; flex-wrap:wrap; gap:8px 16px; margin:0; padding:0; list-style:none; }
+.production-targets li { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink); }
+.production-targets li b { color:var(--success-text); }
+.production-targets form { display:flex; gap:6px; align-items:center; }
+.production-targets input { width:92px; min-height:36px; text-align:right; }
+.production-targets button { min-height:36px; padding:0 12px; border-radius:7px; font-weight:700; }
+
+/* Cards dos projetos */
+.production-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+.production-card { padding:14px; display:flex; flex-direction:column; gap:10px; }
+.production-card header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.production-card h3 { margin:0; font-size:15px; font-weight:700; color:var(--ink); }
+.production-card header span { font-size:11.5px; color:var(--muted); }
+/* 3 por linha: Dias trabalhados, Média/dia, Operadores; depois Árvores (largo) e Ipês. */
+.production-card-kpis { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin:0; }
+.production-card-kpis div:nth-child(4) { grid-column:span 2; }
+.production-card-kpis div { padding:8px 6px; border:1px solid var(--line); border-radius:8px; text-align:center; }
+.production-card-kpis dt { font-size:9.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted); }
+.production-card-kpis dd { margin:3px 0 0; font-size:18px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+.production-card-meta { margin:0; font-size:11.5px; color:var(--muted); }
+.production-card-notes { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+.production-card-notes textarea { min-height:58px; resize:vertical; }
+.production-card-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+.production-card-actions button { min-height:36px; padding:0 12px; border-radius:7px; font-weight:700; font-size:12.5px; }
+
+/* Acumulado por operador */
+.production-operator-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:8px; margin:0; padding:0; list-style:none; }
+.production-operator-cards li { display:flex; flex-direction:column; gap:3px; padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+.production-operator-cards strong { font-size:13px; color:var(--ink); }
+.production-operator-cards span { font-size:12px; color:var(--muted); }
+.production-operator-cards b { color:var(--success-text); }
+
+/* Resultado contra a meta, origem e indicadores */
+.production-result { display:inline-block; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; border:1px solid var(--line); color:var(--muted); }
+.production-result.ok { background:var(--success-bg); color:var(--success-text); border-color:var(--success-border); }
+.production-result.below { background:var(--danger-bg); color:var(--danger-text); border-color:var(--danger-border); }
+.production-origin { font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap; }
+.production-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin-bottom:12px; }
+.production-kpis div { padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+.production-kpis span { display:block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); }
+.production-kpis strong { display:block; margin-top:4px; font-size:19px; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+/* Lançamento diário em lote (grade) */
+.production-launch { display:grid; gap:10px; }
+.production-launch-head { margin-bottom:0; grid-template-columns:minmax(220px, 2fr) minmax(150px, 1fr); }
+.production-day-state { margin:0; padding:8px 12px; border-radius:8px; border:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+.production-day-state.saved { border-color:var(--success-border); background:var(--success-bg); color:var(--success-text); }
+.production-line-errors { margin:0; padding:8px 12px 8px 28px; border:1px solid var(--danger-border); border-radius:8px; background:var(--danger-bg); color:var(--danger-text); font-size:12.5px; }
+/* A busca de funcionário abre uma lista por cima da grade: sem rolagem horizontal aqui. */
+.production-grid-wrap { overflow:visible; }
+.production-grid-wrap.loading { opacity:.55; pointer-events:none; }
+.production-grid { min-width:0; table-layout:fixed; }
+.production-grid th, .production-grid td { padding:6px 6px; vertical-align:top; }
+.production-grid th:nth-child(1) { width:34px; }
+.production-grid th:nth-child(2) { width:26%; }
+.production-grid th:nth-child(3) { width:22%; }
+.production-grid th:nth-child(5), .production-grid th:nth-child(6), .production-grid th:nth-child(7) { width:92px; }
+.production-grid input, .production-grid select { width:100%; min-height:36px; padding:6px 8px; font-size:13px; box-sizing:border-box; }
+.production-grid td.num input { text-align:right; }
+.production-grid-index { color:var(--muted); font-size:11px; padding-top:14px !important; text-align:center; }
+.production-grid tr.invalid td { background:var(--danger-bg); }
+.production-grid tfoot td { border-top:2px solid var(--line); font-size:13px; }
+:is(.production-grid, .production-launch) .invalid > input, .production-grid input.invalid, .production-grid select.invalid { border-color:var(--danger-border); box-shadow:0 0 0 1px var(--danger-border); }
+.production-employee-picker.compact .production-show-all { display:none; }
+.production-employee-picker.compact:focus-within .production-show-all { display:flex; }
+.production-person-chip { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:36px; padding:4px 6px 4px 9px; border:1px solid var(--success-border); border-radius:8px; background:var(--success-bg); box-sizing:border-box; }
+.production-person-chip span { display:flex; flex-direction:column; min-width:0; }
+.production-person-chip b { font-size:12px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.production-person-chip small { font-size:10.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.production-person-chip button { flex:none; width:26px; height:26px; min-height:0; padding:0; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--muted); font-size:11px; cursor:pointer; }
+.production-launch-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.production-launch-actions .production-launch-total { margin-left:auto; font-size:13px; color:var(--muted); }
+.production-launch-actions .production-launch-total b { color:var(--ink); }
+.production-launch-actions button { min-height:42px; padding:0 16px; border-radius:8px; font-weight:700; }
+.production-save-short { display:none; }
+
+/* Despesas e perdas */
+.production-expense-forms { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:12px; margin-bottom:12px; }
+.production-expense-form { margin:0; border-style:solid; background:var(--surface); grid-template-columns:repeat(2, minmax(0, 1fr)); align-content:start; }
+.production-expense-form .production-help { margin:0; }
+.production-expense-form .stock-shortage { grid-column:1 / -1; }
+.production-kind { display:flex; gap:6px; margin:0; padding:0; border:0; }
+.production-kind button { flex:1; min-height:38px; padding:0 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink); font-size:12.5px; font-weight:700; cursor:pointer; }
+.production-kind button.active { border-color:var(--success-border); background:var(--success-bg); color:var(--success-text); }
+.production-import { margin-bottom:12px; }
+.production-file { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; font-size:12px; color:var(--muted); max-width:420px; }
+.production-mapping { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:8px; margin-bottom:10px; }
+.production-mapping label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+.production-preview { max-height:420px; overflow:auto; margin-bottom:10px; border:1px solid var(--line); border-radius:9px; }
+.production-preview tr.invalid td { background:var(--danger-bg); }
+.production-check { display:flex; align-items:center; gap:8px; margin:6px 0 10px; font-size:12.5px; color:var(--ink); }
+.production-check input { width:auto; min-height:0; margin:0; accent-color:var(--green); }
+.production-import > button.primary, .production-import .production-list-head button { min-height:40px; padding:0 14px; border-radius:8px; font-weight:700; }
+
 @media (max-width: 720px) {
   .production-fronts { gap:6px; }
   .production-table thead { display:none; }
@@ -54,4 +164,28 @@
   .production-table td { border:0 !important; padding:4px 0 !important; text-align:left !important; }
   .production-table td[data-label]::before { content:attr(data-label); display:block; font-size:10.5px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.02em; }
   .production-price-cell { justify-content:flex-start; }
+  /* Grade do lançamento: cada linha vira um cartão com os campos empilhados. */
+  .production-launch-head { grid-template-columns:1fr; }
+  .production-grid thead { display:none; }
+  .production-grid, .production-grid tbody, .production-grid tfoot, .production-grid tr, .production-grid td { display:block; width:100%; box-sizing:border-box; }
+  .production-grid tbody tr { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px 8px; border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; margin-bottom:8px; background:var(--surface); }
+  .production-grid td { border:0 !important; padding:0 !important; }
+  .production-grid td[data-label]::before { content:attr(data-label); display:block; margin-bottom:3px; font-size:10.5px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.02em; }
+  .production-grid td.production-grid-index { grid-column:1 / -1; text-align:left; padding:0 !important; }
+  .production-grid td.production-grid-index::before { display:inline; margin-right:4px; }
+  .production-grid td:nth-child(2), .production-grid td:nth-child(3), .production-grid td:nth-child(4) { grid-column:1 / -1; }
+  .production-grid td.num { text-align:left; }
+  .production-grid input, .production-grid select { min-height:42px; font-size:15px; }
+  .production-grid tfoot { display:none; }
+  .production-launch-actions { position:sticky; bottom:0; z-index:5; padding:10px 0; background:var(--canvas); }
+  .production-launch-actions .production-launch-total { order:-1; width:100%; margin-left:0; }
+  .production-launch-actions button.primary { flex:1; }
+  .production-save-long { display:none; }
+  .production-save-short { display:inline; }
+  /* O botão flutuante do Assistente fica no canto de baixo: a barra de salvar sobe acima dele. */
+  body:has(.assistant-fab) .production-launch-actions { bottom:60px; }
+  .production-cards, .production-expense-forms { grid-template-columns:1fr; }
+  .production-expense-form { grid-template-columns:1fr; }
+  .production-period label, .production-period label:has(select) { flex:1 1 140px; max-width:none; }
+  .production-pdf { margin-left:0; }
 }

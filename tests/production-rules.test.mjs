@@ -6,6 +6,8 @@ import {
   acceptsLaunch, cleanName, compareProjects, effectivePrice, franconPerTree, fuelValue, matchesFunctionGroup, nextStageStatus, parseDecimal,
   parseFrontIds, perDay, processedPercent, rejectPercent, roundTo, scopeFrontIds, skiddingBalance, skiddingWriteOff, statusAfterLaunch, treesToMeasure,
 } from "../lib/production-rules.ts";
+import { multiFrontSummary, operatorTotals, parseSheetDate, reasonLabel, targetResult, validateFellingDay } from "../lib/production-rules.ts";
+import { fuelAverageCostsOn } from "../lib/fuel-rules.ts";
 
 test("etapas: finalizar, reabrir e lançar", () => {
   assert.deepEqual(nextStageStatus("EM_ANDAMENTO", "FINALIZAR"), { status: "FINALIZADO" });
@@ -74,4 +76,86 @@ test("critérios de aceite do módulo", () => {
   assert.equal(fuelValue(10, null), null, "estoque sem valor = sem valor");
   assert.equal(perDay(10, 0), null);
   assert.equal(rejectPercent(0, 0), null);
+});
+
+
+test("derruba: grade do dia ignora linhas vazias e valida cada linha", () => {
+  const { lines, errors } = validateFellingDay([
+    { operatorEmployeeId: 10, helperEmployeeId: 20, trees: "30", ipes: "2", gasolineLiters: "8" },
+    {},
+    { operatorEmployeeId: "", trees: "", ipes: "", gasolineLiters: "" },
+    { operatorEmployeeId: 11, trees: "0" },
+    { operatorEmployeeId: 12, trees: "5", ipes: "6" },
+    { operatorEmployeeId: 10, trees: "10" },
+    { operatorEmployeeId: 13, helperEmployeeId: 13, trees: "4" },
+    { operatorEmployeeId: 14, trees: "0", reasonId: 3, justification: "  chuva   forte " },
+    { trees: "12" },
+    { operatorEmployeeId: 15, trees: "12,5" },
+  ]);
+  assert.deepEqual(lines.map((line) => line.operatorEmployeeId), [10, 14]);
+  assert.deepEqual(lines[0], { operatorEmployeeId: 10, helperEmployeeId: 20, trees: 30, ipes: 2, gasolineLiters: 8, reasonId: null, justification: null });
+  assert.equal(lines[1].justification, "chuva forte");
+  assert.deepEqual(errors.map((error) => [error.line, error.field]), [
+    [4, "reasonId"], [5, "ipes"], [6, "operatorEmployeeId"], [7, "helperEmployeeId"], [9, "operatorEmployeeId"], [10, "trees"],
+  ]);
+});
+
+test("derruba: meta, motivo e acumulado por operador", () => {
+  assert.equal(targetResult(30, 25), "NA_META");
+  assert.equal(targetResult(24, 25), "ABAIXO");
+  assert.equal(targetResult(24, null), "SEM_META");
+  assert.equal(reasonLabel("C.09", "MADEIRA GROSSA"), "(C.09) MADEIRA GROSSA");
+  const base = { helperId: null, helperName: null, projectId: 1, frontId: 1, frontName: "MAMURU", ipes: 0, gasolineLiters: 0 };
+  const [ana] = operatorTotals([
+    { ...base, operatorId: 1, operatorName: "ANA", date: "2026-09-01", trees: 30, ipes: 1 },
+    { ...base, operatorId: 1, operatorName: "ANA", date: "2026-09-02", trees: 29, ipes: 3 },
+    { ...base, operatorId: 1, operatorName: "ANA", date: "2026-09-02", trees: 30, projectId: 2 },
+  ]);
+  assert.deepEqual([ana.trees, ana.days, ana.ipes, roundTo(ana.perDay, 2)], [89, 2, 4, 44.5]);
+});
+
+test("derruba: multi-frente consolida frentes e conta árvores acima da meta", () => {
+  const base = { helperId: null, helperName: null, ipes: 0, gasolineLiters: 0 };
+  const records = [
+    { ...base, operatorId: 1, operatorName: "ANA", projectId: 1, frontId: 1, frontName: "MAMURU", date: "2026-09-01", trees: 40, helperName: "ANDERSON" },
+    { ...base, operatorId: 1, operatorName: "ANA", projectId: 2, frontId: 1, frontName: "MAMURU", date: "2026-09-01", trees: 5, helperName: "ANDERSON" },
+    { ...base, operatorId: 1, operatorName: "ANA", projectId: 3, frontId: 2, frontName: "FLEXAL", date: "2026-09-02", trees: 20, helperName: "BRUNO" },
+    { ...base, operatorId: 1, operatorName: "ANA", projectId: 3, frontId: 2, frontName: "FLEXAL", date: "2026-09-03", trees: 35, helperName: "ANDERSON" },
+    { ...base, operatorId: 2, operatorName: "BETO", projectId: 4, frontId: 3, frontName: "ARAPIUNS", date: "2026-09-01", trees: 50 },
+  ];
+  const { rows, totals } = multiFrontSummary(records, new Map([[1, 40], [2, 30]]));
+  const ana = rows.find((row) => row.operatorName === "ANA");
+  assert.deepEqual(ana.fronts, ["FLEXAL", "MAMURU"]);
+  assert.deepEqual([ana.days, ana.trees, ana.daysOnTarget, ana.daysBelow, ana.treesOnTargetDays, ana.treesAboveTarget], [3, 100, 2, 1, 80, 10]);
+  assert.deepEqual(ana.helpers, [{ name: "ANDERSON", days: 2 }]);
+  const beto = rows.find((row) => row.operatorName === "BETO");
+  assert.deepEqual([beto.daysOnTarget, beto.daysBelow], [0, 0], "frente sem meta não conta");
+  assert.deepEqual([totals.operators, totals.trees, totals.treesOnTargetDays, totals.treesAboveTarget, roundTo(totals.perDay, 2)], [2, 150, 80, 10, 37.5]);
+});
+
+test("datas da planilha", () => {
+  assert.equal(parseSheetDate("05/09/2026"), "2026-09-05");
+  assert.equal(parseSheetDate("5/9/26"), "2026-09-05");
+  assert.equal(parseSheetDate("2026-09-05"), "2026-09-05");
+  assert.equal(parseSheetDate("46270"), "2026-09-05");
+  assert.equal(parseSheetDate("31/02/2026"), null);
+  assert.equal(parseSheetDate("ontem"), null);
+});
+
+test("gasolina da derruba: custo médio do estoque na data, sem lançar saída", () => {
+  const entrada = (id, date, quantity, unitPrice, frontId = 1) => ({ id, serviceFrontId: frontId, stockLocation: "FRENTE", destinationFrontId: null, destinationLocation: null, fuelTypeId: 2, movementType: "ENTRADA", movementDate: date, quantity, unitPrice });
+  const movements = [entrada(1, "2026-09-01", 1000, 6.29), entrada(2, "2026-09-10", 1000, 6.49)];
+  const ask = (key, date, location = "FRENTE", frontId = 1) => ({ key, frontId, location, fuelTypeId: 2, date });
+  const costs = fuelAverageCostsOn(movements, [], [ask("antes", "2026-08-31"), ask("dia1", "2026-09-01"), ask("dia5", "2026-09-05"), ask("dia10", "2026-09-10"), ask("porto", "2026-09-05", "PORTO"), ask("outra", "2026-09-05", "FRENTE", 9)]);
+  assert.equal(costs.get("antes"), null);
+  assert.equal(costs.get("dia1"), 6.29);
+  assert.equal(costs.get("dia5"), 6.29);
+  assert.equal(roundTo(costs.get("dia10"), 2), 6.39);
+  assert.equal(costs.get("porto"), null);
+  assert.equal(costs.get("outra"), null);
+  assert.equal(fuelValue(8, costs.get("dia5")), 50.32);
+  assert.equal(fuelValue(10, costs.get("dia5")), 62.9);
+  // Reavaliação a partir de uma data vale para a pergunta daquele dia.
+  const revalued = fuelAverageCostsOn(movements, [{ id: 1, fuelTypeId: 2, serviceFrontId: null, stockLocation: null, effectiveDate: "2026-09-05", unitCost: 7 }], [ask("d4", "2026-09-04"), ask("d5", "2026-09-05")]);
+  assert.deepEqual([revalued.get("d4"), revalued.get("d5")], [6.29, 7]);
 });

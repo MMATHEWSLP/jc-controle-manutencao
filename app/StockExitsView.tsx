@@ -15,6 +15,8 @@ type User = { name: string; permissions: string[] };
 type ExitDoc = {
   id: number; number: string; exitDate: string; destination: string | null; front: string; notes: string | null;
   cancelledAt: string | null; cancelReason: string | null; createdBy: string | null; items: Array<{ tag: string; name: string; quantity: number; unitPrice: number | null }>;
+  // Lançada pela Produção: estorno só pela Produção.
+  productionProjectId?: number | null;
 };
 type ListResponse = { movements: StockMovementRow[]; exits: ExitDoc[]; canCreate: boolean; canCancel: boolean };
 type Tab = "movimentar" | "historico";
@@ -242,11 +244,11 @@ function HistoryPanel({ options, departments, flash, initial }: { options: Stock
             <thead><tr><th>Saída</th><th title="Veículo · funcionário · departamento">Destino</th><th>Itens</th><th title="Frente do estoque · quem lançou">Frente</th>{data.canCancel && <th>Ações</th>}</tr></thead>
             <tbody>{data.exits.map((exit) => (
               <tr key={exit.id} className={exit.cancelledAt ? "stock-row-reversed" : ""}>
-                <td><strong>{exit.number}</strong><small className="table-sub">{brDay(exit.exitDate)}{exit.cancelledAt ? ` · estornada: ${exit.cancelReason ?? ""}` : ""}</small></td>
+                <td><strong>{exit.number}</strong>{exit.productionProjectId ? <span className="production-badge running" title="Lançada pela Produção: altere ou estorne pela aba Produção"> Produção</span> : null}<small className="table-sub">{brDay(exit.exitDate)}{exit.cancelledAt ? ` · estornada: ${exit.cancelReason ?? ""}` : ""}</small></td>
                 <td>{exit.destination ?? "—"}{exit.notes && <small className="table-sub">{exit.notes}</small>}</td>
                 <td>{exit.items.map((item, index) => <small key={index} className="stock-exit-line">{item.tag} {item.name} — {qtyFormat.format(item.quantity)}{item.unitPrice !== null ? ` · ${moneyFormat.format(item.unitPrice * item.quantity)}` : ""}</small>)}</td>
                 <td>{exit.front}<small className="table-sub">{exit.createdBy ?? "—"}</small></td>
-                {data.canCancel && <td>{!exit.cancelledAt && <div className="equipment-row-actions"><button onClick={() => cancelExit(exit)}>Estornar</button></div>}</td>}
+                {data.canCancel && <td>{!exit.cancelledAt && !exit.productionProjectId && <div className="equipment-row-actions"><button onClick={() => cancelExit(exit)}>Estornar</button></div>}</td>}
               </tr>
             ))}</tbody>
           </table>

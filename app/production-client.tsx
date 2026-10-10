@@ -1,6 +1,6 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./stock-client";
 import { STAGE_STATUS_LABELS, type FunctionGroup, type StageStatus } from "../lib/production-rules";
 
@@ -80,6 +80,37 @@ export function frontsTitle(fronts: ProductionFront[], selected: number[]) {
   return fronts.filter((front) => selected.includes(front.id)).map((front) => front.name).join(", ");
 }
 
+// Período das consultas (?de&ate&projeto): por padrão do dia 1º do mês até hoje.
+export type Period = { de: string; ate: string; projeto: string };
+export const monthPeriod = (): Period => { const today = localToday(); return { de: `${today.slice(0, 7)}-01`, ate: today, projeto: "" }; };
+export const periodQuery = (period: Period, selectedFronts: number[], extra: Record<string, string | null | undefined> = {}) => {
+  const params = new URLSearchParams({ de: period.de, ate: period.ate });
+  if (period.projeto) params.set("projeto", period.projeto);
+  if (selectedFronts.length) params.set("frentes", selectedFronts.join(","));
+  for (const [key, value] of Object.entries(extra)) if (value) params.set(key, value);
+  return params.toString();
+};
+export function PeriodFilter({ value, onChange, projects, children }: { value: Period; onChange: (period: Period) => void; projects?: Array<{ id: number; name: string; frontName: string }>; children?: ReactNode }) {
+  return <div className="production-period">
+    <label>De<input type="date" value={value.de} onChange={(event) => event.target.value && onChange({ ...value, de: event.target.value })} /></label>
+    <label>Até<input type="date" value={value.ate} onChange={(event) => event.target.value && onChange({ ...value, ate: event.target.value })} /></label>
+    {projects && <label>Projeto<select value={value.projeto} onChange={(event) => onChange({ ...value, projeto: event.target.value })}>
+      <option value="">Todos os projetos</option>
+      {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.frontName}</option>)}
+    </select></label>}
+    {children}
+  </div>;
+}
+
+export function Modal({ title, subtitle, close, busy, children, wide }: { title: string; subtitle?: string; close: () => void; busy?: boolean; children: ReactNode; wide?: boolean }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) close(); }}>
+    <section className={`modal production-modal${wide ? " wide" : ""}`} role="dialog" aria-label={title}>
+      <header><div><p className="eyebrow">PRODUÇÃO</p><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
+      {children}
+    </section>
+  </div>;
+}
+
 export function StageBadge({ status }: { status: StageStatus }) {
   const tone = status === "FINALIZADO" ? "done" : status === "EM_ANDAMENTO" ? "running" : "none";
   return <span className={`production-badge ${tone}`}>{STAGE_STATUS_LABELS[status]}</span>;
@@ -87,8 +118,10 @@ export function StageBadge({ status }: { status: StageStatus }) {
 
 // Busca de funcionário: por padrão só a função do campo (ex.: operador de skidder); "mostrar todos" serve
 // para quando a função no cadastro está desatualizada. Desligados não aparecem.
-export function ProductionEmployeePicker({ value, onPick, frontId, group, placeholder, disabled }: {
+// compact: dentro da grade do lançamento (só nome e empresa); endpoint: o apontador de campo usa /api/producao/campo/funcionarios.
+export function ProductionEmployeePicker({ value, onPick, frontId, group, placeholder, disabled, compact, endpoint = "/api/producao/funcionarios", invalid }: {
   value: ProductionEmployee | null; onPick: (employee: ProductionEmployee | null) => void; frontId: number | null; group: FunctionGroup | null; placeholder?: string; disabled?: boolean;
+  compact?: boolean; endpoint?: string; invalid?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [all, setAll] = useState(group === null);
@@ -103,13 +136,15 @@ export function ProductionEmployeePicker({ value, onPick, frontId, group, placeh
     if (all) params.set("todos", "1");
     if (!query.trim() && !frontId) { setOptions([]); return; }
     const timer = window.setTimeout(() => {
-      api<{ employees: ProductionEmployee[] }>(`/api/producao/funcionarios?${params.toString()}`).then((result) => setOptions(result.employees)).catch(() => setOptions([]));
+      api<{ employees: ProductionEmployee[] }>(`${endpoint}?${params.toString()}`).then((result) => setOptions(result.employees)).catch(() => setOptions([]));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query, frontId, group, all, open]);
+  }, [query, frontId, group, all, open, endpoint]);
+  if (value && compact) return <div className="production-person-chip"><span><b>{value.name}</b><small>{value.company}</small></span>
+    {!disabled && <button type="button" aria-label={`Tirar ${value.name}`} onClick={(event) => { event.preventDefault(); onPick(null); }}>✕</button>}</div>;
   if (value) return <div className="material-product-chip"><strong>{value.name}</strong><small>{value.jobTitle} · {value.company} · {value.frontName}</small>
     {!disabled && <button type="button" onClick={(event) => { event.preventDefault(); onPick(null); }}>Trocar</button>}</div>;
-  return <div className="material-product-picker production-employee-picker">
+  return <div className={`material-product-picker production-employee-picker${compact ? " compact" : ""}${invalid ? " invalid" : ""}`}>
     <input value={query} disabled={disabled} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} placeholder={placeholder ?? "Buscar funcionário pelo nome..."} />
     {group && <label className="production-show-all"><input type="checkbox" checked={all} onChange={(event) => setAll(event.target.checked)} /> mostrar todos os funcionários</label>}
     {open && options.length > 0 && <ul>{options.map((option) => (
