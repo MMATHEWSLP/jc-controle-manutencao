@@ -1,8 +1,8 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, brDay, jsonBody, problemText } from "./stock-client";
-import { frontsQuery, localToday, money, ProductionEmployeePicker, StageBadge, type ProductionContext, type ProductionEmployee, type ProductionFront, type ProductionReason } from "./production-client";
+import { frontsQuery, localToday, Modal, money, ProductionEmployeePicker, StageBadge, type ProductionContext, type ProductionEmployee, type ProductionFront, type ProductionReason } from "./production-client";
 import { PRODUCTION_STAGES, type StageStatus } from "../lib/production-rules";
 
 // PRODUÇÃO → Projetos: Projetos | Equipes | Preços por frente | Motivos. Cadastrar e editar exige
@@ -141,15 +141,6 @@ function ProjectModal({ project, close, saved }: { project: Project; close: () =
       <div className="modal-footer full"><button type="button" className="secondary" onClick={close}>Cancelar</button><button className="primary" disabled={busy}>{busy ? "Salvando..." : "Salvar"}</button></div>
     </form>
   </Modal>;
-}
-
-function Modal({ title, subtitle, close, busy, children, wide }: { title: string; subtitle?: string; close: () => void; busy?: boolean; children: ReactNode; wide?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) close(); }}>
-    <section className={`modal production-modal${wide ? " wide" : ""}`} role="dialog" aria-label={title}>
-      <header><div><p className="eyebrow">PRODUÇÃO</p><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div><button type="button" onClick={close} aria-label="Fechar">×</button></header>
-      {children}
-    </section>
-  </div>;
 }
 
 // ---------------------------------------------------------------------------

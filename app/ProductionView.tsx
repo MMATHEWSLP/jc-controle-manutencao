@@ -9,10 +9,11 @@ import { clearProductionUrl, FrontFilter, frontsTitle, initialFronts, readProduc
 // As abas ainda não entregues mostram em que fase do plano (docs/producao/PLANO-FASE-0.md) elas chegam.
 function Loading() { return <div className="page-loading"><span /><p>Carregando...</p></div>; }
 const ProductionProjectsTab = dynamic(() => import("./ProductionProjectsTab"), { loading: Loading });
+const ProductionFellingTab = dynamic(() => import("./ProductionFellingTab"), { loading: Loading });
 
 const TABS = [
   { key: "projetos", label: "Projetos", phase: null },
-  { key: "derruba", label: "Derruba", phase: 2 },
+  { key: "derruba", label: "Derruba", phase: null },
   { key: "arraste", label: "Arraste", phase: 3 },
   { key: "medicao", label: "Medição", phase: 4 },
   { key: "transporte", label: "Transporte", phase: 5 },
@@ -55,9 +56,10 @@ export default function ProductionView({ authUser, flash }: { authUser: User; fl
     <FrontFilter fronts={context.fronts} selected={fronts} onChange={changeFronts} />
     {context.fronts.length === 0 && <div className="empty-state">Seu usuário não está vinculado a nenhuma frente de serviço.</div>}
     {tab === "projetos" && <ProductionProjectsTab context={context} selectedFronts={fronts} sub={sub} setSub={setSub} flash={flash} />}
+    {tab === "derruba" && <ProductionFellingTab context={context} selectedFronts={fronts} sub={sub} setSub={setSub} flash={flash} />}
     {current.phase !== null && <article className="panel module-panel production-placeholder">
       <h2>{current.label}</h2>
-      <p>Esta aba chega na Fase {current.phase} da entrega do módulo. Os projetos, equipes, preços por frente e motivos já podem ser cadastrados na aba Projetos.</p>
+      <p>Esta aba chega na Fase {current.phase} da entrega do módulo. Os projetos, equipes, preços por frente e motivos já podem ser cadastrados na aba Projetos, e a derruba já pode ser lançada na aba Derruba.</p>
     </article>}
   </>;
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { getDb } from "../db";
 import { equipment, otherExpenses, serviceFronts, users } from "../db/schema";
@@ -87,6 +87,7 @@ export async function listOtherExpenses(db: Db, fronts: number[] | "ALL", filter
     id: otherExpenses.id, serviceFrontId: otherExpenses.serviceFrontId, frontName: serviceFronts.name, equipmentId: otherExpenses.equipmentId, equipmentPrefix: equipment.prefix,
     expenseDate: otherExpenses.expenseDate, category: otherExpenses.category, amount: otherExpenses.amount, description: otherExpenses.description,
     createdByName: creator.name, createdAt: otherExpenses.createdAt, updatedAt: otherExpenses.updatedAt,
+    fromProduction: sql<boolean>`${otherExpenses.productionProjectId} IS NOT NULL`,
   }).from(otherExpenses)
     .innerJoin(serviceFronts, eq(serviceFronts.id, otherExpenses.serviceFrontId))
     .leftJoin(equipment, eq(equipment.id, otherExpenses.equipmentId))
@@ -110,6 +111,8 @@ async function requireExpense(db: Db, user: SessionUser, id: number) {
   const row = (await db.select().from(otherExpenses).where(and(eq(otherExpenses.id, id), isNull(otherExpenses.deletedAt))).limit(1))[0];
   if (!row) throw new OtherExpenseError("Gasto não encontrado.", 404);
   assertFront(user, row.serviceFrontId);
+  // Despesa da Produção (reparo de motosserra, perda total...): só se altera pela Produção.
+  if (row.productionProjectId) throw new OtherExpenseError("Este gasto foi lançado pela Produção: altere ou exclua pela aba Produção.", 409);
   return row;
 }
 

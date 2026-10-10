@@ -186,6 +186,18 @@ export type FuelCost = { unitCost: number | null; cost: number | null };
 export type FuelValuation = { id: number; fuelTypeId: number; serviceFrontId: number | null; stockLocation: FuelLocation | null; effectiveDate: string; unitCost: number };
 
 export function computeFuelCosts(movements: CostMovement[], valuations: FuelValuation[] = []) {
+  return fuelLedger(movements, valuations, []).costs;
+}
+
+// Custo médio de um estoque (frente + Frente/Porto + combustível) no fim de um dia, pela MESMA conta do
+// custo das saídas (entradas, transferências e reavaliações até aquela data). Usado pela Produção para
+// dar valor aos litros de gasolina da derruba sem lançar saída (decisão D2). null = estoque sem valor.
+export type FuelCostQuery = { key: string; frontId: number; location: FuelLocation; fuelTypeId: number; date: string };
+export function fuelAverageCostsOn(movements: CostMovement[], valuations: FuelValuation[], queries: FuelCostQuery[]) {
+  return fuelLedger(movements, valuations, queries).averages;
+}
+
+function fuelLedger(movements: CostMovement[], valuations: FuelValuation[], queries: FuelCostQuery[]) {
   const ordered = [...movements].sort((a, b) => a.movementDate.localeCompare(b.movementDate) || a.id - b.id);
   const pending = [...valuations].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.id - b.id);
   const stocks = new Map<string, { quantity: number; average: number | null }>();
@@ -214,7 +226,18 @@ export function computeFuelCosts(movements: CostMovement[], valuations: FuelValu
       value.average = valuation.unitCost;
     }
   };
+  // Perguntas de custo médio: respondidas antes do primeiro movimento de um dia posterior ao delas.
+  const asked = [...queries].sort((a, b) => a.date.localeCompare(b.date));
+  const averages = new Map<string, number | null>();
+  const answerBefore = (date: string | null) => {
+    while (asked.length && (date === null || asked[0].date < date)) {
+      const query = asked.shift()!;
+      while (pending.length && pending[0].effectiveDate <= query.date) revalue(pending.shift()!);
+      averages.set(query.key, stocks.get(`${query.frontId}:${query.location}:${query.fuelTypeId}`)?.average ?? null);
+    }
+  };
   for (const movement of ordered) {
+    answerBefore(movement.movementDate);
     while (pending.length && pending[0].effectiveDate <= movement.movementDate) revalue(pending.shift()!);
     const origin = stock(movement.serviceFrontId, movement.stockLocation ?? "FRENTE", movement.fuelTypeId);
     if (movement.movementType === "ENTRADA") {
@@ -230,5 +253,6 @@ export function computeFuelCosts(movements: CostMovement[], valuations: FuelValu
       receive(stock(movement.destinationFrontId ?? movement.serviceFrontId, movement.destinationLocation ?? "FRENTE", movement.fuelTypeId), movement.quantity, unitCost);
     }
   }
-  return costs;
+  answerBefore(null);
+  return { costs, averages };
 }

@@ -22,9 +22,12 @@ export type StockExitInput = {
   thirdPartyId: number | null; thirdPartyVehicleId: number | null; receivedBy: string | null;
   // Destino terceiro "Funcionário": funcionário da empresa (sem veículo).
   thirdPartyEmployeeId?: number | null;
-  items: Array<{ productId: number; quantity: number }>; allowNegative: boolean;
+  // unitPrice: preço do item já resolvido por quem chama (ex.: preço da frente na Produção); vazio = preço do produto.
+  items: Array<{ productId: number; quantity: number; unitPrice?: number | null }>; allowNegative: boolean;
   // "Lançar tudo" do Assistente JC (nunca vem do formulário).
   createdVia?: "ASSISTENTE" | null;
+  // Saída lançada pela Produção (projeto, setor, tipo, motosserra e lote de importação).
+  production?: { projectId: number; sector: "DERRUBA" | "ARRASTE" | "SECUNDARIA"; kind: "MATERIAL" | "MANUTENCAO" | "PERDA_TOTAL"; tool: string | null; importBatchId: number | null } | null;
 };
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "");
@@ -97,14 +100,17 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
       serviceFrontId: input.serviceFrontId, exitDate: input.exitDate, destinationType: input.destinationType,
       employeeId: input.employeeId, equipmentId: input.equipmentId, departmentId: input.departmentId,
       thirdPartyId: input.thirdPartyId, thirdPartyVehicleId: input.thirdPartyVehicleId, thirdPartyEmployeeId: input.thirdPartyEmployeeId ?? null, receivedBy: input.receivedBy, notes: input.notes, createdVia: input.createdVia ?? null, createdBy: user.id,
+      productionProjectId: input.production?.projectId ?? null, productionSector: input.production?.sector ?? null, productionKind: input.production?.kind ?? null,
+      productionTool: input.production?.tool ?? null, productionImportBatchId: input.production?.importBatchId ?? null,
     }).returning({ id: stockExits.id });
     const number = stockExitNumber(exit.id);
     for (const item of input.items) {
       const product = catalog.get(item.productId)!;
-      const [row] = await tx.insert(stockExitItems).values({ exitId: exit.id, productId: item.productId, quantity: item.quantity, unitPrice: product.price }).returning({ id: stockExitItems.id });
+      const unitPrice = item.unitPrice ?? product.price;
+      const [row] = await tx.insert(stockExitItems).values({ exitId: exit.id, productId: item.productId, quantity: item.quantity, unitPrice }).returning({ id: stockExitItems.id });
       await stockExit(tx, {
         productId: item.productId, serviceFrontId: input.serviceFrontId, quantity: item.quantity, source: "STOCK_EXIT", reason: `Saída ${number}`,
-        userId: user.id, movementDate: input.exitDate, unitPrice: product.price, equipmentId: input.equipmentId, employeeId: input.employeeId, departmentId: input.departmentId,
+        userId: user.id, movementDate: input.exitDate, unitPrice, equipmentId: input.equipmentId, employeeId: input.employeeId, departmentId: input.departmentId,
         refs: { stockExitId: exit.id, stockExitItemId: row.id },
       });
     }
@@ -113,10 +119,12 @@ export async function createStockExit(db: Db, user: SessionUser, input: StockExi
   });
 }
 
-export async function cancelStockExit(db: Db, user: SessionUser, id: number, reason: string) {
+// fromProduction: a saída lançada pela Produção só é estornada pela própria Produção (lib/production-expenses.ts).
+export async function cancelStockExit(db: Db, user: SessionUser, id: number, reason: string, options: { fromProduction?: boolean } = {}) {
   if (!reason) throw new StockError("Informe o motivo do estorno.");
   const exit = (await db.select().from(stockExits).where(eq(stockExits.id, id)).limit(1))[0];
   if (!exit) throw new StockError("Saída não encontrada.", 404);
+  if (exit.productionProjectId && !options.fromProduction) throw new StockError("Esta saída foi lançada pela Produção: exclua pela aba Produção (Despesas).", 409);
   const visible = frentesVisiveis(user);
   if (visible !== "ALL" && !visible.includes(exit.serviceFrontId)) throw new StockError("Você não tem acesso ao estoque desta saída.", 404);
   if (exit.cancelledAt) throw new StockError("Esta saída já foi estornada.", 409);
@@ -152,6 +160,7 @@ export async function listStockExits(db: Db, user: SessionUser, filters: { equip
     departmentId: stockExits.departmentId, departmentName: departments.name, createdBy: creator.name,
     thirdPartyId: stockExits.thirdPartyId, thirdPartyName: thirdParties.name, thirdPartyVehicleId: stockExits.thirdPartyVehicleId, thirdPartyPlate: thirdPartyVehicles.plate, receivedBy: stockExits.receivedBy,
     thirdPartyEmployeeId: stockExits.thirdPartyEmployeeId, thirdPartyEmployeeName: thirdPartyEmployees.name,
+    productionProjectId: stockExits.productionProjectId,
   }).from(stockExits).innerJoin(serviceFronts, eq(stockExits.serviceFrontId, serviceFronts.id))
     .leftJoin(thirdParties, eq(stockExits.thirdPartyId, thirdParties.id)).leftJoin(thirdPartyVehicles, eq(stockExits.thirdPartyVehicleId, thirdPartyVehicles.id))
     .leftJoin(thirdPartyEmployees, eq(stockExits.thirdPartyEmployeeId, thirdPartyEmployees.id))

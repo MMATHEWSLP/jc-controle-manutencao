@@ -1,7 +1,7 @@
 import { and, asc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { getDb } from "../db";
 import {
-  auditLogs, employees, productFrontPrices, productionProjects, productionReasons, productionStageEvents, productionTeamMembers, productionTeams, products, serviceFronts,
+  auditLogs, employees, productFrontPrices, productionProjects, productionReasons, productionStageEvents, productionTeamMembers, productionTeams, products, serviceFronts, userServiceFronts, users,
 } from "../db/schema";
 import { frentesVisiveis } from "./access";
 import type { SessionUser } from "./auth";
@@ -439,4 +439,27 @@ export async function lookupProductionEmployees(db: Db, options: { q: string; fr
     .from(employees).innerJoin(serviceFronts, eq(serviceFronts.id, employees.serviceFrontId)).where(and(...conditions)).orderBy(asc(employees.name)).limit(120);
   return rows.map((row) => ({ ...row, inFront: options.frontId !== null && row.serviceFrontId === options.frontId }))
     .sort((a, b) => Number(b.inFront) - Number(a.inFront) || a.name.localeCompare(b.name, "pt-BR")).slice(0, 40);
+}
+
+// ---------------------------------------------------------------------------
+// Apontador da Produção (login de campo): liga/desliga users.production_register. Quem marca precisa
+// cadastrar funcionários de campo (daily.field_operators) e gerenciar a Produção, e enxergar uma frente
+// do funcionário. A permissão vale na próxima requisição do celular (lib/auth.ts:effectivePermissions).
+// ---------------------------------------------------------------------------
+export async function setFieldProductionRegister(db: Db, actor: SessionUser, userId: number, value: boolean) {
+  if (actor.profile === "CAMPO" || !actor.permissions.includes("daily.field_operators") || !productionAccess(actor).manage)
+    throw new ProductionError("Para marcar apontador é preciso cadastrar funcionários de campo e gerenciar a Produção.", 403);
+  const target = (await db.select({ id: users.id, name: users.name, role: users.role, serviceFrontId: users.serviceFrontId, productionRegister: users.productionRegister }).from(users).where(eq(users.id, userId)).limit(1))[0];
+  if (!target || target.role !== "CAMPO") throw new ProductionError("Funcionário de campo não encontrado.", 404);
+  const visible = frentesVisiveis(actor);
+  if (visible !== "ALL") {
+    const fronts = new Set([target.serviceFrontId, ...(await db.select({ id: userServiceFronts.serviceFrontId }).from(userServiceFronts).where(eq(userServiceFronts.userId, userId))).map((row) => row.id)]);
+    if (!visible.some((id) => fronts.has(id))) throw new ProductionError("Você não enxerga a frente deste funcionário.", 403);
+  }
+  if (target.productionRegister === value) return target.name;
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ productionRegister: value, updatedAt: now() }).where(eq(users.id, userId));
+    await audit(tx, actor.id, "USER", userId, value ? "APONTADOR DA PRODUÇÃO LIGADO" : "APONTADOR DA PRODUÇÃO DESLIGADO");
+  });
+  return target.name;
 }

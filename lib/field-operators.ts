@@ -55,6 +55,7 @@ export async function listFieldOperators(actor: SessionUser) {
     id: users.id, name: users.name, jobTitle: users.jobTitle, status: users.status, serviceFrontId: users.serviceFrontId, lastAccessAt: users.lastAccessAt,
     employeeId: users.employeeId, origin: users.fieldAccessOrigin, registration: employees.registration, employeeStatus: employees.status, employeeName: employees.name,
     convoyFuelRegister: users.convoyFuelRegister, convoyEquipmentId: users.convoyEquipmentId, convoyPrefix: equipment.prefix, fieldDailyAccess: users.fieldDailyAccess,
+    productionRegister: users.productionRegister,
   }).from(users).leftJoin(employees, eq(employees.id, users.employeeId)).leftJoin(equipment, eq(equipment.id, users.convoyEquipmentId)).where(eq(users.role, "CAMPO")).orderBy(asc(users.name));
   const links = rows.length ? await db.select().from(userServiceFronts).where(inArray(userServiceFronts.userId, rows.map((row) => row.id))) : [];
   const fronts = frentesVisiveis(actor);
@@ -63,7 +64,7 @@ export async function listFieldOperators(actor: SessionUser) {
     return {
       id: row.id, name: row.name, jobTitle: row.jobTitle, active: row.status === "ACTIVE", serviceFrontIds: frontIds, lastAccessAt: row.lastAccessAt,
       employeeId: row.employeeId, registration: row.registration, employeeStatus: row.employeeStatus, origin: row.origin ?? "FUNCAO",
-      convoyFuelRegister: row.convoyFuelRegister, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix, fieldDailyAccess: row.fieldDailyAccess,
+      convoyFuelRegister: row.convoyFuelRegister, convoyEquipmentId: row.convoyEquipmentId, convoyPrefix: row.convoyPrefix, fieldDailyAccess: row.fieldDailyAccess, productionRegister: row.productionRegister,
     };
   }).filter((row) => fronts === "ALL" || row.serviceFrontIds.some((id) => fronts.includes(id)));
 }
