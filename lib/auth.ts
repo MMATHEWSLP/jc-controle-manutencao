@@ -18,7 +18,9 @@ export const SESSION_COOKIE = "maintenance_session";
 // "/api/fuel/convoy/field": tela "Abastecimentos" do motorista do comboio (também exige a permissão
 // fuel.convoy_register, que só existe para quem tem a opção marcada no cadastro de campo).
 // /api/notifications: o sino e os avisos no celular do próprio funcionário (as rotas de ADMIN exigem permissão).
-const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field", "/api/notifications"];
+// "/api/producao/campo": lançamento da Derruba/Arraste do apontador da Produção (também exige producao.lancar,
+// que só existe para quem tem users.production_register marcado). Essas rotas nunca devolvem valores em R$.
+const FIELD_ALLOWED_API = ["/api/daily-records", "/api/checklists", "/api/auth/", "/api/ping", "/api/fuel/convoy/field", "/api/notifications", "/api/producao/campo"];
 // Cloudflare Workers Web Crypto accepts PBKDF2 iteration counts up to 100,000.
 // Keep the maximum supported cost so hashing works identically in production.
 const PASSWORD_ITERATIONS = 100_000;
@@ -154,6 +156,14 @@ export const PERMISSION_GROUPS = [
   { label:"Notificações", items:[
     ["notifications.configure","Configurar notificações (eventos, destinatários) e ver o registro de envios"],
     ["notifications.send","Enviar notificação avulsa para pessoas, perfis ou frentes"],
+  ]},
+  // Módulo PRODUÇÃO (Derruba → Arraste → Medição → Transporte), sempre só nas frentes da pessoa. Pedido
+  // explícito do administrador: só o ADMIN recebe por padrão; os demais (inclusive GESTOR) por pessoa.
+  { label:"Produção", items:[
+    ["producao.ver","Consultar a Produção (projetos, derruba, arraste, medição, transporte e resumo), sem valores em R$"],
+    ["producao.custos","Ver custos e despesas da Produção (R$, custo por árvore, preço por m³, análises e PDFs com valores)"],
+    ["producao.lancar","Lançar e corrigir derruba, arraste, medição, viagens e despesas em etapas não finalizadas"],
+    ["producao.gerenciar","Gerenciar projetos, equipes, preços por frente e metas; finalizar e reabrir etapas; excluir lançamentos"],
   ]},
 ] as const;
 
@@ -349,7 +359,9 @@ export async function effectivePermissions(userId:number,profile:Profile) {
   if(profile==="CAMPO"){
     // Antes das migrações 0051/0052 as colunas não existem: o acesso de campo segue só com o Controle Diário.
     const row=(await db.select({convoy:users.convoyFuelRegister,daily:users.fieldDailyAccess}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
-    return resolvePermissions(profile,[],{convoy:Boolean(row?.convoy),daily:Boolean(row?.daily)});
+    // Apontador da Produção: consulta separada para não derrubar o comboio antes da migração 0058.
+    const production=(await db.select({value:users.productionRegister}).from(users).where(eq(users.id,userId)).limit(1).catch(()=>[]))[0];
+    return resolvePermissions(profile,[],{convoy:Boolean(row?.convoy),daily:Boolean(row?.daily),production:Boolean(production?.value)});
   }
   const overrides=await db.select({permission:userPermissions.permission,enabled:userPermissions.enabled}).from(userPermissions).where(eq(userPermissions.userId,userId));
   return resolvePermissions(profile,overrides);
@@ -357,11 +369,13 @@ export async function effectivePermissions(userId:number,profile:Profile) {
 
 // Mesma regra de effectivePermissions sem consultar o banco: usada para descobrir de uma vez quem tem
 // uma permissão (destinatários de notificação, lib/notifications.ts).
-export function resolvePermissions(profile:Profile,overrides:readonly {permission:string;enabled:boolean}[],campo?:{convoy:boolean;daily:boolean}):Permission[] {
+// CAMPO: sem comboio nem Produção, só o Controle Diário. Motorista do comboio e apontador da Produção fazem o
+// Controle Diário só se users.field_daily_access estiver marcado.
+export function resolvePermissions(profile:Profile,overrides:readonly {permission:string;enabled:boolean}[],campo?:{convoy:boolean;daily:boolean;production?:boolean}):Permission[] {
   if(profile==="ADMIN")return [...ALL_PERMISSIONS];
   if(profile==="CAMPO"){
-    if(!campo?.convoy)return [...PROFILE_DEFAULTS.CAMPO];
-    return [...(campo.daily?PROFILE_DEFAULTS.CAMPO:[]),"fuel.convoy_register" as Permission];
+    if(!campo?.convoy&&!campo?.production)return [...PROFILE_DEFAULTS.CAMPO];
+    return [...(campo.daily?PROFILE_DEFAULTS.CAMPO:[]),...(campo.convoy?["fuel.convoy_register" as Permission]:[]),...(campo.production?["producao.lancar" as Permission]:[])];
   }
   const values=new Set<Permission>(PROFILE_DEFAULTS[profile]??[]);
   for(const row of overrides){

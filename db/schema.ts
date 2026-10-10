@@ -77,6 +77,9 @@ export const users = pgTable("users", {
   // Só para perfil CAMPO: faz o Controle Diário. O motorista do comboio cadastrado no setor
   // Abastecimentos entra só em "Abastecimentos" (false), a menos que também faça o Controle Diário.
   fieldDailyAccess: boolean("field_daily_access").notNull().default(true),
+  // Só para perfil CAMPO: apontador da Produção (lança a derruba e o arraste pelo celular, sem ver R$).
+  // Dá producao.lancar e libera só as rotas /api/producao/campo (lib/auth.ts).
+  productionRegister: boolean("production_register").notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex("users_email_unique").on(table.email),
@@ -883,6 +886,9 @@ export const products = pgTable("products", {
   // genérica ainda sem modelo definido, TAG provisória, etc.) para revisão manual posterior.
   needsReview: boolean("needs_review").notNull().default(false),
   active: boolean("active").notNull().default(true),
+  // "Usar na Produção": o produto aparece nos lançamentos de material da Derruba/Arraste e na tabela
+  // de preços por frente (product_front_prices). Evita listar os milhares de itens do estoque.
+  productionUse: boolean("production_use").notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex("products_tag_unique").on(table.tag),
@@ -2279,3 +2285,109 @@ export const notificationState = pgTable("notification_state", {
   value: text("value").notNull(),
   ...timestamps,
 });
+
+// ---------------------------------------------------------------------------
+// PRODUÇÃO (exploração florestal por projeto): Derruba → Arraste → Medição → Transporte.
+// Plano e decisões: docs/producao/PLANO-FASE-0.md. Regras puras em lib/production-rules.ts; acesso ao
+// banco em lib/production.ts. Cada etapa de cada projeto é finalizada/reaberta separadamente.
+// ---------------------------------------------------------------------------
+export const PRODUCTION_STAGE_STATUSES = ["NAO_INICIADO", "EM_ANDAMENTO", "FINALIZADO"] as const;
+
+export const productionProjects = pgTable("production_projects", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  name: text("name").notNull(),
+  // Alojamento (opcional).
+  camp: text("camp"),
+  // Projeto inativo some das listas de lançamento; nunca é apagado.
+  active: boolean("active").notNull().default(true),
+  // Situação de cada etapa. Projeto novo nasce com a Derruba em andamento; as outras etapas passam a
+  // "em andamento" no primeiro lançamento delas. FINALIZADO recusa lançamentos daquela etapa.
+  fellingStatus: text("felling_status", { enum: PRODUCTION_STAGE_STATUSES }).notNull().default("EM_ANDAMENTO"),
+  skiddingStatus: text("skidding_status", { enum: PRODUCTION_STAGE_STATUSES }).notNull().default("NAO_INICIADO"),
+  measurementStatus: text("measurement_status", { enum: PRODUCTION_STAGE_STATUSES }).notNull().default("NAO_INICIADO"),
+  haulingStatus: text("hauling_status", { enum: PRODUCTION_STAGE_STATUSES }).notNull().default("NAO_INICIADO"),
+  // Observação de cada etapa (card do projeto em cada aba).
+  fellingNotes: text("felling_notes"),
+  skiddingNotes: text("skidding_notes"),
+  measurementNotes: text("measurement_notes"),
+  haulingNotes: text("hauling_notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  // Mesmo nome na mesma frente (sem diferenciar maiúsculas) é o mesmo projeto.
+  uniqueIndex("production_projects_front_name_unique").on(table.serviceFrontId, sql`lower(${table.name})`),
+  index("production_projects_front_idx").on(table.serviceFrontId, table.active),
+]);
+
+// Quem finalizou/reabriu cada etapa e quando (o audit_logs também recebe a ação).
+export const productionStageEvents = pgTable("production_stage_events", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => productionProjects.id),
+  stage: text("stage", { enum: ["DERRUBA", "ARRASTE", "MEDICAO", "TRANSPORTE"] }).notNull(),
+  action: text("action", { enum: ["INICIOU", "FINALIZOU", "REABRIU"] }).notNull(),
+  note: text("note"),
+  userId: integer("user_id").references(() => users.id),
+  occurredAt: text("occurred_at").notNull().default(isoNow),
+}, (table) => [index("production_stage_events_project_idx").on(table.projectId, table.occurredAt)]);
+
+export const productionTeams = pgTable("production_teams", {
+  id: serial("id").primaryKey(),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  name: text("name").notNull(),
+  leaderEmployeeId: integer("leader_employee_id").references(() => employees.id),
+  active: boolean("active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("production_teams_front_name_unique").on(table.serviceFrontId, sql`lower(${table.name})`),
+  index("production_teams_leader_idx").on(table.leaderEmployeeId),
+]);
+
+// Integrantes com data de entrada/saída (saída vazia = ainda na equipe). O histórico fica guardado.
+export const productionTeamMembers = pgTable("production_team_members", {
+  id: serial("id").primaryKey(),
+  teamId: integer("team_id").notNull().references(() => productionTeams.id, { onDelete: "cascade" }),
+  employeeId: integer("employee_id").notNull().references(() => employees.id),
+  joinedAt: text("joined_at").notNull(),
+  leftAt: text("left_at"),
+  createdBy: integer("created_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  // O mesmo funcionário não fica duas vezes ativo na mesma equipe.
+  uniqueIndex("production_team_members_active_unique").on(table.teamId, table.employeeId).where(sql`${table.leftAt} IS NULL`),
+  index("production_team_members_employee_idx").on(table.employeeId),
+]);
+
+// Preço do produto por frente, usado nos lançamentos da Produção. Preço efetivo = o da frente, se houver;
+// senão products.price.
+export const productFrontPrices = pgTable("product_front_prices", {
+  productId: integer("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  price: doublePrecision("price").notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.productId, table.serviceFrontId] }),
+  index("product_front_prices_front_idx").on(table.serviceFrontId),
+]);
+
+// Meta diária por frente e etapa (árvores por operador por dia). Sem linha = meta não definida.
+export const productionTargets = pgTable("production_targets", {
+  serviceFrontId: integer("service_front_id").notNull().references(() => serviceFronts.id),
+  stage: text("stage", { enum: ["DERRUBA", "ARRASTE"] }).notNull(),
+  treesPerOperatorDay: integer("trees_per_operator_day").notNull(),
+  updatedBy: integer("updated_by").references(() => users.id),
+  ...timestamps,
+}, (table) => [primaryKey({ columns: [table.serviceFrontId, table.stage] })]);
+
+// Motivos de produção baixa/zero (ex.: C.09 MADEIRA GROSSA). Lista editável pelo ADMIN.
+export const productionReasons = pgTable("production_reasons", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [uniqueIndex("production_reasons_code_unique").on(table.code)]);

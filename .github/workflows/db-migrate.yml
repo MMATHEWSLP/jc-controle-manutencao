@@ -61,6 +61,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/previa-operadores.ts
 
+      - name: Diagnóstico da Produção (somente leitura)
+        if: hashFiles('scripts/diagnosticar-producao.mjs') != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/diagnosticar-producao.mjs
+
       - name: Prévia da importação do Controle Diário (somente leitura)
         if: hashFiles('scripts/previa-controle-diario.ts') != ''
         env:
